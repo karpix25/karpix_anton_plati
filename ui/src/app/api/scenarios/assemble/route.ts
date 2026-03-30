@@ -35,6 +35,10 @@ type TimelineSegment = {
   source: string;
 };
 
+type ScenarioPromptItem = NonNullable<
+  NonNullable<ScenarioRow["video_generation_prompts"]>["prompts"]
+>[number];
+
 const OUTPUT_WIDTH = 720;
 const OUTPUT_HEIGHT = 1280;
 const OUTPUT_FPS = 30;
@@ -151,7 +155,7 @@ async function probeDurationSeconds(filePath: string) {
 }
 
 function resolvePromptSource(
-  item: NonNullable<ScenarioRow["video_generation_prompts"]>["prompts"][number]
+  item: ScenarioPromptItem
 ) {
   if (item.use_ready_asset && item.asset_url) return item.asset_url;
   if (item.video_url) return item.video_url;
