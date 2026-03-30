@@ -25,6 +25,7 @@ export const defaultSettings: ClientSettings = {
   auto_generate_final_videos: false,
   monthly_final_video_limit: 30,
   monthly_final_video_count: 0,
+  open_final_video_jobs: 0,
   auto_generate: false,
   monthly_limit: 30,
 };
