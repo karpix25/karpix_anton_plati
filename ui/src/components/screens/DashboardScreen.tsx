@@ -131,7 +131,7 @@ export function DashboardScreen({
               Просмотреть референсы
             </button>
             <button
-              onClick={() => setScreen("libraries")}
+              onClick={() => setScreen("graph")}
               className="pb-1 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-primary"
             >
               Темы и паттерны
