@@ -1,6 +1,6 @@
 # Deploy On EasyPanel
 
-Этот проект разворачивается как один `App Service` в EasyPanel.
+Этот проект разворачивается в EasyPanel без прямого bind'а host-портов из `docker-compose`.
 
 Почему один сервис:
 - основной HTTP-сервис здесь это `Next.js`
@@ -13,7 +13,7 @@
 2. Добавь `App`
 3. Подключи Git-репозиторий этого проекта
 4. EasyPanel должен использовать корневой `Dockerfile`
-5. Выставь публичный порт `3000`
+5. В EasyPanel укажи публичный порт `3000` для сервиса `web`
 6. Настрой домен на этот `App`
 
 ## Health Check
@@ -78,6 +78,7 @@ YANDEX_DISK_PROJECT_FOLDER=Плати по миру
 - Финальные монтажи при наличии `YANDEX_DISK_OAUTH_TOKEN` будут загружаться в `disk:/<YANDEX_DISK_PROJECT_FOLDER>/<avatar>/final/`
 - Если на проде планируется активный монтаж, контейнеру нужен достаточный диск и RAM
 - Если Postgres находится в другом сервисе EasyPanel, используй внутренние credentials этого Postgres-сервиса
+- В `docker-compose.production.yml` порты не публикуются наружу через `ports:`; EasyPanel должен проксировать `web:3000` сам
 - Если хочешь хранить медиа дольше жизни контейнера, дальше нужно выносить их из `/tmp` в object storage
 
 ## После деплоя проверь
