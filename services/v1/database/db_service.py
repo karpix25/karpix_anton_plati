@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Global connection pool
 _db_pool: Optional[ThreadedConnectionPool] = None
+INIT_DB_ADVISORY_LOCK_KEY = 2026033001
 
 def get_pool() -> ThreadedConnectionPool:
     """Lazy initialization of the database connection pool."""
@@ -488,6 +489,8 @@ def init_db() -> None:
     ]
     try:
         with DBConnection() as cursor:
+            # Serialize schema bootstrap across all services/containers.
+            cursor.execute("SELECT pg_advisory_xact_lock(%s)", (INIT_DB_ADVISORY_LOCK_KEY,))
             for sql in tables:
                 cursor.execute(sql)
         logger.info("Database initialized successfully")
