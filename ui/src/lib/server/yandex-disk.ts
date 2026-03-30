@@ -1,8 +1,8 @@
 import { readFile } from "fs/promises";
 
 const YANDEX_DISK_API_BASE = "https://cloud-api.yandex.net/v1/disk";
-const DEFAULT_PROJECT_FOLDER = "Плати по миру";
-const DEFAULT_FINAL_FOLDER = "final";
+const ROOT_VIDEO_FOLDER = "ВИДЕО";
+const ROOT_AUTOMATION_FOLDER = "АВТОМАТ";
 
 type UploadHrefPayload = {
   href?: string;
@@ -23,10 +23,6 @@ function getAccessToken() {
 
 export function isYandexDiskConfigured() {
   return Boolean(getAccessToken());
-}
-
-function getProjectFolderName() {
-  return (process.env.YANDEX_DISK_PROJECT_FOLDER || DEFAULT_PROJECT_FOLDER).trim() || DEFAULT_PROJECT_FOLDER;
 }
 
 function sanitizeFolderName(value: string) {
@@ -131,18 +127,17 @@ export async function uploadFinalVideoToYandexDisk(params: {
   avatarFolderName: string;
   fileName: string;
 }) {
-  const projectFolder = getProjectFolderName();
   const avatarFolder = sanitizeFolderName(params.avatarFolderName) || "Unknown avatar";
-  const finalFolder = DEFAULT_FINAL_FOLDER;
+  const rootPath = toDiskPath(ROOT_VIDEO_FOLDER);
+  const automationPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER);
+  const avatarGroupPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarFolder);
+  const avatarFinalPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarFolder, avatarFolder);
+  const filePath = `${avatarFinalPath}/${sanitizeFileName(params.fileName)}`;
 
-  const projectPath = toDiskPath(projectFolder);
-  const avatarPath = toDiskPath(projectFolder, avatarFolder);
-  const finalPath = toDiskPath(projectFolder, avatarFolder, finalFolder);
-  const filePath = `${finalPath}/${sanitizeFileName(params.fileName)}`;
-
-  await ensureFolderExists(projectPath);
-  await ensureFolderExists(avatarPath);
-  await ensureFolderExists(finalPath);
+  await ensureFolderExists(rootPath);
+  await ensureFolderExists(automationPath);
+  await ensureFolderExists(avatarGroupPath);
+  await ensureFolderExists(avatarFinalPath);
 
   const uploadHref = await getUploadHref(filePath);
   const fileBuffer = await readFile(params.localFilePath);
@@ -164,9 +159,9 @@ export async function uploadFinalVideoToYandexDisk(params: {
   const meta = await getResourceMeta(filePath);
 
   return {
-    projectPath,
-    avatarPath,
-    finalPath,
+    projectPath: rootPath,
+    avatarPath: avatarGroupPath,
+    finalPath: avatarFinalPath,
     filePath: meta.path || filePath,
     publicUrl: meta.public_url || null,
   };
