@@ -504,7 +504,7 @@ export async function POST(request: Request) {
         );
       }
 
-      return new Response(audioBuffer, {
+      return new Response(new Uint8Array(audioBuffer), {
         headers: {
           'Content-Type': 'audio/mpeg',
           'Content-Disposition': `attachment; filename="scenario_${scenarioId}_audio.mp3"`,
