@@ -1,0 +1,24 @@
+[
+    {
+        "index": 1,
+        "job_id": "mix_1_77588e56",
+        "mode": "mix",
+        "topic": "Визы и путешествия",
+        "angle": "hidden_gems (Инсайдер / Ваш личный гид по магазину)",
+        "source_reference": "topic:5",
+        "source_references": [
+            "topic:5",
+            "struct:7"
+        ],
+        "topic_card_id": 5,
+        "structure_card_id": 7,
+        "scenario": {
+            "script": "Error generating from topic and structure",
+            "generation_mode": "topic_structure_mix",
+            "pattern_type": "hidden_gems",
+            "topic_family": "Визы и путешествия",
+            "topic_short": "Визы и путешествия"
+        },
+        "tts_script": ""
+    }
+]

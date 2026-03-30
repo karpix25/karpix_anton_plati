@@ -1,0 +1,540 @@
+import { NextResponse } from "next/server";
+import { existsSync } from "fs";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
+import { spawn } from "child_process";
+import pool from "@/lib/db";
+import { isYandexDiskConfigured, uploadFinalVideoToYandexDisk } from "@/lib/server/yandex-disk";
+
+type ScenarioRow = {
+  id: number;
+  tts_audio_path: string | null;
+  tts_word_timestamps: { words?: Array<{ end?: number }> } | null;
+  heygen_video_url: string | null;
+  heygen_avatar_id: string | null;
+  heygen_avatar_name: string | null;
+  video_generation_prompts:
+    | {
+        prompts?: Array<{
+          slot_start?: number;
+          slot_end?: number;
+          asset_type?: string | null;
+          use_ready_asset?: boolean;
+          asset_url?: string | null;
+          video_url?: string | null;
+          result_urls?: string[] | null;
+        }>;
+      }
+    | null;
+};
+
+type TimelineSegment = {
+  kind: "avatar" | "broll";
+  start: number;
+  end: number;
+  source: string;
+};
+
+const OUTPUT_WIDTH = 720;
+const OUTPUT_HEIGHT = 1280;
+const OUTPUT_FPS = 30;
+const MIN_BROLL_SEGMENT_SECONDS = 2;
+const MIN_PRODUCT_SEGMENT_SECONDS = 3;
+
+async function ensureMontageColumns() {
+  const statements = [
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_video_path TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_status TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_error TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_updated_at TIMESTAMP",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_disk_path TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_public_url TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_status TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_error TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_uploaded_at TIMESTAMP",
+  ];
+
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+}
+
+function runCommand(command: string, args: string[]) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stderr = "";
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(stderr || `${command} failed with code ${code}`));
+      }
+    });
+
+    child.on("error", reject);
+  });
+}
+
+function runCommandCapture(command: string, args: string[]) {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(new Error(stderr || `${command} failed with code ${code}`));
+      }
+    });
+
+    child.on("error", reject);
+  });
+}
+
+async function getScenario(scenarioId: number) {
+  const { rows } = await pool.query<ScenarioRow>(
+    `SELECT id, tts_audio_path, tts_word_timestamps, heygen_video_url, heygen_avatar_id, heygen_avatar_name, video_generation_prompts
+     FROM generated_scenarios
+     WHERE id = $1`,
+    [scenarioId]
+  );
+
+  return rows[0] || null;
+}
+
+function getTotalDurationSeconds(scenario: ScenarioRow) {
+  const wordEnds = (scenario.tts_word_timestamps?.words || [])
+    .map((word) => Number(word.end || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  const promptEnds = (scenario.video_generation_prompts?.prompts || [])
+    .map((item) => Number(item.slot_end || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  return Math.max(...wordEnds, ...promptEnds, 0);
+}
+
+async function probeDurationSeconds(filePath: string) {
+  const raw = await runCommandCapture("ffprobe", [
+    "-v",
+    "error",
+    "-show_entries",
+    "format=duration",
+    "-of",
+    "default=noprint_wrappers=1:nokey=1",
+    filePath,
+  ]);
+
+  const duration = Number(raw);
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+function resolvePromptSource(
+  item: NonNullable<ScenarioRow["video_generation_prompts"]>["prompts"][number]
+) {
+  if (item.use_ready_asset && item.asset_url) return item.asset_url;
+  if (item.video_url) return item.video_url;
+  if (item.result_urls?.length) return item.result_urls[0];
+  if (item.asset_url) return item.asset_url;
+  return null;
+}
+
+function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
+  const prompts = normalizePromptWindows(
+    (scenario.video_generation_prompts?.prompts || [])
+    .map((item) => ({
+      start: Number(item.slot_start || 0),
+      end: Number(item.slot_end || 0),
+      assetType: item.asset_type || null,
+      source: resolvePromptSource(item),
+    }))
+    .filter((item) => item.source && item.end > item.start)
+    .sort((a, b) => a.start - b.start),
+    totalDuration
+  );
+
+  const segments: TimelineSegment[] = [];
+  let cursor = 0;
+
+  for (const prompt of prompts) {
+    const start = Math.max(prompt.start, cursor);
+    const end = Math.min(prompt.end, totalDuration);
+    if (end <= start) continue;
+
+    if (start > cursor && scenario.heygen_video_url) {
+      segments.push({
+        kind: "avatar",
+        start: cursor,
+        end: start,
+        source: scenario.heygen_video_url,
+      });
+    }
+
+    segments.push({
+      kind: "broll",
+      start,
+      end,
+      source: prompt.source!,
+    });
+    cursor = end;
+  }
+
+  if (cursor < totalDuration && scenario.heygen_video_url) {
+    segments.push({
+      kind: "avatar",
+      start: cursor,
+      end: totalDuration,
+      source: scenario.heygen_video_url,
+    });
+  }
+
+  return segments.filter((segment) => segment.end - segment.start > 0.05);
+}
+
+function normalizePromptWindows(
+  prompts: Array<{ start: number; end: number; assetType: string | null; source: string | null }>,
+  totalDuration: number
+) {
+  const normalized = prompts.map((item) => ({ ...item }));
+
+  for (let index = 0; index < normalized.length; index += 1) {
+    const item = normalized[index];
+    const minimumDuration = item.assetType === "product_video" ? MIN_PRODUCT_SEGMENT_SECONDS : MIN_BROLL_SEGMENT_SECONDS;
+    let start = item.start;
+    let end = item.end;
+    let needed = minimumDuration - (end - start);
+
+    if (needed <= 0) {
+      continue;
+    }
+
+    const previousEnd = index > 0 ? normalized[index - 1].end : 0;
+    const nextStart = index + 1 < normalized.length ? normalized[index + 1].start : totalDuration;
+
+    const extendRight = Math.min(needed, Math.max(0, nextStart - end));
+    end += extendRight;
+    needed -= extendRight;
+
+    if (needed > 0) {
+      const shiftLeft = Math.min(needed, Math.max(0, start - previousEnd));
+      start -= shiftLeft;
+      needed -= shiftLeft;
+    }
+
+    item.start = Math.max(0, Number(start.toFixed(3)));
+    item.end = Math.min(totalDuration, Number(end.toFixed(3)));
+  }
+
+  return normalized;
+}
+
+async function downloadRemoteFile(url: string, targetPath: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to download media: ${url}`);
+  }
+
+  const fileBuffer = Buffer.from(await response.arrayBuffer());
+  await writeFile(targetPath, fileBuffer);
+}
+
+async function materializeSource(source: string, workdir: string, key: string) {
+  if (source.startsWith("/")) {
+    const publicPath = path.join(process.cwd(), "public", source.replace(/^\/+/, ""));
+    if (!existsSync(publicPath)) {
+      throw new Error(`Local asset not found: ${source}`);
+    }
+    return publicPath;
+  }
+
+  if (source.startsWith("file://")) {
+    return source.replace("file://", "");
+  }
+
+  if (existsSync(source)) {
+    return source;
+  }
+
+  const targetPath = path.join(workdir, `${key}.mp4`);
+  await downloadRemoteFile(source, targetPath);
+  return targetPath;
+}
+
+async function renderSegment(
+  segment: TimelineSegment,
+  sourcePath: string,
+  outputPath: string
+) {
+  const duration = (segment.end - segment.start).toFixed(3);
+  const commonFilters = `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},format=yuv420p,setsar=1`;
+
+  const args =
+    segment.kind === "avatar"
+      ? [
+          "-y",
+          "-ss",
+          segment.start.toFixed(3),
+          "-t",
+          duration,
+          "-i",
+          sourcePath,
+          "-an",
+          "-vf",
+          commonFilters,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "20",
+          outputPath,
+        ]
+      : [
+          "-y",
+          "-stream_loop",
+          "-1",
+          "-i",
+          sourcePath,
+          "-t",
+          duration,
+          "-an",
+          "-vf",
+          commonFilters,
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "20",
+          outputPath,
+        ];
+
+  await runCommand("ffmpeg", args);
+}
+
+async function buildMontage(scenarioId: number) {
+  await ensureMontageColumns();
+
+  const scenario = await getScenario(scenarioId);
+  if (!scenario) {
+    throw new Error("Scenario not found");
+  }
+
+  if (!scenario.tts_audio_path || !existsSync(scenario.tts_audio_path)) {
+    throw new Error("TTS audio file is missing");
+  }
+
+  if (!scenario.heygen_video_url) {
+    throw new Error("HeyGen avatar video is missing");
+  }
+
+  const totalDuration = getTotalDurationSeconds(scenario) || (await probeDurationSeconds(scenario.tts_audio_path));
+  if (totalDuration <= 0) {
+    throw new Error("Timeline data is missing");
+  }
+
+  const timeline = buildTimeline(scenario, totalDuration);
+  if (!timeline.length) {
+    throw new Error("No video segments available for montage");
+  }
+
+  const workdir = path.join("/tmp", "platipo-miru-montage", `scenario-${scenarioId}`);
+  await mkdir(workdir, { recursive: true });
+
+  const sourceCache = new Map<string, string>();
+  const segmentPaths: string[] = [];
+  const avatarSourcePath =
+    sourceCache.get(scenario.heygen_video_url) ||
+    (await materializeSource(scenario.heygen_video_url, workdir, "avatar_master"));
+  sourceCache.set(scenario.heygen_video_url, avatarSourcePath);
+
+  for (let index = 0; index < timeline.length; index += 1) {
+    const segment = timeline[index];
+    let renderSegmentData = segment;
+    let sourcePath = sourceCache.get(segment.source);
+
+    try {
+      if (!sourcePath) {
+        const sourceKey = `${segment.kind}-${index}`;
+        sourcePath = await materializeSource(segment.source, workdir, sourceKey);
+        sourceCache.set(segment.source, sourcePath);
+      }
+    } catch (error) {
+      if (segment.kind !== "broll") {
+        throw error;
+      }
+
+      console.warn(`Montage fallback to avatar for slot ${segment.start}-${segment.end}:`, error);
+      renderSegmentData = {
+        kind: "avatar",
+        start: segment.start,
+        end: segment.end,
+        source: scenario.heygen_video_url,
+      };
+      sourcePath = avatarSourcePath;
+    }
+
+    const outputPath = path.join(workdir, `segment_${String(index).padStart(3, "0")}.mp4`);
+    await renderSegment(renderSegmentData, sourcePath, outputPath);
+    segmentPaths.push(outputPath);
+  }
+
+  const concatListPath = path.join(workdir, "segments.txt");
+  await writeFile(
+    concatListPath,
+    segmentPaths.map((segmentPath) => `file '${segmentPath.replace(/'/g, "'\\''")}'`).join("\n"),
+    "utf8"
+  );
+
+  const outputPath = path.join(workdir, `scenario_${scenarioId}_montage.mp4`);
+  await runCommand("ffmpeg", [
+    "-y",
+    "-f",
+    "concat",
+    "-safe",
+    "0",
+    "-i",
+    concatListPath,
+    "-i",
+    scenario.tts_audio_path,
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-crf",
+    "20",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "192k",
+    "-movflags",
+    "+faststart",
+    "-shortest",
+    outputPath,
+  ]);
+
+  return {
+    outputPath,
+    avatarName: scenario.heygen_avatar_name || scenario.heygen_avatar_id || `avatar-${scenarioId}`,
+  };
+}
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  const resolvedScenarioId = Number.parseInt(String(body?.scenarioId), 10);
+
+  try {
+    if (!Number.isFinite(resolvedScenarioId)) {
+      return NextResponse.json({ error: "scenarioId is required" }, { status: 400 });
+    }
+
+    await ensureMontageColumns();
+    await pool.query(
+      `UPDATE generated_scenarios
+       SET montage_status = 'processing',
+           montage_error = NULL,
+           montage_yandex_status = NULL,
+           montage_yandex_error = NULL,
+           montage_updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [resolvedScenarioId]
+    );
+
+    const { outputPath, avatarName } = await buildMontage(resolvedScenarioId);
+
+    let yandexDiskPath: string | null = null;
+    let yandexPublicUrl: string | null = null;
+    let yandexStatus = isYandexDiskConfigured() ? "uploading" : "skipped";
+    let yandexError: string | null = null;
+
+    if (isYandexDiskConfigured()) {
+      await pool.query(
+        `UPDATE generated_scenarios
+         SET montage_yandex_status = 'uploading',
+             montage_yandex_error = NULL,
+             montage_updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [resolvedScenarioId]
+      );
+
+      try {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const upload = await uploadFinalVideoToYandexDisk({
+          localFilePath: outputPath,
+          avatarFolderName: avatarName,
+          fileName: `scenario_${resolvedScenarioId}_${timestamp}.mp4`,
+        });
+        yandexDiskPath = upload.filePath;
+        yandexPublicUrl = upload.publicUrl;
+        yandexStatus = "completed";
+      } catch (uploadError) {
+        console.error("Yandex Disk upload error:", uploadError);
+        yandexStatus = "failed";
+        yandexError = uploadError instanceof Error ? uploadError.message : "Yandex Disk upload failed";
+      }
+    }
+
+    await pool.query(
+      `UPDATE generated_scenarios
+       SET montage_video_path = $1,
+           montage_status = 'completed',
+           montage_error = NULL,
+           montage_yandex_disk_path = $2,
+           montage_yandex_public_url = $3,
+           montage_yandex_status = $4,
+           montage_yandex_error = $5,
+           montage_yandex_uploaded_at = CASE WHEN $4 = 'completed' THEN CURRENT_TIMESTAMP ELSE montage_yandex_uploaded_at END,
+           montage_updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6`,
+      [outputPath, yandexDiskPath, yandexPublicUrl, yandexStatus, yandexError, resolvedScenarioId]
+    );
+
+    return NextResponse.json({
+      ok: true,
+      scenarioId: resolvedScenarioId,
+      montage_video_path: outputPath,
+      montage_yandex_disk_path: yandexDiskPath,
+      montage_yandex_public_url: yandexPublicUrl,
+      montage_yandex_status: yandexStatus,
+      montage_yandex_error: yandexError,
+    });
+  } catch (error) {
+    console.error("Scenario montage POST error:", error);
+    const message = error instanceof Error ? error.message : "Internal Server Error";
+    if (Number.isFinite(resolvedScenarioId)) {
+      await ensureMontageColumns();
+      await pool.query(
+        `UPDATE generated_scenarios
+         SET montage_status = 'failed',
+             montage_error = $1,
+             montage_updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [message, resolvedScenarioId]
+      );
+    }
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

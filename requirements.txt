@@ -1,0 +1,7 @@
+openai
+python-telegram-bot
+deepgram-sdk
+requests
+python-dotenv
+flask
+psycopg2-binary

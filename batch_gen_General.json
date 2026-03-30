@@ -1,0 +1,871 @@
+[
+    {
+        "index": 1,
+        "job_id": "mix_1_ab397731",
+        "mode": "mix",
+        "topic": "Список полезных товаров из магазина Таиланда",
+        "angle": "hidden_gems (Инсайдер / Ваш личный гид по магазину)",
+        "source_reference": "topic:7",
+        "source_references": [
+            "topic:7",
+            "struct:7"
+        ],
+        "topic_card_id": 7,
+        "structure_card_id": 7,
+        "scenario": {
+            "scene_name": "Thai 7-Eleven Finds",
+            "script": "Будешь в Таиланде в 7-11 не пропусти вот эту полку! Это полка с БАДами! Я тут как местный, знаю, что реально помогает. От запора – сенна в таблетках, действует уже через 6 часов. От похмелья – витамин B и коэнзим Q10, утром как новенький. Для пищеварения – пробиотики, особенно после тайской еды, чтоб без сюрпризов. А если рана – бетадин, заживает в момент. И для красоты – кокосовое масло, кожа как у младенца. Кстати, оплатить всё это удобно сервисом \"Плати по миру\", если твоя карта не работает за границей. Без него тут никак, проверено!",
+            "word_count": "99",
+            "generation_mode": "topic_structure_mix",
+            "pattern_type": "hidden_gems",
+            "topic_family": "Список полезных товаров из магазина Таиланда",
+            "topic_cluster": "Список полезных товаров из магазина Таиланда",
+            "topic_short": "Список полезных товаров из магазина Таиланда",
+            "topic_angle": "Личные рекомендации и лайфхаки для туристов и местных жителей в Таиланде.",
+            "hook_preservation_notes": "The opening two sentences were preserved exactly from the source hook, establishing the location and focus on supplements.",
+            "quality_check": {
+                "no_hello_check": true,
+                "word_count_check": true,
+                "hook_type": "Location-specific recommendation."
+            }
+        },
+        "tts_script": "Будешь в Таиланде, в семь-одиннадцать, не пропусти вот эту полку! Это полка с БАДами! Я тут как местный, знаю, что реально помогает. От запора – сенна в таблетках, действует уже через шесть часов. От похмелья – витамин Б и коэнзим Q десять, утром как новенький. Для пищеварения – пробиотики, особенно после тайской еды, чтобы без сюрпризов. А если рана – бетадин, заживает в момент. И для красоты – кокосовое масло, кожа как у младенца. Кстати, оплатить всё это удобно сервисом «Плати по миру», если твоя карта не работает за границей. Без него тут никак, проверено!",
+        "tts_audio_path": "/tmp/tts_915de9f1.mp3",
+        "tts_word_timestamps": {
+            "transcript": "Будешь в Таиланде, в семь-одиннадцать, не пропусти вот эту полку! Это полка с БАДами! Я тут как местный, знаю, что реально помогает. От запора – сенна в таблетках, действует уже через шесть часов. От похмелья – витамин Б и коэнзим Q десять, утром как новенький. Для пищеварения – пробиотики, особенно после тайской еды, чтобы без сюрпризов. А если рана – бетадин, заживает в момент. И для красоты – кокосовое масло, кожа как у младенца. Кстати, оплатить всё это удобно сервисом «Плати по миру», если твоя карта не работает за границей. Без него тут никак, проверено!",
+            "words": [
+                {
+                    "word": "Будешь",
+                    "punctuated_word": "Будешь",
+                    "start": 0.0,
+                    "end": 0.23,
+                    "confidence": null
+                },
+                {
+                    "word": "в",
+                    "punctuated_word": "в",
+                    "start": 0.23,
+                    "end": 0.39,
+                    "confidence": null
+                },
+                {
+                    "word": "Таиланде",
+                    "punctuated_word": "Таиланде,",
+                    "start": 0.39,
+                    "end": 0.65,
+                    "confidence": null
+                },
+                {
+                    "word": "в",
+                    "punctuated_word": "в",
+                    "start": 0.73,
+                    "end": 0.89,
+                    "confidence": null
+                },
+                {
+                    "word": "семь-одиннадцать",
+                    "punctuated_word": "семь-одиннадцать,",
+                    "start": 0.89,
+                    "end": 1.3,
+                    "confidence": null
+                },
+                {
+                    "word": "не",
+                    "punctuated_word": "не",
+                    "start": 1.38,
+                    "end": 1.54,
+                    "confidence": null
+                },
+                {
+                    "word": "пропусти",
+                    "punctuated_word": "пропусти",
+                    "start": 1.54,
+                    "end": 1.8,
+                    "confidence": null
+                },
+                {
+                    "word": "вот",
+                    "punctuated_word": "вот",
+                    "start": 1.8,
+                    "end": 1.97,
+                    "confidence": null
+                },
+                {
+                    "word": "эту",
+                    "punctuated_word": "эту",
+                    "start": 1.97,
+                    "end": 2.14,
+                    "confidence": null
+                },
+                {
+                    "word": "полку",
+                    "punctuated_word": "полку!",
+                    "start": 2.14,
+                    "end": 2.35,
+                    "confidence": null
+                },
+                {
+                    "word": "Это",
+                    "punctuated_word": "Это",
+                    "start": 2.53,
+                    "end": 2.7,
+                    "confidence": null
+                },
+                {
+                    "word": "полка",
+                    "punctuated_word": "полка",
+                    "start": 2.7,
+                    "end": 2.91,
+                    "confidence": null
+                },
+                {
+                    "word": "с",
+                    "punctuated_word": "с",
+                    "start": 2.91,
+                    "end": 3.07,
+                    "confidence": null
+                },
+                {
+                    "word": "БАДами",
+                    "punctuated_word": "БАДами!",
+                    "start": 3.07,
+                    "end": 3.3,
+                    "confidence": null
+                },
+                {
+                    "word": "Я",
+                    "punctuated_word": "Я",
+                    "start": 3.48,
+                    "end": 3.64,
+                    "confidence": null
+                },
+                {
+                    "word": "тут",
+                    "punctuated_word": "тут",
+                    "start": 3.64,
+                    "end": 3.81,
+                    "confidence": null
+                },
+                {
+                    "word": "как",
+                    "punctuated_word": "как",
+                    "start": 3.81,
+                    "end": 3.98,
+                    "confidence": null
+                },
+                {
+                    "word": "местный",
+                    "punctuated_word": "местный,",
+                    "start": 3.98,
+                    "end": 4.23,
+                    "confidence": null
+                },
+                {
+                    "word": "знаю",
+                    "punctuated_word": "знаю,",
+                    "start": 4.31,
+                    "end": 4.5,
+                    "confidence": null
+                },
+                {
+                    "word": "что",
+                    "punctuated_word": "что",
+                    "start": 4.58,
+                    "end": 4.75,
+                    "confidence": null
+                },
+                {
+                    "word": "реально",
+                    "punctuated_word": "реально",
+                    "start": 4.75,
+                    "end": 5.0,
+                    "confidence": null
+                },
+                {
+                    "word": "помогает",
+                    "punctuated_word": "помогает.",
+                    "start": 5.0,
+                    "end": 5.26,
+                    "confidence": null
+                },
+                {
+                    "word": "От",
+                    "punctuated_word": "От",
+                    "start": 5.44,
+                    "end": 5.6,
+                    "confidence": null
+                },
+                {
+                    "word": "запора",
+                    "punctuated_word": "запора",
+                    "start": 5.6,
+                    "end": 5.83,
+                    "confidence": null
+                },
+                {
+                    "word": "–",
+                    "punctuated_word": "–",
+                    "start": 5.83,
+                    "end": 5.99,
+                    "confidence": null
+                },
+                {
+                    "word": "сенна",
+                    "punctuated_word": "сенна",
+                    "start": 5.99,
+                    "end": 6.2,
+                    "confidence": null
+                },
+                {
+                    "word": "в",
+                    "punctuated_word": "в",
+                    "start": 6.2,
+                    "end": 6.36,
+                    "confidence": null
+                },
+                {
+                    "word": "таблетках",
+                    "punctuated_word": "таблетках,",
+                    "start": 6.36,
+                    "end": 6.64,
+                    "confidence": null
+                },
+                {
+                    "word": "действует",
+                    "punctuated_word": "действует",
+                    "start": 6.72,
+                    "end": 7.0,
+                    "confidence": null
+                },
+                {
+                    "word": "уже",
+                    "punctuated_word": "уже",
+                    "start": 7.0,
+                    "end": 7.17,
+                    "confidence": null
+                },
+                {
+                    "word": "через",
+                    "punctuated_word": "через",
+                    "start": 7.17,
+                    "end": 7.38,
+                    "confidence": null
+                },
+                {
+                    "word": "шесть",
+                    "punctuated_word": "шесть",
+                    "start": 7.38,
+                    "end": 7.59,
+                    "confidence": null
+                },
+                {
+                    "word": "часов",
+                    "punctuated_word": "часов.",
+                    "start": 7.59,
+                    "end": 7.8,
+                    "confidence": null
+                },
+                {
+                    "word": "От",
+                    "punctuated_word": "От",
+                    "start": 7.98,
+                    "end": 8.14,
+                    "confidence": null
+                },
+                {
+                    "word": "похмелья",
+                    "punctuated_word": "похмелья",
+                    "start": 8.14,
+                    "end": 8.4,
+                    "confidence": null
+                },
+                {
+                    "word": "–",
+                    "punctuated_word": "–",
+                    "start": 8.4,
+                    "end": 8.56,
+                    "confidence": null
+                },
+                {
+                    "word": "витамин",
+                    "punctuated_word": "витамин",
+                    "start": 8.56,
+                    "end": 8.81,
+                    "confidence": null
+                },
+                {
+                    "word": "Б",
+                    "punctuated_word": "Б",
+                    "start": 8.81,
+                    "end": 8.97,
+                    "confidence": null
+                },
+                {
+                    "word": "и",
+                    "punctuated_word": "и",
+                    "start": 8.97,
+                    "end": 9.13,
+                    "confidence": null
+                },
+                {
+                    "word": "коэнзим",
+                    "punctuated_word": "коэнзим",
+                    "start": 9.13,
+                    "end": 9.38,
+                    "confidence": null
+                },
+                {
+                    "word": "Q",
+                    "punctuated_word": "Q",
+                    "start": 9.38,
+                    "end": 9.54,
+                    "confidence": null
+                },
+                {
+                    "word": "десять",
+                    "punctuated_word": "десять,",
+                    "start": 9.54,
+                    "end": 9.77,
+                    "confidence": null
+                },
+                {
+                    "word": "утром",
+                    "punctuated_word": "утром",
+                    "start": 9.85,
+                    "end": 10.06,
+                    "confidence": null
+                },
+                {
+                    "word": "как",
+                    "punctuated_word": "как",
+                    "start": 10.06,
+                    "end": 10.23,
+                    "confidence": null
+                },
+                {
+                    "word": "новенький",
+                    "punctuated_word": "новенький.",
+                    "start": 10.23,
+                    "end": 10.51,
+                    "confidence": null
+                },
+                {
+                    "word": "Для",
+                    "punctuated_word": "Для",
+                    "start": 10.69,
+                    "end": 10.86,
+                    "confidence": null
+                },
+                {
+                    "word": "пищеварения",
+                    "punctuated_word": "пищеварения",
+                    "start": 10.86,
+                    "end": 11.18,
+                    "confidence": null
+                },
+                {
+                    "word": "–",
+                    "punctuated_word": "–",
+                    "start": 11.18,
+                    "end": 11.34,
+                    "confidence": null
+                },
+                {
+                    "word": "пробиотики",
+                    "punctuated_word": "пробиотики,",
+                    "start": 11.34,
+                    "end": 11.64,
+                    "confidence": null
+                },
+                {
+                    "word": "особенно",
+                    "punctuated_word": "особенно",
+                    "start": 11.72,
+                    "end": 11.98,
+                    "confidence": null
+                },
+                {
+                    "word": "после",
+                    "punctuated_word": "после",
+                    "start": 11.98,
+                    "end": 12.19,
+                    "confidence": null
+                },
+                {
+                    "word": "тайской",
+                    "punctuated_word": "тайской",
+                    "start": 12.19,
+                    "end": 12.44,
+                    "confidence": null
+                },
+                {
+                    "word": "еды",
+                    "punctuated_word": "еды,",
+                    "start": 12.44,
+                    "end": 12.61,
+                    "confidence": null
+                },
+                {
+                    "word": "чтобы",
+                    "punctuated_word": "чтобы",
+                    "start": 12.69,
+                    "end": 12.9,
+                    "confidence": null
+                },
+                {
+                    "word": "без",
+                    "punctuated_word": "без",
+                    "start": 12.9,
+                    "end": 13.07,
+                    "confidence": null
+                },
+                {
+                    "word": "сюрпризов",
+                    "punctuated_word": "сюрпризов.",
+                    "start": 13.07,
+                    "end": 13.35,
+                    "confidence": null
+                },
+                {
+                    "word": "А",
+                    "punctuated_word": "А",
+                    "start": 13.53,
+                    "end": 13.69,
+                    "confidence": null
+                },
+                {
+                    "word": "если",
+                    "punctuated_word": "если",
+                    "start": 13.69,
+                    "end": 13.88,
+                    "confidence": null
+                },
+                {
+                    "word": "рана",
+                    "punctuated_word": "рана",
+                    "start": 13.88,
+                    "end": 14.07,
+                    "confidence": null
+                },
+                {
+                    "word": "–",
+                    "punctuated_word": "–",
+                    "start": 14.07,
+                    "end": 14.23,
+                    "confidence": null
+                },
+                {
+                    "word": "бетадин",
+                    "punctuated_word": "бетадин,",
+                    "start": 14.23,
+                    "end": 14.48,
+                    "confidence": null
+                },
+                {
+                    "word": "заживает",
+                    "punctuated_word": "заживает",
+                    "start": 14.56,
+                    "end": 14.82,
+                    "confidence": null
+                },
+                {
+                    "word": "в",
+                    "punctuated_word": "в",
+                    "start": 14.82,
+                    "end": 14.98,
+                    "confidence": null
+                },
+                {
+                    "word": "момент",
+                    "punctuated_word": "момент.",
+                    "start": 14.98,
+                    "end": 15.21,
+                    "confidence": null
+                },
+                {
+                    "word": "И",
+                    "punctuated_word": "И",
+                    "start": 15.39,
+                    "end": 15.55,
+                    "confidence": null
+                },
+                {
+                    "word": "для",
+                    "punctuated_word": "для",
+                    "start": 15.55,
+                    "end": 15.72,
+                    "confidence": null
+                },
+                {
+                    "word": "красоты",
+                    "punctuated_word": "красоты",
+                    "start": 15.72,
+                    "end": 15.97,
+                    "confidence": null
+                },
+                {
+                    "word": "–",
+                    "punctuated_word": "–",
+                    "start": 15.97,
+                    "end": 16.13,
+                    "confidence": null
+                },
+                {
+                    "word": "кокосовое",
+                    "punctuated_word": "кокосовое",
+                    "start": 16.13,
+                    "end": 16.41,
+                    "confidence": null
+                },
+                {
+                    "word": "масло",
+                    "punctuated_word": "масло,",
+                    "start": 16.41,
+                    "end": 16.62,
+                    "confidence": null
+                },
+                {
+                    "word": "кожа",
+                    "punctuated_word": "кожа",
+                    "start": 16.7,
+                    "end": 16.89,
+                    "confidence": null
+                },
+                {
+                    "word": "как",
+                    "punctuated_word": "как",
+                    "start": 16.89,
+                    "end": 17.06,
+                    "confidence": null
+                },
+                {
+                    "word": "у",
+                    "punctuated_word": "у",
+                    "start": 17.06,
+                    "end": 17.22,
+                    "confidence": null
+                },
+                {
+                    "word": "младенца",
+                    "punctuated_word": "младенца.",
+                    "start": 17.22,
+                    "end": 17.48,
+                    "confidence": null
+                },
+                {
+                    "word": "Кстати",
+                    "punctuated_word": "Кстати,",
+                    "start": 17.66,
+                    "end": 17.89,
+                    "confidence": null
+                },
+                {
+                    "word": "оплатить",
+                    "punctuated_word": "оплатить",
+                    "start": 17.97,
+                    "end": 18.23,
+                    "confidence": null
+                },
+                {
+                    "word": "всё",
+                    "punctuated_word": "всё",
+                    "start": 18.23,
+                    "end": 18.4,
+                    "confidence": null
+                },
+                {
+                    "word": "это",
+                    "punctuated_word": "это",
+                    "start": 18.4,
+                    "end": 18.57,
+                    "confidence": null
+                },
+                {
+                    "word": "удобно",
+                    "punctuated_word": "удобно",
+                    "start": 18.57,
+                    "end": 18.8,
+                    "confidence": null
+                },
+                {
+                    "word": "сервисом",
+                    "punctuated_word": "сервисом",
+                    "start": 18.8,
+                    "end": 19.06,
+                    "confidence": null
+                },
+                {
+                    "word": "Плати",
+                    "punctuated_word": "«Плати",
+                    "start": 19.06,
+                    "end": 19.27,
+                    "confidence": null
+                },
+                {
+                    "word": "по",
+                    "punctuated_word": "по",
+                    "start": 19.27,
+                    "end": 19.43,
+                    "confidence": null
+                },
+                {
+                    "word": "миру",
+                    "punctuated_word": "миру»,",
+                    "start": 19.43,
+                    "end": 19.62,
+                    "confidence": null
+                },
+                {
+                    "word": "если",
+                    "punctuated_word": "если",
+                    "start": 19.7,
+                    "end": 19.89,
+                    "confidence": null
+                },
+                {
+                    "word": "твоя",
+                    "punctuated_word": "твоя",
+                    "start": 19.89,
+                    "end": 20.08,
+                    "confidence": null
+                },
+                {
+                    "word": "карта",
+                    "punctuated_word": "карта",
+                    "start": 20.08,
+                    "end": 20.29,
+                    "confidence": null
+                },
+                {
+                    "word": "не",
+                    "punctuated_word": "не",
+                    "start": 20.29,
+                    "end": 20.45,
+                    "confidence": null
+                },
+                {
+                    "word": "работает",
+                    "punctuated_word": "работает",
+                    "start": 20.45,
+                    "end": 20.71,
+                    "confidence": null
+                },
+                {
+                    "word": "за",
+                    "punctuated_word": "за",
+                    "start": 20.71,
+                    "end": 20.87,
+                    "confidence": null
+                },
+                {
+                    "word": "границей",
+                    "punctuated_word": "границей.",
+                    "start": 20.87,
+                    "end": 21.13,
+                    "confidence": null
+                },
+                {
+                    "word": "Без",
+                    "punctuated_word": "Без",
+                    "start": 21.31,
+                    "end": 21.48,
+                    "confidence": null
+                },
+                {
+                    "word": "него",
+                    "punctuated_word": "него",
+                    "start": 21.48,
+                    "end": 21.67,
+                    "confidence": null
+                },
+                {
+                    "word": "тут",
+                    "punctuated_word": "тут",
+                    "start": 21.67,
+                    "end": 21.84,
+                    "confidence": null
+                },
+                {
+                    "word": "никак",
+                    "punctuated_word": "никак,",
+                    "start": 21.84,
+                    "end": 22.05,
+                    "confidence": null
+                },
+                {
+                    "word": "проверено",
+                    "punctuated_word": "проверено!",
+                    "start": 22.13,
+                    "end": 22.41,
+                    "confidence": null
+                }
+            ],
+            "updated_at": "2026-03-29T04:52:11.271621+00:00"
+        },
+        "video_keyword_segments": {
+            "segments": [
+                {
+                    "slot_start": 3.0,
+                    "slot_end": 6.0,
+                    "keyword": "местный",
+                    "phrase": "я тут как местный знаю",
+                    "word_start": 3.48,
+                    "word_end": 5.26,
+                    "visual_intent": "местный житель, рассказывает о местных обычаях, 7-Eleven",
+                    "reason": "фраза поясняет особенности покупки в данной локации",
+                    "asset_type": "generated_video",
+                    "asset_url": null,
+                    "generate_video": true
+                },
+                {
+                    "slot_start": 9.0,
+                    "slot_end": 12.0,
+                    "keyword": "капсулы для пищеварения",
+                    "phrase": "капсулы для пищеварения в дорожной аптечке",
+                    "word_start": 11.34,
+                    "word_end": 12.44,
+                    "visual_intent": "unbranded digestive support capsules in a travel medicine kit, no readable labels",
+                    "reason": "пробиотики и местная еда; generalized_consumer_good_without_ready_asset",
+                    "asset_type": "generated_video",
+                    "asset_url": null,
+                    "generate_video": true
+                },
+                {
+                    "slot_start": 15.0,
+                    "slot_end": 18.0,
+                    "keyword": "кокосовое масло",
+                    "phrase": "кокосовое масло для красоты",
+                    "word_start": 16.13,
+                    "word_end": 16.62,
+                    "visual_intent": "кокосовое масло, уход за кожей, спа-процедуры",
+                    "reason": "естественная польза кокосового масла",
+                    "asset_type": "generated_video",
+                    "asset_url": null,
+                    "generate_video": true
+                },
+                {
+                    "slot_start": 19.4,
+                    "slot_end": 22.4,
+                    "keyword": "Плати по миру",
+                    "phrase": "сервис Плати по миру",
+                    "word_start": 18.8,
+                    "word_end": 19.62,
+                    "visual_intent": "оплата картой за границей, иконка сервиса, работа карты за рубежом",
+                    "reason": "ключевое упоминание продукта в этом отрезке",
+                    "asset_type": "product_video",
+                    "asset_url": "/uploads/product-videos/client-1/1774627967731__.mp4",
+                    "generate_video": false
+                }
+            ],
+            "updated_at": "2026-03-29T04:52:15.643699+00:00"
+        },
+        "video_generation_prompts": {
+            "prompts": [
+                {
+                    "slot_start": 3.0,
+                    "slot_end": 6.0,
+                    "keyword": "местный",
+                    "phrase": "я тут как местный знаю",
+                    "asset_type": "generated_video",
+                    "asset_url": null,
+                    "use_ready_asset": false,
+                    "prompt_json": {
+                        "global_logic": "Authentic vertical iPhone travel footage, user-shot feel, portrait-safe framing, natural light, realistic handheld motion, full storyboard duration 5.0 seconds maximum.",
+                        "scene_sequencing": [
+                            {
+                                "shot_id": 1,
+                                "timing": "0.0s - 5.0s",
+                                "location": "Inside a busy 7-Eleven in Thailand",
+                                "action": "A local Thai person gestures towards a shelf stocked with various products, speaking directly to the camera as if sharing a travel tip.",
+                                "visual_anchor": "A friendly Thai person giving an inside tip in a Thai 7-Eleven"
+                            }
+                        ],
+                        "technical_directives": {
+                            "camera_movement": "Handheld smartphone movement, subtle natural micro-jitter, human reframing.",
+                            "style": "Authentic iPhone UGC, realistic travel footage.",
+                            "continuity": "Believable single-take or lightly cut smartphone capture.",
+                            "aspect_ratio": "9:16",
+                            "framing": "Portrait-safe vertical framing, central subject dominance, no sideways composition, no landscape-style staging inside the vertical canvas.",
+                            "shot_preference": "Prefer close-up, over-shoulder, POV, or medium vertical shots that feel personally filmed.",
+                            "capture_device": "Modern iPhone camera look"
+                        },
+                        "negative_prompt": "Stock footage, generic travel ad, polished commercial look, luxury hotel promo, cinematic drone shot, studio lighting, perfect gimbal smoothness, overly staged acting, glossy tourism commercial, text artifacts, low detail, heavy flicker, watermark, landscape composition, horizontal framing, sideways camera, rotated scene, ultrawide layout, panoramic staging, subject cropped like a horizontal shot inside a vertical frame"
+                    }
+                },
+                {
+                    "slot_start": 9.0,
+                    "slot_end": 12.0,
+                    "keyword": "капсулы для пищеварения",
+                    "phrase": "капсулы для пищеварения в дорожной аптечке",
+                    "asset_type": "generated_video",
+                    "asset_url": null,
+                    "use_ready_asset": false,
+                    "prompt_json": {
+                        "global_logic": "Authentic vertical iPhone travel footage, user-shot feel, portrait-safe framing, natural light, realistic handheld motion, full storyboard duration 5.0 seconds maximum.",
+                        "scene_sequencing": [
+                            {
+                                "shot_id": 1,
+                                "timing": "0.0s - 5.0s",
+                                "location": "Inside a brightly lit hotel room bathroom",
+                                "action": "A hand reaches into a small, transparent travel medicine bag and pulls out a blister pack of white capsules. The hand turns the pack to obscure any logos.",
+                                "visual_anchor": "Unbranded blister pack of digestive capsules from a travel kit"
+                            }
+                        ],
+                        "technical_directives": {
+                            "camera_movement": "Handheld smartphone movement, subtle natural micro-jitter, human reframing.",
+                            "style": "Authentic iPhone UGC, realistic travel footage.",
+                            "continuity": "Believable single-take or lightly cut smartphone capture.",
+                            "aspect_ratio": "9:16",
+                            "framing": "Portrait-safe vertical framing, central subject dominance, no sideways composition, no landscape-style staging inside the vertical canvas.",
+                            "shot_preference": "Prefer close-up, over-shoulder, POV, or medium vertical shots that feel personally filmed.",
+                            "capture_device": "Modern iPhone camera look"
+                        },
+                        "negative_prompt": "Stock footage, generic travel ad, polished commercial look, luxury hotel promo, cinematic drone shot, studio lighting, perfect gimbal smoothness, overly staged acting, glossy tourism commercial, text artifacts, low detail, heavy flicker, watermark, landscape composition, horizontal framing, sideways camera, rotated scene, ultrawide layout, panoramic staging, subject cropped like a horizontal shot inside a vertical frame"
+                    }
+                },
+                {
+                    "slot_start": 15.0,
+                    "slot_end": 18.0,
+                    "keyword": "кокосовое масло",
+                    "phrase": "кокосовое масло для красоты",
+                    "asset_type": "generated_video",
+                    "asset_url": null,
+                    "use_ready_asset": false,
+                    "prompt_json": {
+                        "global_logic": "Authentic vertical iPhone travel footage, user-shot feel, portrait-safe framing, natural light, realistic handheld motion, full storyboard duration 5.0 seconds maximum.",
+                        "scene_sequencing": [
+                            {
+                                "shot_id": 1,
+                                "timing": "0.0s - 5.0s",
+                                "location": "Simple bathroom counter in Thailand",
+                                "action": "A hand scoops a small amount of unbranded coconut oil from a jar and gently rubs it onto their forearm, showing a simple skincare routine.",
+                                "visual_anchor": "Applying generic coconut oil on skin, handheld look"
+                            }
+                        ],
+                        "technical_directives": {
+                            "camera_movement": "Handheld smartphone movement, subtle natural micro-jitter, human reframing.",
+                            "style": "Authentic iPhone UGC, realistic travel footage.",
+                            "continuity": "Believable single-take or lightly cut smartphone capture.",
+                            "aspect_ratio": "9:16",
+                            "framing": "Portrait-safe vertical framing, central subject dominance, no sideways composition, no landscape-style staging inside the vertical canvas.",
+                            "shot_preference": "Prefer close-up, over-shoulder, POV, or medium vertical shots that feel personally filmed.",
+                            "capture_device": "Modern iPhone camera look"
+                        },
+                        "negative_prompt": "Stock footage, generic travel ad, polished commercial look, luxury hotel promo, cinematic drone shot, studio lighting, perfect gimbal smoothness, overly staged acting, glossy tourism commercial, text artifacts, low detail, heavy flicker, watermark, landscape composition, horizontal framing, sideways camera, rotated scene, ultrawide layout, panoramic staging, subject cropped like a horizontal shot inside a vertical frame"
+                    }
+                },
+                {
+                    "slot_start": 19.4,
+                    "slot_end": 22.4,
+                    "keyword": "Плати по миру",
+                    "phrase": "сервис Плати по миру",
+                    "asset_type": "product_video",
+                    "asset_url": "/uploads/product-videos/client-1/1774627967731__.mp4",
+                    "use_ready_asset": true,
+                    "prompt_json": null
+                }
+            ],
+            "updated_at": "2026-03-29T04:52:24.987787+00:00"
+        }
+    }
+]
