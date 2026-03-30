@@ -1,5 +1,6 @@
 openai
 python-telegram-bot
+pyTelegramBotAPI
 deepgram-sdk
 requests
 python-dotenv
