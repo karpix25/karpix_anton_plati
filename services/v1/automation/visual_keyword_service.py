@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import random
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
@@ -13,6 +14,8 @@ STRONG_BOUNDARY_RE = re.compile(r"[.!?;:]$")
 SOFT_BOUNDARY_RE = re.compile(r"[,)]$")
 MIN_BROLL_SEGMENT_SECONDS = 2.0
 MIN_PRODUCT_SEGMENT_SECONDS = 3.0
+FIRST_ATTENTION_CUT_MIN_SECONDS = 2.5
+FIRST_ATTENTION_CUT_MAX_SECONDS = 3.0
 DEMONSTRATIVE_RE = re.compile(r"\b(этот|эта|это|эти|тот|та|то|те|same|this|that|these|those)\b", re.IGNORECASE)
 CONSUMER_GOOD_GENERALIZATION_RULES = [
     {
@@ -102,7 +105,7 @@ def _normalize_broll_interval_seconds(value: Any) -> float:
 
 def _normalize_broll_timing_mode(value: Any) -> str:
     normalized = str(value or "semantic_pause").strip().lower()
-    return normalized if normalized in {"fixed", "semantic_pause"} else "semantic_pause"
+    return normalized if normalized in {"fixed", "semantic_pause", "coverage_percent"} else "semantic_pause"
 
 
 def _normalize_broll_pacing_profile(value: Any) -> str:
@@ -116,6 +119,42 @@ def _normalize_pause_threshold_seconds(value: Any) -> float:
     except (TypeError, ValueError):
         normalized = 0.45
     return max(0.15, min(normalized, 1.2))
+
+
+def _normalize_broll_coverage_percent(value: Any) -> float:
+    try:
+        normalized = round(float(value or 35.0), 1)
+    except (TypeError, ValueError):
+        normalized = 35.0
+    return max(0.0, min(normalized, 100.0))
+
+
+def _normalize_semantic_relevance_priority(value: Any) -> str:
+    normalized = str(value or "balanced").strip().lower()
+    return normalized if normalized in {"precision", "balanced", "dynamic"} else "balanced"
+
+
+def _normalize_product_clip_policy(value: Any) -> str:
+    normalized = str(value or "contextual").strip().lower()
+    return normalized if normalized in {"contextual", "prefer", "required"} else "contextual"
+
+
+def _derive_automatic_pause_threshold_seconds(words: List[Dict[str, Any]]) -> float:
+    normalized_words = _normalize_words(words)
+    if len(normalized_words) < 2:
+        return 0.3
+
+    gaps = [
+        round(max(0.0, normalized_words[index]["start"] - normalized_words[index - 1]["end"]), 2)
+        for index in range(1, len(normalized_words))
+    ]
+    positive_gaps = sorted(gap for gap in gaps if gap > 0.0)
+    if not positive_gaps:
+        return 0.3
+
+    percentile_index = min(len(positive_gaps) - 1, max(0, int(len(positive_gaps) * 0.7)))
+    derived = positive_gaps[percentile_index]
+    return max(0.18, min(round(derived, 2), 0.65))
 
 
 def _normalize_words(words: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -284,8 +323,8 @@ def _build_semantic_keyword_slots(
             break
 
         slot_start = round(start_boundary["time"], 2)
-        if slot_start <= timeline_cursor + 0.25:
-            timeline_cursor = round(slot_start + 0.25, 2)
+        if slot_start < timeline_cursor:
+            timeline_cursor = round(slot_start + 0.05, 2)
             continue
 
         remaining = max_end - slot_start
@@ -318,35 +357,164 @@ def _build_semantic_keyword_slots(
     return _build_fixed_keyword_slots(normalized_words, broll_interval_seconds)
 
 
+def _build_coverage_keyword_slots(
+    words: List[Dict[str, Any]],
+    broll_pacing_profile: str,
+    broll_coverage_percent: float,
+) -> List[Dict[str, float]]:
+    normalized_words = _normalize_words(words)
+    if not normalized_words:
+        return []
+
+    pause_threshold_seconds = _derive_automatic_pause_threshold_seconds(normalized_words)
+    boundaries = _build_phrase_boundaries(normalized_words, pause_threshold_seconds)
+    if len(boundaries) < 2:
+        return []
+
+    profile = PACING_PRESETS[_normalize_broll_pacing_profile(broll_pacing_profile)]
+    coverage_percent = _normalize_broll_coverage_percent(broll_coverage_percent)
+    max_end = normalized_words[-1]["end"]
+    if max_end <= MIN_BROLL_SEGMENT_SECONDS + 0.2:
+        return []
+
+    min_avatar_gap = 0.0
+    target_avatar_gap = 0.0
+    max_avatar_gap = max(0.0, round(profile["target_avatar_gap_floor"] * 0.65, 2))
+    slot_min = profile["slot_min"]
+    slot_target = profile["slot_target"]
+    slot_max = min(6.0, max(profile["slot_max"], slot_target + 1.0))
+
+    if coverage_percent >= 95.0:
+        return [{"slot_start": 0.0, "slot_end": round(max_end, 1)}]
+
+    target_total_broll = round(max_end * (coverage_percent / 100.0), 2)
+    target_total_broll = max(0.0, min(target_total_broll, max_end))
+    if target_total_broll < slot_min * 0.5:
+        return []
+    estimated_slot_count = max(1, round(target_total_broll / max(slot_target, 0.1)))
+
+    slots: List[Dict[str, float]] = []
+    timeline_cursor = 0.0
+    accumulated_broll = 0.0
+
+    while len(slots) < estimated_slot_count and timeline_cursor + slot_min <= max_end:
+        remaining_slots = estimated_slot_count - len(slots)
+        remaining_broll = max(target_total_broll - accumulated_broll, 0.0)
+        if remaining_broll <= 0.05:
+            break
+        remaining_time = max_end - timeline_cursor
+
+        desired_gap = (remaining_time - remaining_broll) / max(remaining_slots, 1)
+        desired_gap = max(min_avatar_gap, min(desired_gap, max_avatar_gap))
+
+        start_boundary = _select_boundary(
+            boundaries=boundaries,
+            min_time=timeline_cursor + min_avatar_gap,
+            target_time=timeline_cursor + desired_gap,
+            max_time=min(timeline_cursor + max_avatar_gap, max_end - slot_min),
+            fallback_extension=0.9,
+        )
+        if not start_boundary:
+            slot_start = round(timeline_cursor, 2)
+        else:
+            slot_start = round(start_boundary["time"], 2)
+
+        if slot_start <= timeline_cursor + 0.25:
+            timeline_cursor = round(slot_start + 0.25, 2)
+            continue
+
+        remaining_after_start = max_end - slot_start
+        if remaining_after_start < slot_min:
+            break
+
+        dynamic_slot_target = remaining_broll / max(remaining_slots, 1)
+        dynamic_slot_target = max(slot_min, min(dynamic_slot_target, slot_max))
+        dynamic_slot_max = min(5.0, max(dynamic_slot_target + 0.6, slot_max))
+
+        end_boundary = _select_boundary(
+            boundaries=boundaries,
+            min_time=slot_start + slot_min,
+            target_time=slot_start + dynamic_slot_target,
+            max_time=min(slot_start + dynamic_slot_max, max_end),
+            fallback_extension=0.5,
+        )
+        slot_end = round(end_boundary["time"], 2) if end_boundary else round(min(slot_start + dynamic_slot_target, max_end), 2)
+
+        if slot_end - slot_start < slot_min:
+            slot_end = round(min(max_end, slot_start + slot_min), 2)
+        if slot_end - slot_start < 0.8:
+            break
+
+        slots.append({
+            "slot_start": round(slot_start, 1),
+            "slot_end": round(slot_end, 1),
+        })
+        accumulated_broll += slot_end - slot_start
+        timeline_cursor = slot_end
+
+        if accumulated_broll >= target_total_broll - 0.15:
+            break
+
+    if slots:
+        return slots
+
+    return _build_semantic_keyword_slots(
+        normalized_words,
+        broll_interval_seconds=3.0,
+        broll_pacing_profile=broll_pacing_profile,
+        pause_threshold_seconds=pause_threshold_seconds,
+    )
+
+
 def build_keyword_slots(
     words: List[Dict[str, Any]],
     broll_interval_seconds: float = 3.0,
     broll_timing_mode: str = "semantic_pause",
     broll_pacing_profile: str = "balanced",
     broll_pause_threshold_seconds: float = 0.45,
+    broll_coverage_percent: float = 35.0,
 ) -> List[Dict[str, float]]:
     timing_mode = _normalize_broll_timing_mode(broll_timing_mode)
     interval = _normalize_broll_interval_seconds(broll_interval_seconds)
     pause_threshold = _normalize_pause_threshold_seconds(broll_pause_threshold_seconds)
     profile = _normalize_broll_pacing_profile(broll_pacing_profile)
+    coverage_percent = _normalize_broll_coverage_percent(broll_coverage_percent)
 
     if timing_mode == "fixed":
         return _build_fixed_keyword_slots(words, interval)
+    if timing_mode == "coverage_percent":
+        return _build_coverage_keyword_slots(words, profile, coverage_percent)
 
     return _build_semantic_keyword_slots(words, interval, profile, pause_threshold)
 
 
-def _fallback_segments(words: List[Dict[str, Any]], slots: List[Dict[str, float]]) -> List[Dict[str, Any]]:
+def _fallback_segments(
+    words: List[Dict[str, Any]],
+    slots: List[Dict[str, float]],
+    meaning_windows: List[Dict[str, float]] | None = None,
+) -> List[Dict[str, Any]]:
     segments: List[Dict[str, Any]] = []
+    window_by_slot = {
+        (round(_safe_float(window.get("slot_start")), 1), round(_safe_float(window.get("slot_end")), 1)): window
+        for window in (meaning_windows or [])
+        if isinstance(window, dict)
+    }
+
     for slot in slots:
+        lookup_key = (round(_safe_float(slot.get("slot_start")), 1), round(_safe_float(slot.get("slot_end")), 1))
+        meaning_window = window_by_slot.get(lookup_key)
+        extraction_start = _safe_float(meaning_window.get("meaning_start")) if meaning_window else slot["slot_start"]
+        extraction_end = _safe_float(meaning_window.get("meaning_end")) if meaning_window else slot["slot_end"]
+
         slot_words = [
             word for word in (words or [])
-            if isinstance(word, dict) and _safe_float(word.get("start")) >= slot["slot_start"] and _safe_float(word.get("start")) < slot["slot_end"]
+            if isinstance(word, dict) and _safe_float(word.get("start")) >= extraction_start and _safe_float(word.get("start")) < extraction_end
         ]
         if not slot_words:
             continue
 
-        chosen = next((word for word in slot_words if len((word.get("word") or "").strip()) > 3), slot_words[0])
+        content_words = [word for word in slot_words if len((word.get("word") or "").strip()) > 3]
+        chosen = max(content_words, key=lambda word: len((word.get("word") or "").strip()), default=slot_words[0])
         keyword = (chosen.get("word") or "").strip()
         if not keyword:
             continue
@@ -355,7 +523,7 @@ def _fallback_segments(words: List[Dict[str, Any]], slots: List[Dict[str, float]
             "slot_start": slot["slot_start"],
             "slot_end": slot["slot_end"],
             "keyword": keyword,
-            "phrase": chosen.get("punctuated_word") or keyword,
+            "phrase": _build_phrase_from_slot(slot_words, max_words=6) or chosen.get("punctuated_word") or keyword,
             "word_start": round(_safe_float(chosen.get("start")), 2),
             "word_end": round(_safe_float(chosen.get("end")), 2),
             "visual_intent": "",
@@ -429,6 +597,72 @@ def _extract_slot_words(words: List[Dict[str, Any]], slot_start: float, slot_end
     return slot_words
 
 
+def _build_fixed_meaning_windows(
+    words: List[Dict[str, Any]],
+    slots: List[Dict[str, float]],
+    pause_threshold_seconds: float,
+) -> List[Dict[str, float]]:
+    normalized_words = _normalize_words(words)
+    if not normalized_words or not slots:
+        return []
+
+    boundaries = _build_phrase_boundaries(normalized_words, pause_threshold_seconds)
+    if len(boundaries) < 2:
+        return [
+            {
+                "slot_start": round(_safe_float(slot.get("slot_start")), 1),
+                "slot_end": round(_safe_float(slot.get("slot_end")), 1),
+                "meaning_start": round(_safe_float(slot.get("slot_start")), 1),
+                "meaning_end": round(_safe_float(slot.get("slot_end")), 1),
+            }
+            for slot in slots
+        ]
+
+    total_duration = normalized_words[-1]["end"]
+    windows: List[Dict[str, float]] = []
+
+    for slot in slots:
+        slot_start = round(_safe_float(slot.get("slot_start")), 1)
+        slot_end = round(_safe_float(slot.get("slot_end")), 1)
+        slot_length = max(0.1, slot_end - slot_start)
+        slot_center = round(slot_start + slot_length / 2.0, 2)
+
+        search_start = max(0.0, round(slot_start - slot_length * 1.4, 2))
+        search_end = min(total_duration, round(slot_end + slot_length * 1.0, 2))
+
+        left_candidates = [boundary for boundary in boundaries if search_start <= boundary["time"] <= slot_center]
+        right_candidates = [boundary for boundary in boundaries if slot_center <= boundary["time"] <= search_end]
+
+        left_boundary = max(
+            left_candidates,
+            key=lambda boundary: (boundary.get("strength", 0.0), boundary["time"]),
+            default=None,
+        )
+        right_boundary = min(
+            right_candidates,
+            key=lambda boundary: abs(boundary["time"] - slot_center) - boundary.get("strength", 0.0) * 0.2,
+            default=None,
+        )
+
+        meaning_start = round(left_boundary["time"], 1) if left_boundary else round(search_start, 1)
+        meaning_end = round(right_boundary["time"], 1) if right_boundary else round(search_end, 1)
+
+        if meaning_end - meaning_start < 1.0:
+            meaning_start = round(max(0.0, slot_center - slot_length * 0.7), 1)
+            meaning_end = round(min(total_duration, slot_center + slot_length * 0.7), 1)
+
+        windows.append(
+            {
+                "slot_start": slot_start,
+                "slot_end": slot_end,
+                "meaning_start": round(max(0.0, meaning_start), 1),
+                "meaning_end": round(min(total_duration, meaning_end), 1),
+            }
+        )
+
+    return windows
+
+
 def _build_phrase_from_slot(slot_words: List[Dict[str, Any]], max_words: int = 8) -> str:
     parts: List[str] = []
     for word in slot_words[:max_words]:
@@ -436,6 +670,99 @@ def _build_phrase_from_slot(slot_words: List[Dict[str, Any]], max_words: int = 8
         if token:
             parts.append(token)
     return _compact_spaces(" ".join(parts))
+
+
+def _extract_enumerated_anchor_segments(words: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    normalized_words = _normalize_words(words)
+    anchors: List[Dict[str, Any]] = []
+
+    for index, word in enumerate(normalized_words):
+        punctuated = (word.get("punctuated_word") or word.get("word") or "").strip()
+        keyword = punctuated.rstrip(":").strip()
+        if not punctuated.endswith(":") or len(keyword) < 3:
+            continue
+
+        phrase_words = [word]
+        for next_word in normalized_words[index + 1 : index + 7]:
+            phrase_words.append(next_word)
+            next_token = (next_word.get("punctuated_word") or next_word.get("word") or "").strip()
+            if STRONG_BOUNDARY_RE.search(next_token):
+                break
+
+        phrase = _build_phrase_from_slot(phrase_words, max_words=6) or keyword
+        anchors.append(
+            {
+                "keyword": keyword,
+                "phrase": phrase,
+                "word_start": round(_safe_float(word.get("start")), 2),
+                "word_end": round(max((_safe_float(item.get("end")) for item in phrase_words), default=_safe_float(word.get("end"))), 2),
+            }
+        )
+
+    unique_anchors: List[Dict[str, Any]] = []
+    seen_keywords = set()
+    for anchor in anchors:
+        normalized_keyword = _normalize_match_text(anchor["keyword"])
+        if normalized_keyword in seen_keywords:
+            continue
+        seen_keywords.add(normalized_keyword)
+        unique_anchors.append(anchor)
+
+    return unique_anchors
+
+
+def _apply_fixed_enumeration_priority(
+    segments: List[Dict[str, Any]],
+    words: List[Dict[str, Any]],
+    slots: List[Dict[str, float]],
+    product_keyword: str | None = None,
+) -> List[Dict[str, Any]]:
+    anchors = _extract_enumerated_anchor_segments(words)
+    if len(anchors) < 2 or not slots:
+        return segments
+
+    normalized_product_keyword = _normalize_match_text(product_keyword or "").strip()
+    filtered_anchors = [
+        anchor
+        for anchor in anchors
+        if not normalized_product_keyword or normalized_product_keyword not in _normalize_match_text(f"{anchor['keyword']} {anchor['phrase']}")
+    ]
+    if len(filtered_anchors) < 2:
+        return segments
+
+    ordered_slots = sorted((dict(slot) for slot in slots), key=lambda item: _safe_float(item.get("slot_start")))
+    ordered_segments = sorted((dict(segment) for segment in segments), key=lambda item: _safe_float(item.get("slot_start")))
+    segment_by_slot = {
+        (round(_safe_float(segment.get("slot_start")), 1), round(_safe_float(segment.get("slot_end")), 1)): segment
+        for segment in ordered_segments
+    }
+
+    result: List[Dict[str, Any]] = []
+    target_count = min(len(ordered_slots), len(filtered_anchors))
+    for index in range(target_count):
+        slot = ordered_slots[index]
+        anchor = filtered_anchors[index]
+        existing = segment_by_slot.get((round(_safe_float(slot.get("slot_start")), 1), round(_safe_float(slot.get("slot_end")), 1)), {})
+        result.append(
+            {
+                **existing,
+                "slot_start": round(_safe_float(slot.get("slot_start")), 1),
+                "slot_end": round(_safe_float(slot.get("slot_end")), 1),
+                "keyword": anchor["keyword"],
+                "phrase": anchor["phrase"],
+                "word_start": anchor["word_start"],
+                "word_end": anchor["word_end"],
+                "visual_intent": existing.get("visual_intent") or anchor["phrase"],
+                "reason": f"{existing.get('reason') or 'segment'}; fixed_enumeration_priority",
+            }
+        )
+
+    for slot in ordered_slots[target_count:]:
+        existing = segment_by_slot.get((round(_safe_float(slot.get("slot_start")), 1), round(_safe_float(slot.get("slot_end")), 1)))
+        if existing:
+            result.append(existing)
+
+    return result or segments
 
 
 def _get_total_duration(words: List[Dict[str, Any]] | None, slots: List[Dict[str, float]] | None = None) -> float:
@@ -515,12 +842,48 @@ def _find_product_segment(
     return None
 
 
+def _normalize_product_media_assets(product_media_assets: List[Dict[str, Any]] | None) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for asset in product_media_assets or []:
+        if not isinstance(asset, dict):
+            continue
+        url = str(asset.get("url") or "").strip()
+        if not url:
+            continue
+        normalized.append({
+            "id": str(asset.get("id") or url).strip(),
+            "url": url,
+            "name": str(asset.get("name") or asset.get("id") or "Product Asset").strip(),
+            "source_type": str(asset.get("source_type") or "video").strip(),
+        })
+    return normalized
+
+
+def _pick_product_asset(product_media_assets: List[Dict[str, Any]] | None, product_video_url: str | None) -> Dict[str, Any] | None:
+    normalized_assets = _normalize_product_media_assets(product_media_assets)
+    if normalized_assets:
+        return random.choice(normalized_assets)
+
+    fallback_url = str(product_video_url or "").strip()
+    if not fallback_url:
+        return None
+
+    return {
+        "id": fallback_url,
+        "url": fallback_url,
+        "name": "Product Video",
+        "source_type": "video",
+    }
+
+
 def _apply_product_asset(
     segments: List[Dict[str, Any]],
     product_keyword: str | None,
     product_video_url: str | None,
+    product_media_assets: List[Dict[str, Any]] | None = None,
     words: List[Dict[str, Any]] | None = None,
     slots: List[Dict[str, float]] | None = None,
+    force_product_segment: bool = True,
 ) -> List[Dict[str, Any]]:
     normalized_keyword = _normalize_match_text(product_keyword or "").strip()
     if not normalized_keyword:
@@ -532,10 +895,13 @@ def _apply_product_asset(
         phrase_text = _normalize_match_text(segment.get("phrase", ""))
         combined = f"{keyword_text} {phrase_text}"
         if normalized_keyword in combined:
+            selected_asset = _pick_product_asset(product_media_assets, product_video_url)
             result.append({
                 **segment,
                 "asset_type": "product_video",
-                "asset_url": product_video_url,
+                "asset_url": selected_asset["url"] if selected_asset else product_video_url,
+                "asset_id": selected_asset["id"] if selected_asset else None,
+                "asset_name": selected_asset["name"] if selected_asset else None,
                 "generate_video": False,
                 "keyword": product_keyword,
                 "phrase": segment.get("phrase") or product_keyword,
@@ -549,15 +915,318 @@ def _apply_product_asset(
             })
 
     has_product_segment = any(item.get("asset_type") == "product_video" for item in result)
-    if not has_product_segment and words and slots:
+    if force_product_segment and not has_product_segment and words and slots:
         forced_segment = _find_product_segment(words, slots, product_keyword or "")
         if forced_segment:
-            forced_segment["asset_url"] = product_video_url
+            selected_asset = _pick_product_asset(product_media_assets, product_video_url)
+            forced_segment["asset_url"] = selected_asset["url"] if selected_asset else product_video_url
+            forced_segment["asset_id"] = selected_asset["id"] if selected_asset else None
+            forced_segment["asset_name"] = selected_asset["name"] if selected_asset else None
             result.append(forced_segment)
 
     total_duration = _get_total_duration(words, slots) or max((_safe_float(item.get("slot_end")) for item in result), default=0.0)
     generalized = [_generalize_consumer_good_segment(item) for item in result]
     return _enforce_minimum_segment_durations(generalized, total_duration)
+
+
+def _semantic_duration_bounds(pacing_profile: str) -> Dict[str, float]:
+    profile = PACING_PRESETS[_normalize_broll_pacing_profile(pacing_profile)]
+    return {
+        "min": round(profile["slot_min"], 1),
+        "target": round(profile["slot_target"], 1),
+        "max": round(max(profile["slot_max"], profile["slot_target"] + 0.6), 1),
+    }
+
+
+def _normalize_segment_candidate(segment: Dict[str, Any], total_duration: float, pacing_profile: str) -> Dict[str, Any] | None:
+    bounds = _semantic_duration_bounds(pacing_profile)
+    start = round(max(0.0, _safe_float(segment.get("slot_start"))), 2)
+    end = round(min(total_duration, _safe_float(segment.get("slot_end"), start)), 2)
+
+    if end <= start:
+        return None
+
+    duration = end - start
+    if duration < bounds["min"]:
+        end = round(min(total_duration, start + bounds["min"]), 2)
+    if end - start > bounds["max"]:
+        end = round(min(total_duration, start + bounds["max"]), 2)
+    if end <= start:
+        return None
+
+    keyword = _compact_spaces(str(segment.get("keyword") or ""))
+    phrase = _compact_spaces(str(segment.get("phrase") or ""))
+    if not keyword and not phrase:
+        return None
+
+    return {
+        "slot_start": round(start, 1),
+        "slot_end": round(end, 1),
+        "keyword": keyword or phrase,
+        "phrase": phrase or keyword,
+        "word_start": round(_safe_float(segment.get("word_start"), start), 2),
+        "word_end": round(_safe_float(segment.get("word_end"), min(end, total_duration)), 2),
+        "visual_intent": _compact_spaces(str(segment.get("visual_intent") or "")),
+        "reason": _compact_spaces(str(segment.get("reason") or "semantic_llm_selection")),
+    }
+
+
+def _resolve_segment_overlaps(
+    segments: List[Dict[str, Any]],
+    total_duration: float,
+    pacing_profile: str,
+) -> List[Dict[str, Any]]:
+    if not segments:
+        return []
+
+    bounds = _semantic_duration_bounds(pacing_profile)
+    ordered = sorted((dict(segment) for segment in segments), key=lambda item: (_safe_float(item.get("slot_start")), _safe_float(item.get("slot_end"))))
+    resolved: List[Dict[str, Any]] = []
+
+    for segment in ordered:
+        start = _safe_float(segment.get("slot_start"))
+        end = _safe_float(segment.get("slot_end"))
+        if resolved:
+            previous_end = _safe_float(resolved[-1].get("slot_end"))
+            if start < previous_end:
+                start = previous_end
+                if end - start < bounds["min"]:
+                    end = min(total_duration, start + bounds["min"])
+        if end - start < bounds["min"] or start >= total_duration:
+            continue
+        if end > total_duration:
+            end = total_duration
+        segment["slot_start"] = round(start, 1)
+        segment["slot_end"] = round(end, 1)
+        resolved.append(segment)
+
+    return resolved
+
+
+def _enforce_first_attention_cut(
+    segments: List[Dict[str, Any]],
+    total_duration: float,
+    pacing_profile: str,
+) -> List[Dict[str, Any]]:
+    if not segments or total_duration <= FIRST_ATTENTION_CUT_MAX_SECONDS + 1.0:
+        return segments
+
+    ordered = sorted((dict(segment) for segment in segments), key=lambda item: (_safe_float(item.get("slot_start")), _safe_float(item.get("slot_end"))))
+    first = ordered[0]
+    original_start = _safe_float(first.get("slot_start"))
+    original_end = _safe_float(first.get("slot_end"), original_start)
+    duration = max(0.0, original_end - original_start)
+    bounds = _semantic_duration_bounds(pacing_profile)
+
+    target_start = min(FIRST_ATTENTION_CUT_MAX_SECONDS, max(FIRST_ATTENTION_CUT_MIN_SECONDS, original_start))
+    if FIRST_ATTENTION_CUT_MIN_SECONDS <= original_start <= FIRST_ATTENTION_CUT_MAX_SECONDS:
+        return ordered
+
+    if duration < bounds["min"]:
+        duration = bounds["min"]
+    if duration > bounds["max"]:
+        duration = bounds["max"]
+
+    next_start = _safe_float(ordered[1].get("slot_start"), total_duration) if len(ordered) > 1 else total_duration
+    max_allowed_end = min(total_duration, next_start)
+    adjusted_end = min(max_allowed_end, target_start + duration)
+    if adjusted_end - target_start < bounds["min"]:
+        adjusted_end = min(total_duration, target_start + bounds["min"])
+        if adjusted_end > next_start and len(ordered) > 1:
+            adjusted_end = next_start
+
+    if adjusted_end - target_start >= bounds["min"]:
+        first["slot_start"] = round(target_start, 1)
+        first["slot_end"] = round(adjusted_end, 1)
+        first["reason"] = f"{first.get('reason') or 'semantic_llm_selection'}; first_attention_cut_guardrail"
+        ordered[0] = first
+
+    return _resolve_segment_overlaps(ordered, total_duration, pacing_profile)
+
+
+def _semantic_target_segment_count(total_duration: float, pacing_profile: str, coverage_percent: float) -> int:
+    target_total = total_duration * (_normalize_broll_coverage_percent(coverage_percent) / 100.0)
+    target_seconds = _semantic_duration_bounds(pacing_profile)["target"]
+    return max(1, round(target_total / max(target_seconds, 0.1)))
+
+
+def _build_semantic_llm_segments(
+    scenario_text: str,
+    tts_text: str,
+    transcript: str,
+    words: List[Dict[str, Any]],
+    pacing_profile: str,
+    coverage_percent: float,
+    relevance_priority: str,
+    product_clip_policy: str,
+    product_keyword: str | None,
+) -> List[Dict[str, Any]]:
+    normalized_words = _normalize_words(words)
+    total_duration = _get_total_duration(normalized_words)
+    if not normalized_words or total_duration <= 0:
+        return []
+
+    bounds = _semantic_duration_bounds(pacing_profile)
+    target_segment_count = _semantic_target_segment_count(total_duration, pacing_profile, coverage_percent)
+    product_keyword_value = _compact_spaces(product_keyword or "")
+
+    prompt = f"""
+SYSTEM:
+Ты старший монтажный редактор short-form видео.
+Нужно разметить смысловые перебивки для talking-head ролика.
+
+ВАЖНО:
+- Ты получаешь ВЕСЬ transcript и word timestamps целиком.
+- Выбирай тайминги по смысловым блокам речи, а не по механическим паузам.
+- Главная цель: иллюстрировать сценарий максимально в тему.
+- Если рядом идут несколько перебивок подряд и это лучше раскрывает сценарий, это допустимо.
+
+НАСТРОЙКИ:
+- Ритм монтажа: {pacing_profile}
+- Целевое покрытие перебивками: {coverage_percent:.1f}%
+- Приоритет точности смысла: {relevance_priority}
+- Product clip policy: {product_clip_policy}
+- Продуктовый keyword: {product_keyword_value or "не задан"}
+
+TARGETING:
+- Длительность ролика: {total_duration:.2f} секунды
+- Желательное число перебивок: около {target_segment_count}
+- Минимальная длина перебивки: {bounds["min"]:.1f} сек
+- Желательная длина перебивки: около {bounds["target"]:.1f} сек
+- Максимальная длина перебивки: {bounds["max"]:.1f} сек
+- Первая смена кадра должна произойти примерно в окне {FIRST_ATTENTION_CUT_MIN_SECONDS:.1f}–{FIRST_ATTENTION_CUT_MAX_SECONDS:.1f} секунды, если ролик длиннее 6 секунд
+
+ПРАВИЛА ОТБОРА:
+- Выбирай только сильные смысловые блоки: пункты списка, страны, тезисы, ошибки, шаги, proof points, contrast, важные факты.
+- Если сценарий list-like, стремись покрыть разные пункты списка, а не повторять один и тот же тезис.
+- Keyword и phrase должны быть конкретными и визуальными.
+- Не возвращай общие слова без контекста.
+- Не заваливай разметку product clip-ом, если он вытесняет главные смысловые блоки.
+- Если policy = contextual: product clip только если он действительно органичен.
+- Если policy = prefer: постарайся включить product block, но не ценой потери главных тезисов.
+- Если policy = required: обязательно включи product block хотя бы один раз.
+- Если priority = precision: лучше меньше перебивок, но максимально в тему.
+- Если priority = balanced: держи баланс между темой и плотностью.
+- Если priority = dynamic: допускай более плотную нарезку, но всё равно оставайся в теме сценария.
+- Первый b-roll должен появиться рано, чтобы зацепить внимание зрителя: не откладывай первую смену кадра сильно позже 3 секунды без очень веской причины.
+
+RETURN:
+Только JSON:
+{{
+  "segments": [
+    {{
+      "slot_start": 1.2,
+      "slot_end": 3.6,
+      "keyword": "Португалия",
+      "phrase": "Португалия с высоким уровнем безопасности",
+      "word_start": 1.45,
+      "word_end": 3.2,
+      "visual_intent": "улицы Лиссабона, спокойная городская среда, безопасная повседневная жизнь",
+      "reason": "первый сильный пункт списка"
+    }}
+  ]
+}}
+
+СЦЕНАРИЙ:
+{scenario_text}
+
+TTS ТЕКСТ:
+{tts_text}
+
+TRANSCRIPT:
+{transcript}
+
+WORD TIMESTAMPS:
+{json.dumps(normalized_words, ensure_ascii=False)}
+"""
+
+    client = _openrouter_client()
+    response = client.chat.completions.create(
+        model="google/gemini-2.0-flash-001",
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+    )
+    content = response.choices[0].message.content.strip()
+    if "```json" in content:
+        content = content.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in content:
+        content = content.split("```", 1)[1].split("```", 1)[0].strip()
+
+    payload = json.loads(content)
+    raw_segments = payload.get("segments") if isinstance(payload, dict) else []
+    if not isinstance(raw_segments, list):
+        return []
+
+    normalized_segments = []
+    for raw_segment in raw_segments:
+        if not isinstance(raw_segment, dict):
+            continue
+        normalized = _normalize_segment_candidate(raw_segment, total_duration, pacing_profile)
+        if normalized:
+            normalized_segments.append(normalized)
+
+    resolved_segments = _resolve_segment_overlaps(normalized_segments, total_duration, pacing_profile)
+    return _enforce_first_attention_cut(resolved_segments, total_duration, pacing_profile)
+
+
+def _align_segments_to_slot_grid(
+    segments: List[Dict[str, Any]],
+    slots: List[Dict[str, float]],
+    total_duration: float,
+) -> List[Dict[str, Any]]:
+    if not segments or not slots:
+        return segments
+
+    available_slots = sorted(
+        (
+            {
+                "slot_start": round(_safe_float(slot.get("slot_start")), 1),
+                "slot_end": round(_safe_float(slot.get("slot_end")), 1),
+            }
+            for slot in slots
+            if isinstance(slot, dict)
+        ),
+        key=lambda item: (item["slot_start"], item["slot_end"]),
+    )
+    if not available_slots:
+        return segments
+
+    aligned: List[Dict[str, Any]] = []
+    used_indices: set[int] = set()
+
+    for segment in sorted((dict(segment) for segment in segments), key=lambda item: (_safe_float(item.get("slot_start")), _safe_float(item.get("slot_end")))):
+        start = _safe_float(segment.get("slot_start"))
+        end = _safe_float(segment.get("slot_end"), start)
+
+        best_index = None
+        best_score = None
+        for index, slot in enumerate(available_slots):
+            if index in used_indices:
+                continue
+            slot_start = slot["slot_start"]
+            slot_end = slot["slot_end"]
+            overlap = max(0.0, min(end, slot_end) - max(start, slot_start))
+            distance = abs(start - slot_start) + abs(end - slot_end)
+            score = (overlap, -distance)
+            if best_score is None or score > best_score:
+                best_score = score
+                best_index = index
+
+        if best_index is None:
+            continue
+
+        matched_slot = available_slots[best_index]
+        used_indices.add(best_index)
+        aligned.append(
+            {
+                **segment,
+                "slot_start": matched_slot["slot_start"],
+                "slot_end": min(matched_slot["slot_end"], round(total_duration, 1)),
+                "reason": f"{segment.get('reason') or 'semantic_llm_selection'}; aligned_to_slot_grid",
+            }
+        )
+
+    return aligned
 
 
 def _build_timing_logic_text(
@@ -566,21 +1235,44 @@ def _build_timing_logic_text(
     interval: float,
     pacing_profile: str,
     pause_threshold_seconds: float,
+    coverage_percent: float,
+    meaning_windows: List[Dict[str, float]] | None = None,
 ) -> str:
     if timing_mode == "fixed":
+        meaning_window_text = ""
+        if meaning_windows:
+            meaning_window_text = f"""
+- тайминг остаётся фиксированным, но keyword и phrase нужно искать по ближайшему смысловому окну, а не механически внутри fixed-границ
+- используй эти смысловые окна как источник темы для fixed-слотов, но в ответе всегда сохраняй slot_start/slot_end из fixed-слотов:
+  {json.dumps(meaning_windows, ensure_ascii=False)}
+"""
         return f"""
 - монтажный режим legacy: жёсткий интервал {interval:.1f} секунды
 - слоты ниже уже рассчитаны по фиксированному шагу
+- итоговое видео будет вставлено ровно в эти fixed-тайминги
+{meaning_window_text}
 - работай только внутри этих окон:
+  {json.dumps(slots, ensure_ascii=False)}
+"""
+
+    if timing_mode == "coverage_percent":
+        return f"""
+- монтажный режим: целевое процентное покрытие перебивками
+- профиль темпа: {pacing_profile}
+- целевая доля ролика под перебивки: {coverage_percent:.1f}%
+- алгоритм сам определяет, где лучше ставить окна по смыслу, фразам и естественному ритму речи
+- перебивки могут идти подряд, если это лучше иллюстрирует сценарий и помогает набрать целевое покрытие
+- слоты ниже уже подобраны алгоритмом так, чтобы b-roll занимал примерно нужную долю ролика без жёсткой сетки
+- не придумывай новые окна и не сдвигай границы, работай только внутри этих окон:
   {json.dumps(slots, ensure_ascii=False)}
 """
 
     return f"""
 - монтажный режим: смысловые окна по паузам и концам фраз
 - профиль темпа: {pacing_profile}
-- целевой средний интервал до следующей перебивки: {interval:.1f} секунды
-- минимальная пауза для сильной точки: {pause_threshold_seconds:.2f} секунды
-- слоты ниже уже подобраны алгоритмом, который ищет профессиональные точки склейки по речи
+- слоты ниже подобраны как страховочная сетка; приоритет у смысловых блоков сценария, а не у механических пауз
+- если модель вернёт качественные тайминги, именно они станут основой монтажа
+- эти слоты нужны как fallback и для пост-обработки, а не как жёсткая инструкция для выбора смысла
 - не придумывай новые окна и не сдвигай границы, работай только внутри этих окон:
   {json.dumps(slots, ensure_ascii=False)}
 """
@@ -595,13 +1287,20 @@ def extract_visual_keyword_segments(
     broll_timing_mode: str | None = None,
     broll_pacing_profile: str | None = None,
     broll_pause_threshold_seconds: float | None = None,
+    broll_coverage_percent: float | None = None,
+    broll_semantic_relevance_priority: str | None = None,
+    broll_product_clip_policy: str | None = None,
     product_keyword: str | None = None,
     product_video_url: str | None = None,
+    product_media_assets: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     interval = _normalize_broll_interval_seconds(broll_interval_seconds)
     timing_mode = _normalize_broll_timing_mode(broll_timing_mode)
     pacing_profile = _normalize_broll_pacing_profile(broll_pacing_profile)
     pause_threshold_seconds = _normalize_pause_threshold_seconds(broll_pause_threshold_seconds)
+    coverage_percent = _normalize_broll_coverage_percent(broll_coverage_percent)
+    semantic_relevance_priority = _normalize_semantic_relevance_priority(broll_semantic_relevance_priority)
+    product_clip_policy = _normalize_product_clip_policy(broll_product_clip_policy)
 
     slots = build_keyword_slots(
         words=words,
@@ -609,9 +1308,42 @@ def extract_visual_keyword_segments(
         broll_timing_mode=timing_mode,
         broll_pacing_profile=pacing_profile,
         broll_pause_threshold_seconds=pause_threshold_seconds,
+        broll_coverage_percent=coverage_percent,
     )
     if not slots:
         return {"segments": [], "updated_at": None}
+
+    meaning_windows = _build_fixed_meaning_windows(words, slots, pause_threshold_seconds) if timing_mode == "fixed" else []
+    total_duration = _get_total_duration(words, slots)
+
+    if timing_mode == "semantic_pause":
+        try:
+            semantic_segments = _build_semantic_llm_segments(
+                scenario_text=scenario_text,
+                tts_text=tts_text,
+                transcript=transcript,
+                words=words,
+                pacing_profile=pacing_profile,
+                coverage_percent=coverage_percent,
+                relevance_priority=semantic_relevance_priority,
+                product_clip_policy=product_clip_policy,
+                product_keyword=product_keyword,
+            )
+            force_product_segment = product_clip_policy == "required"
+            return {
+                "segments": _apply_product_asset(
+                    semantic_segments,
+                    product_keyword,
+                    product_video_url,
+                    product_media_assets,
+                    words,
+                    slots,
+                    force_product_segment=force_product_segment,
+                ),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        except Exception as error:
+            logger.error("Failed to build semantic LLM-first segments: %s", error)
 
     timing_logic = _build_timing_logic_text(
         slots=slots,
@@ -619,6 +1351,8 @@ def extract_visual_keyword_segments(
         interval=interval,
         pacing_profile=pacing_profile,
         pause_threshold_seconds=pause_threshold_seconds,
+        coverage_percent=coverage_percent,
+        meaning_windows=meaning_windows,
     )
 
     prompt = f"""
@@ -635,6 +1369,7 @@ SYSTEM:
 - выбирай визуально понятные смысловые фразы, а не общие одиночные слова
 - phrase обычно должна быть длиной 2-6 слов и звучать как готовый визуальный сюжет
 - если сценарий завязан на конкретной локации, бренде, событии, сезоне или сущности, phrase должна сохранять этот якорь внутри себя
+- если сценарий перечисляет несколько named entities или пунктов списка, старайся распределить по слотам разные ключевые пункты, а не повторять один и тот же тип информации
 - generic слова вроде "курорт", "море", "тайфун", "отель", "туристы" без контекста почти всегда плохой выбор; лучше "сезон дождей на Хайнане", "спокойное море в октябре на Хайнане", "толпы туристов на Хайнане зимой"
 - keyword тоже должен быть максимально предметным; если можно, предпочитай конкретную тему окна, а не абстрактный класс объектов
 - если в тексте упоминается обычный потребительский товар, но у нас нет готового реального ассета для него, не формулируй якорь как точный предмет "вот этот спрей" или "конкретный крем"; вместо этого обобщай до категории или use-case: "средство от комаров в дорожной аптечке", "солнцезащитный крем в пляжной сумке", "капсулы для пищеварения в поездке"
@@ -644,11 +1379,19 @@ SYSTEM:
 - phrase должна помогать построить промпт для видео-перебивки и быть напрямую связана с темой повествования
 - избегай служебных слов, местоимений, союзов и абстракций без визуального образа
 - избегай обрывков вроде "границей", "картинкам", "реальными людьми" без контекста; вместо этого возвращай завершённые фразы вроде "переезд за границу", "красивые картинки в Инстаграме", "общение с реальными людьми"
-- если в точном окне нет сильного кандидата, можно взять ближайшую короткую фразу внутри этого же слота
+- в fixed-режиме keyword и phrase нужно выбирать по смыслу из ближайшего смыслового окна, а не механически из точных fixed-границ
+- если в точном fixed-окне нет сильного кандидата, можно взять ближайшую короткую фразу внутри привязанного смыслового окна
+- в fixed-режиме, если сценарий построен как список или перечисление, сначала покрой разные пункты списка по одному на слот; CTA и product keyword не должны вытеснять основные пункты списка, если слот-бюджет ограничен
+- в semantic-режиме приоритет у самых релевантных смысловых блоков сценария, а не у частоты вставок
+- если semantic relevance priority = precision, лучше вернуть меньше сегментов, но очень точных
+- если semantic relevance priority = dynamic, можно вернуть более плотную нарезку, но всё равно без потери смысла
+- product clip policy = contextual означает, что product keyword не должен вытеснять главные тезисы
+- product clip policy = prefer означает, что product block желателен, но не ценой потери ключевых смысловых блоков
+- product clip policy = required означает, что product block должен присутствовать хотя бы один раз
 - цель: подготовить основу для профессиональных видео-перебивок поверх talking-head видео
 - не возвращай соседние интервалы вне списка SLOTS
 - если в слоте есть упоминание product keyword, оно имеет приоритет над обычными кандидатами
-- product keyword нужно обязательно вывести как минимум в одном сегменте, если оно встречается в тексте
+- product keyword обязательно выводи только если это не ломает покрытие главных смысловых пунктов сценария; в fixed-режиме с маленьким числом слотов главные пункты списка важнее product CTA
 
 ПЛОХО -> ХОРОШО:
 - "курорт" -> "Хайнань как круглогодичный курорт"
@@ -675,6 +1418,12 @@ RETURN:
 
 PRODUCT KEYWORD:
 {product_keyword or ""}
+
+SEMANTIC RELEVANCE PRIORITY:
+{semantic_relevance_priority}
+
+PRODUCT CLIP POLICY:
+{product_clip_policy}
 
 СЦЕНАРИЙ:
 {scenario_text}
@@ -710,13 +1459,39 @@ WORD TIMESTAMPS:
         if not isinstance(segments, list):
             segments = []
 
+        final_segments = segments
+        if timing_mode == "fixed":
+            final_segments = _apply_fixed_enumeration_priority(final_segments, words, slots, product_keyword)
+
+        force_product_segment = timing_mode != "fixed" and product_clip_policy == "required"
+
         return {
-            "segments": _apply_product_asset(segments, product_keyword, product_video_url, words, slots),
+            "segments": _apply_product_asset(
+                final_segments,
+                product_keyword,
+                product_video_url,
+                product_media_assets,
+                words,
+                slots,
+                force_product_segment=force_product_segment,
+            ),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
     except Exception as error:
         logger.error("Failed to extract visual keyword segments: %s", error)
+        fallback_segments = _fallback_segments(words, slots, meaning_windows)
+        if timing_mode == "fixed":
+            fallback_segments = _apply_fixed_enumeration_priority(fallback_segments, words, slots, product_keyword)
+        force_product_segment = timing_mode != "fixed" and product_clip_policy == "required"
         return {
-            "segments": _apply_product_asset(_fallback_segments(words, slots), product_keyword, product_video_url, words, slots),
+            "segments": _apply_product_asset(
+                fallback_segments,
+                product_keyword,
+                product_video_url,
+                product_media_assets,
+                words,
+                slots,
+                force_product_segment=force_product_segment,
+            ),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }

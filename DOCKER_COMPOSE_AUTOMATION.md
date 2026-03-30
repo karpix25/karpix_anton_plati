@@ -4,6 +4,7 @@
 
 - `postgres`
 - `web`
+- `telegram-bot`
 - `final-video-scheduler`
 - `final-video-worker`
 - `final-video-poller`
@@ -17,6 +18,7 @@ docker compose -f docker-compose.production.yml up -d --build
 ## Что делает каждый сервис
 
 - `web`: Next.js приложение и API routes
+- `telegram-bot`: Telegram polling bot для привязки проектов к топикам и отправки Reel-ссылок
 - `final-video-scheduler`: автоматически дозаполняет очередь финальных роликов по активным проектам и месячным лимитам
 - `final-video-worker`: берёт jobs стадий `scenario`, `avatar_submit`, `montage`
 - `final-video-poller`: берёт jobs стадий `waiting_kie`, `waiting_heygen`
@@ -25,6 +27,8 @@ docker compose -f docker-compose.production.yml up -d --build
 
 ```env
 AUTOMATION_INTERNAL_TOKEN=
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 FINAL_VIDEO_PER_CLIENT_CONCURRENCY=1
 FINAL_VIDEO_QUEUE_BACKLOG_PER_CLIENT=3
 FINAL_VIDEO_SCHEDULER_BATCH_PER_CLIENT=1

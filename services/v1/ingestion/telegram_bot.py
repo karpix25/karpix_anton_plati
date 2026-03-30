@@ -34,11 +34,114 @@ if not token:
 
 bot = TeleBot(token)
 
+
+def _escape_markdown(text):
+    return str(text or "").replace("*", "\\*").replace("_", "\\_").replace("`", "\\`")
+
+
+def _detect_topic_name(message):
+    if message.reply_to_message and getattr(message.reply_to_message, "forum_topic_created", None):
+        return message.reply_to_message.forum_topic_created.name
+    return "General"
+
+
+def build_connection_help_message(message, config=None):
+    topic_id = str(message.message_thread_id or "0")
+    topic_name = _escape_markdown(_detect_topic_name(message))
+    client_name = _escape_markdown((config or {}).get("client_name"))
+
+    lines = [
+        "🤖 *Как подключить проект к Telegram-боту*",
+        "",
+        "1. Создайте проект командой `/new_client НазваниеПроекта`",
+        "2. Перейдите в нужный топик и привяжите проект: `/assign_client НазваниеПроекта`",
+        "3. При необходимости задайте контекст:",
+        "`/set_client_product ...`",
+        "`/set_brand ...`",
+        "4. После этого просто отправляйте Instagram Reel ссылку в этот топик",
+        "",
+        f"🧵 *Текущий topic_id:* `{topic_id}`",
+        f"🏷 *Текущая ниша / имя топика:* *{topic_name}*",
+    ]
+
+    if config:
+        lines.extend(
+            [
+                f"✅ *Сейчас подключен клиент:* *{client_name}*",
+                f"🎯 *Ниша по конфигу:* *{_escape_markdown(config.get('niche'))}*",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "⚠️ *Сейчас этот топик не привязан ни к одному проекту.*",
+                "Быстрый пример:",
+                "`/new_client Plati`",
+                "`/assign_client Plati`",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def build_commands_help_message(message, config=None):
+    connection_help = build_connection_help_message(message, config=config)
+    return (
+        f"{connection_help}\n\n"
+        "*Основные команды*\n"
+        "`/client_info` показать текущий проект в топике\n"
+        "`/connect_help` показать инструкцию по подключению\n"
+        "`/whereami` показать topic_id и статус привязки\n"
+    )
+
 def extract_reel_link(text):
     """Simple regex to find Instagram Reel links."""
     pattern = r'(https?://(?:www\.)?instagram\.com/reels?/[\w-]+)'
     match = re.search(pattern, text)
     return match.group(0) if match else None
+
+
+@bot.message_handler(commands=['start', 'help'])
+def handle_start(message):
+    topic_id = str(message.message_thread_id or "0")
+    config = get_topic_config(topic_id)
+    bot.reply_to(message, build_commands_help_message(message, config=config), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=['connect_help'])
+def handle_connect_help(message):
+    topic_id = str(message.message_thread_id or "0")
+    config = get_topic_config(topic_id)
+    bot.reply_to(message, build_connection_help_message(message, config=config), parse_mode="Markdown")
+
+
+@bot.message_handler(commands=['whereami'])
+def handle_whereami(message):
+    topic_id = str(message.message_thread_id or "0")
+    config = get_topic_config(topic_id)
+    if config:
+        bot.reply_to(
+            message,
+            (
+                f"📍 *chat_id:* `{message.chat.id}`\n"
+                f"🧵 *topic_id:* `{topic_id}`\n"
+                f"👤 *Клиент:* *{_escape_markdown(config['client_name'])}*\n"
+                f"🎯 *Ниша:* *{_escape_markdown(config['niche'])}*"
+            ),
+            parse_mode="Markdown",
+        )
+        return
+
+    bot.reply_to(
+        message,
+        (
+            f"📍 *chat_id:* `{message.chat.id}`\n"
+            f"🧵 *topic_id:* `{topic_id}`\n"
+            "⚠️ *Этот топик пока не привязан к проекту.*\n\n"
+            f"{build_connection_help_message(message)}"
+        ),
+        parse_mode="Markdown",
+    )
 
 @bot.message_handler(commands=['new_client'])
 def handle_new_client(message):
@@ -49,7 +152,14 @@ def handle_new_client(message):
     
     client_id = create_client(name)
     if client_id:
-        bot.reply_to(message, f"✅ Клиент *{name}* создан (ID: {client_id}).\nИспользуйте `/assign_client {name}` в этом топике.", parse_mode="Markdown")
+        bot.reply_to(
+            message,
+            (
+                f"✅ Клиент *{_escape_markdown(name)}* создан (ID: `{client_id}`).\n"
+                f"Теперь привяжите его в этом топике командой:\n`/assign_client {name}`"
+            ),
+            parse_mode="Markdown",
+        )
     else:
         bot.reply_to(message, "❌ Ошибка создания клиента. Возможно, имя уже занято.")
 
@@ -58,12 +168,23 @@ def handle_assign_client(message):
     topic_id = str(message.message_thread_id or "0")
     name = message.text.replace('/assign_client', '').strip()
     if not name:
-        bot.reply_to(message, "Укажите имя клиента. Пример: `/assign_client Nike`", parse_mode="Markdown")
+        bot.reply_to(
+            message,
+            "Укажите имя клиента. Пример: `/assign_client Nike`\n\nЕсли проект ещё не создан, сначала выполните `/new_client Nike`.",
+            parse_mode="Markdown",
+        )
         return
     
     client = get_client(name=name)
     if not client:
-        bot.reply_to(message, f"❌ Клиент *{name}* не найден. Создайте его через `/new_client`.", parse_mode="Markdown")
+        bot.reply_to(
+            message,
+            (
+                f"❌ Клиент *{_escape_markdown(name)}* не найден.\n"
+                f"Создайте его через `/new_client {name}` и затем повторите `/assign_client {name}`."
+            ),
+            parse_mode="Markdown",
+        )
         return
     
     # Check if a niche can be extracted from topic name
@@ -72,14 +193,25 @@ def handle_assign_client(message):
         niche = message.reply_to_message.forum_topic_created.name
 
     save_topic_config(topic_id, client["id"], niche)
-    bot.reply_to(message, f"✅ Этот топик теперь привязан к клиенту *{name}*.\nНиша по умолчанию: *{niche}*.", parse_mode="Markdown")
+    bot.reply_to(
+        message,
+        (
+            f"✅ Этот топик теперь привязан к клиенту *{_escape_markdown(name)}*.\n"
+            f"Ниша по умолчанию: *{_escape_markdown(niche)}*.\n\n"
+            "Теперь можно:\n"
+            "- отправлять Reel-ссылки для разбора\n"
+            "- смотреть `/client_info`\n"
+            "- настроить `/set_client_product` и `/set_brand`"
+        ),
+        parse_mode="Markdown",
+    )
 
 @bot.message_handler(commands=['client_info'])
 def handle_client_info(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
     if not config:
-        bot.reply_to(message, "⚠️ Этот топик пока не привязан к клиенту. Используйте `/assign_client`.")
+        bot.reply_to(message, build_connection_help_message(message), parse_mode="Markdown")
         return
     
     info = f"""
@@ -151,7 +283,12 @@ def handle_message(message):
     
     if reel_url:
         if not config:
-            bot.reply_to(message, "🛑 Этот топик не привязан к клиенту. Используйте `/assign_client [Имя]` перед отправкой ссылок.")
+            bot.reply_to(
+                message,
+                "🛑 Этот топик не привязан к проекту.\n\n"
+                + build_connection_help_message(message),
+                parse_mode="Markdown",
+            )
             return
 
         logger.info(f"[{message.chat.id}] Client: {config['client_name']} | Reel: {reel_url}")
@@ -219,6 +356,11 @@ def handle_message(message):
         except Exception as e:
             logger.error(f"Error: {e}")
             bot.reply_to(message, f"❌ Ошибка: {str(e)}")
+        return
+
+    lowered_text = message.text.lower()
+    if any(trigger in lowered_text for trigger in ["подключ", "как подключ", "help", "/help", "старт", "start"]):
+        bot.reply_to(message, build_commands_help_message(message, config=config), parse_mode="Markdown")
 
 if __name__ == "__main__":
     logger.info("Starting Multi-Client Bot...")

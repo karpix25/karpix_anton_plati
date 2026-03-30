@@ -8,9 +8,14 @@ export interface Client {
   monthly_limit?: number;
   target_duration_seconds?: number;
   broll_interval_seconds?: number;
-  broll_timing_mode?: "fixed" | "semantic_pause";
+  broll_timing_mode?: "fixed" | "semantic_pause" | "coverage_percent";
   broll_pacing_profile?: "calm" | "balanced" | "dynamic";
   broll_pause_threshold_seconds?: number;
+  broll_coverage_percent?: number;
+  broll_semantic_relevance_priority?: "precision" | "balanced" | "dynamic";
+  broll_product_clip_policy?: "contextual" | "prefer" | "required";
+  broll_generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video";
+  product_media_assets?: ProductMediaAsset[];
   product_keyword?: string;
   product_video_url?: string;
   tts_provider?: "minimax" | "elevenlabs";
@@ -99,9 +104,14 @@ export interface Settings {
   target_audience: string;
   target_duration_seconds: number;
   broll_interval_seconds: number;
-  broll_timing_mode: "fixed" | "semantic_pause";
+  broll_timing_mode: "fixed" | "semantic_pause" | "coverage_percent";
   broll_pacing_profile: "calm" | "balanced" | "dynamic";
   broll_pause_threshold_seconds: number;
+  broll_coverage_percent: number;
+  broll_semantic_relevance_priority: "precision" | "balanced" | "dynamic";
+  broll_product_clip_policy: "contextual" | "prefer" | "required";
+  broll_generator_model: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video";
+  product_media_assets: ProductMediaAsset[];
   product_keyword: string;
   product_video_url: string;
   tts_provider: "minimax" | "elevenlabs";
@@ -149,6 +159,15 @@ export interface WordTimestamp {
   start: number;
   end: number;
   confidence?: number | null;
+}
+
+export interface ProductMediaAsset {
+  id: string;
+  url: string;
+  name: string;
+  source_type?: "video" | "image";
+  duration_seconds?: number | null;
+  created_at?: string;
 }
 
 export interface ScenarioWordTimestamps {
@@ -203,6 +222,7 @@ export interface ScenarioVideoPromptItem {
 
 export interface ScenarioVideoPromptsPayload {
   prompts?: ScenarioVideoPromptItem[];
+  generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video";
   updated_at?: string;
 }
 
@@ -251,6 +271,7 @@ export interface Scenario {
   tts_script?: string;
   tts_request_text?: string;
   tts_audio_path?: string;
+  tts_audio_duration_seconds?: number | null;
   tts_word_timestamps?: ScenarioWordTimestamps;
   video_keyword_segments?: ScenarioKeywordSegmentsPayload;
   video_generation_prompts?: ScenarioVideoPromptsPayload;

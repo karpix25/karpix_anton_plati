@@ -5,6 +5,8 @@
 import argparse
 import logging
 import json
+import os
+import subprocess
 from services.v1.automation.pipeline_orchestrator import run_content_gen_pipeline
 from services.v1.database.db_service import get_db_connection, init_db
 from datetime import datetime, timezone
@@ -12,6 +14,30 @@ from datetime import datetime, timezone
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("SingleGenerator")
+
+
+def _probe_audio_duration_seconds(file_path):
+    if not file_path or not os.path.exists(file_path):
+        return None
+
+    try:
+        raw = subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                file_path,
+            ],
+            text=True,
+        ).strip()
+        duration = float(raw)
+        return duration if duration > 0 else None
+    except Exception:
+        return None
 
 def _load_json_if_needed(value):
     if isinstance(value, str):
@@ -56,6 +82,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
         broll_timing_mode = None
         broll_pacing_profile = None
         broll_pause_threshold_seconds = None
+        broll_coverage_percent = None
+        broll_semantic_relevance_priority = None
+        broll_product_clip_policy = None
+        broll_generator_model = None
+        product_media_assets = None
         product_keyword = None
         product_video_url = None
         tts_provider = "minimax"
@@ -73,6 +104,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
                 broll_timing_mode = client_data.get("broll_timing_mode")
                 broll_pacing_profile = client_data.get("broll_pacing_profile")
                 broll_pause_threshold_seconds = client_data.get("broll_pause_threshold_seconds")
+                broll_coverage_percent = client_data.get("broll_coverage_percent")
+                broll_semantic_relevance_priority = client_data.get("broll_semantic_relevance_priority")
+                broll_product_clip_policy = client_data.get("broll_product_clip_policy")
+                broll_generator_model = client_data.get("broll_generator_model")
+                product_media_assets = client_data.get("product_media_assets")
                 product_keyword = client_data.get("product_keyword")
                 product_video_url = client_data.get("product_video_url")
                 tts_provider = client_data.get("tts_provider") or "minimax"
@@ -80,7 +116,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
                 elevenlabs_voice_id = client_data.get("elevenlabs_voice_id")
                 
         # Only rewrite the scenario, bypassing the ingestion and transcription phases
-        from services.v1.automation.scenario_service import rewrite_reference_script
+        from services.v1.automation.scenario_service import rewrite_reference_script, find_unshowable_asset_reference_issues
         import uuid
         
         logger.info(f"Rewriting scenario for Content {content_id}")
@@ -105,6 +141,26 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
         from services.v1.automation.video_prompt_service import generate_seedance_prompts
 
         script_text = scenario_json.get("script", "")
+        if script_text.strip().lower().startswith("error generating"):
+            logger.error(
+                "Skipping save for single scenario %s because generator returned placeholder error script",
+                res_job_id,
+            )
+            return {"status": "error", "message": "Scenario generation failed", "job_id": res_job_id}
+
+        asset_reference_issues = find_unshowable_asset_reference_issues(script_text)
+        if asset_reference_issues:
+            logger.error(
+                "Skipping save for single scenario %s because script contains unsupported demonstrative asset references: %s",
+                res_job_id,
+                asset_reference_issues,
+            )
+            return {
+                "status": "error",
+                "message": "Scenario contains unsupported demonstrative references to unseen assets",
+                "job_id": res_job_id,
+            }
+
         tts_script = prepare_for_tts(script_text) if script_text else ""
         tts_audio_path = None
         tts_word_timestamps = None
@@ -112,6 +168,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
         video_generation_prompts = None
 
         tts_request_text = None
+        tts_audio_duration_seconds = None
 
         if tts_script:
             try:
@@ -121,6 +178,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
                 else:
                     tts_request_text = prepare_text_for_minimax_tts(tts_script)
                     tts_audio_path = text_to_speech_minimax(tts_script, voice_id=tts_voice_id or None)
+                tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
                 try:
                     deepgram_result = transcribe_media_deepgram(tts_audio_path)
                 except Exception as deepgram_error:
@@ -144,13 +202,18 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
                     broll_timing_mode=broll_timing_mode,
                     broll_pacing_profile=broll_pacing_profile,
                     broll_pause_threshold_seconds=broll_pause_threshold_seconds,
+                    broll_coverage_percent=broll_coverage_percent,
+                    broll_semantic_relevance_priority=broll_semantic_relevance_priority,
+                    broll_product_clip_policy=broll_product_clip_policy,
                     product_keyword=product_keyword,
                     product_video_url=product_video_url,
+                    product_media_assets=product_media_assets,
                 )
                 video_generation_prompts = generate_seedance_prompts(
                     scenario_text=script_text,
                     tts_text=tts_script,
                     keyword_segments=(video_keyword_segments or {}).get("segments", []),
+                    generator_model=broll_generator_model,
                 )
             except Exception as media_error:
                 logger.error(f"Failed to auto-generate media pipeline for single scenario {res_job_id}: {media_error}")
@@ -167,6 +230,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
             tts_script=tts_script,
             tts_request_text=tts_request_text,
             tts_audio_path=tts_audio_path,
+            tts_audio_duration_seconds=tts_audio_duration_seconds,
             tts_word_timestamps=tts_word_timestamps,
             video_keyword_segments=video_keyword_segments,
             video_generation_prompts=video_generation_prompts,

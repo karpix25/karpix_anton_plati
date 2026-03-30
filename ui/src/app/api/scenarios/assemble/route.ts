@@ -353,7 +353,9 @@ async function buildMontage(scenarioId: number) {
     throw new Error("HeyGen avatar video is missing");
   }
 
-  const totalDuration = getTotalDurationSeconds(scenario) || (await probeDurationSeconds(scenario.tts_audio_path));
+  const audioDuration = await probeDurationSeconds(scenario.tts_audio_path);
+  const timelineDuration = getTotalDurationSeconds(scenario);
+  const totalDuration = Math.max(audioDuration, timelineDuration);
   if (totalDuration <= 0) {
     throw new Error("Timeline data is missing");
   }
@@ -422,6 +424,14 @@ async function buildMontage(scenarioId: number) {
     concatListPath,
     "-i",
     scenario.tts_audio_path,
+    "-filter_complex",
+    "[0:v]tpad=stop_mode=clone:stop_duration=600[v]",
+    "-map",
+    "[v]",
+    "-map",
+    "1:a:0",
+    "-t",
+    audioDuration > 0 ? audioDuration.toFixed(3) : totalDuration.toFixed(3),
     "-c:v",
     "libx264",
     "-preset",
@@ -436,7 +446,6 @@ async function buildMontage(scenarioId: number) {
     "192k",
     "-movflags",
     "+faststart",
-    "-shortest",
     outputPath,
   ]);
 

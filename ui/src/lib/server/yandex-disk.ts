@@ -17,7 +17,11 @@ type ResourceMetaPayload = {
 };
 
 function getAccessToken() {
-  const token = process.env.YANDEX_DISK_OAUTH_TOKEN || process.env.YANDEX_DISK_TOKEN || "";
+  const token =
+    process.env.YANDEX_DISK_OAUTH_TOKEN ||
+    process.env.YANDEX_DISK_TOKEN ||
+    process.env.YANDEX_TOKEN ||
+    "";
   return token.trim();
 }
 

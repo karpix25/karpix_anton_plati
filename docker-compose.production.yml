@@ -124,5 +124,30 @@ services:
       FINAL_VIDEO_SCHEDULER_BATCH_PER_CLIENT: ${FINAL_VIDEO_SCHEDULER_BATCH_PER_CLIENT:-1}
       FINAL_VIDEO_QUEUE_BACKLOG_PER_CLIENT: ${FINAL_VIDEO_QUEUE_BACKLOG_PER_CLIENT:-3}
 
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    command: ["python3", "services/v1/ingestion/telegram_bot.py"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-postgres}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASS: ${DB_PASS:-postgres}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+      MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+      MINIMAX_GROUP_ID: ${MINIMAX_GROUP_ID:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
+      KIE_API_KEY: ${KIE_API_KEY:-}
+      RAPIDAPI_KEY: ${RAPIDAPI_KEY:-}
+
 volumes:
   postgres_data:

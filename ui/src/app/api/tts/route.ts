@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
+import { spawn } from 'child_process';
 import pool from '@/lib/db';
 
 const DEFAULT_TTS_PROVIDER = "minimax";
@@ -363,12 +364,57 @@ function prepareElevenLabsText(text: string) {
     .trim();
 }
 
+function runCommandCapture(command: string, args: string[]) {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        reject(new Error(stderr || `${command} failed with code ${code}`));
+      }
+    });
+
+    child.on('error', reject);
+  });
+}
+
+async function probeDurationSeconds(filePath: string) {
+  const raw = await runCommandCapture('ffprobe', [
+    '-v',
+    'error',
+    '-show_entries',
+    'format=duration',
+    '-of',
+    'default=noprint_wrappers=1:nokey=1',
+    filePath,
+  ]);
+
+  const duration = Number(raw);
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
 export async function POST(request: Request) {
   try {
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
     await pool.query('ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
     await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_request_text TEXT');
+    await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_audio_duration_seconds NUMERIC(10,3)');
     const { text, scenarioId } = await request.json();
     const rawText = typeof text === 'string' ? text : '';
 
@@ -494,13 +540,15 @@ export async function POST(request: Request) {
         await mkdir(targetDir, { recursive: true });
         const filePath = path.join(targetDir, `scenario_${resolvedScenarioId}.mp3`);
         await writeFile(filePath, audioBuffer);
+        const audioDurationSeconds = await probeDurationSeconds(filePath);
 
         await pool.query(
           `UPDATE generated_scenarios
            SET tts_audio_path = $1,
-               tts_request_text = $2
-           WHERE id = $3`,
-          [filePath, normalizedText, resolvedScenarioId]
+               tts_request_text = $2,
+               tts_audio_duration_seconds = $3
+           WHERE id = $4`,
+          [filePath, normalizedText, audioDurationSeconds || null, resolvedScenarioId]
         );
       }
 

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-from services.v1.database.db_service import get_generated_scenario_by_job_id, save_generated_scenario
+from services.v1.database.db_service import get_client, get_generated_scenario_by_job_id, save_generated_scenario
 from services.v1.providers.kie_ai_service import submit_pending_kie_tasks_for_prompts
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -24,10 +24,13 @@ def submit_saved_kie_tasks(job_id: str) -> Dict[str, Any]:
     if not prompts:
         raise ValueError("No video prompts found for this scenario")
 
-    submitted_prompts = submit_pending_kie_tasks_for_prompts(prompts)
+    client = get_client(client_id=scenario.get("client_id")) if scenario.get("client_id") else None
+    generator_model = (client or {}).get("broll_generator_model")
+    submitted_prompts = submit_pending_kie_tasks_for_prompts(prompts, model=generator_model)
     refreshed_payload = {
         **prompts_payload,
         "prompts": submitted_prompts,
+        "generator_model": generator_model,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     save_generated_scenario(str(scenario["job_id"]), video_generation_prompts=refreshed_payload)

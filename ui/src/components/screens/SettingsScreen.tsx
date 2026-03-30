@@ -2,7 +2,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Eye, EyeOff, LoaderCircle, Plus, Shuffle, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ElevenLabsVoiceOption, HeygenAvatarConfig, MinimaxVoiceOption, Settings } from "@/types";
+import { ElevenLabsVoiceOption, HeygenAvatarConfig, MinimaxVoiceOption, ProductMediaAsset, Settings } from "@/types";
 
 interface SettingsScreenProps {
   settings: Settings;
@@ -33,6 +33,54 @@ const PACING_LABELS: Record<Settings["broll_pacing_profile"], { title: string; d
     title: "Динамично",
     description: "Чаще перебивки, но только если текст и паузы это позволяют.",
     averageBrollSeconds: 1.7,
+  },
+};
+
+const BROLL_GENERATOR_MODEL_LABELS: Record<
+  Settings["broll_generator_model"],
+  { title: string; description: string }
+> = {
+  "bytedance/v1-pro-text-to-video": {
+    title: "KIE V1 Pro",
+    description: "Текущий базовый генератор перебивок через KIE.",
+  },
+  "bytedance/seedance-1.5-pro": {
+    title: "Seedance 1.5 Pro",
+    description: "Новая модель KIE для генерации перебивок с API Seedance 1.5 Pro.",
+  },
+  "grok-imagine/text-to-video": {
+    title: "Grok Imagine T2V",
+    description: "KIE Text To Video: вертикальные ролики 6 секунд, mode normal, 720p.",
+  },
+};
+
+const SEMANTIC_RELEVANCE_LABELS: Record<NonNullable<Settings["broll_semantic_relevance_priority"]>, { title: string; description: string }> = {
+  precision: {
+    title: "Максимально в тему",
+    description: "Лучше меньше перебивок, но каждая должна точно иллюстрировать ключевой смысловой блок.",
+  },
+  balanced: {
+    title: "Баланс",
+    description: "Компромисс между точностью смысла и плотностью монтажа.",
+  },
+  dynamic: {
+    title: "Больше динамики",
+    description: "Можно чаще менять перебивки, если они остаются релевантными сценарию.",
+  },
+};
+
+const PRODUCT_CLIP_POLICY_LABELS: Record<NonNullable<Settings["broll_product_clip_policy"]>, { title: string; description: string }> = {
+  contextual: {
+    title: "Только если уместно",
+    description: "Product clip не должен вытеснять главные тезисы сценария.",
+  },
+  prefer: {
+    title: "Стараться вставить",
+    description: "Product clip желателен, но не ценой потери основных смысловых блоков.",
+  },
+  required: {
+    title: "Обязательно вставить",
+    description: "Хотя бы один product clip должен попасть в разметку.",
   },
 };
 
@@ -205,8 +253,14 @@ export function SettingsScreen({
   const brollIntervalSeconds = Number(draftSettings.broll_interval_seconds || 3);
   const brollTimingMode = draftSettings.broll_timing_mode || "semantic_pause";
   const brollPacingProfile = draftSettings.broll_pacing_profile || "balanced";
-  const pauseThresholdSeconds = Number(draftSettings.broll_pause_threshold_seconds || 0.45);
+  const brollCoveragePercent = Number(draftSettings.broll_coverage_percent || 35);
+  const semanticRelevancePriority = draftSettings.broll_semantic_relevance_priority || "balanced";
+  const productClipPolicy = draftSettings.broll_product_clip_policy || "contextual";
+  const brollGeneratorModel = draftSettings.broll_generator_model || "bytedance/v1-pro-text-to-video";
   const pacingPreview = PACING_LABELS[brollPacingProfile];
+  const semanticRelevancePreview = SEMANTIC_RELEVANCE_LABELS[semanticRelevancePriority];
+  const productClipPolicyPreview = PRODUCT_CLIP_POLICY_LABELS[productClipPolicy];
+  const brollGeneratorModelPreview = BROLL_GENERATOR_MODEL_LABELS[brollGeneratorModel];
   const estimatedWords = Math.round(draftSettings.target_duration_seconds * 2.4);
   const estimatedWordMin = Math.max(Math.round(estimatedWords * 0.85), 20);
   const estimatedWordMax = Math.max(Math.round(estimatedWords * 1.15), estimatedWordMin);
@@ -652,14 +706,16 @@ export function SettingsScreen({
   };
 
   const handleProductVideoUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !selectedClientId) return;
+    const files = Array.from(event.target.files || []);
+    if (!files.length || !selectedClientId) return;
 
     setIsUploadingProductVideo(true);
     try {
       const formData = new FormData();
       formData.append("clientId", selectedClientId);
-      formData.append("file", file);
+      files.forEach((file) => {
+        formData.append("files", file);
+      });
 
       const response = await fetch("/api/clients/product-video", {
         method: "POST",
@@ -671,17 +727,34 @@ export function SettingsScreen({
       }
 
       const data = await response.json();
+      const uploadedAssets = Array.isArray(data.assets) ? (data.assets as ProductMediaAsset[]) : [];
       setDraftSettings((prev) => ({
         ...prev,
-        product_video_url: data.url || "",
+        product_media_assets: [...(prev.product_media_assets || []), ...uploadedAssets],
+        product_video_url: prev.product_video_url || uploadedAssets[0]?.url || data.url || "",
       }));
     } catch (error) {
       console.error("Product video upload error:", error);
-      alert("Не удалось загрузить product video.");
+      alert("Не удалось загрузить product assets.");
     } finally {
       setIsUploadingProductVideo(false);
       event.target.value = "";
     }
+  };
+
+  const handleRemoveProductAsset = (assetId: string) => {
+    setDraftSettings((prev) => {
+      const nextAssets = (prev.product_media_assets || []).filter((asset) => asset.id !== assetId);
+      const nextPrimaryUrl = prev.product_video_url && nextAssets.some((asset) => asset.url === prev.product_video_url)
+        ? prev.product_video_url
+        : nextAssets[0]?.url || "";
+
+      return {
+        ...prev,
+        product_media_assets: nextAssets,
+        product_video_url: nextPrimaryUrl,
+      };
+    });
   };
 
   return (
@@ -961,7 +1034,7 @@ export function SettingsScreen({
                   Логика перебивок
                 </label>
                 <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
-                  {brollTimingMode === "semantic_pause" ? "По паузам" : "Fixed"}
+                  {brollTimingMode === "semantic_pause" ? "По паузам" : brollTimingMode === "coverage_percent" ? "Покрытие" : "Fixed"}
                 </div>
               </div>
               <div className="rounded-2xl bg-[#f0f4f7] p-4">
@@ -971,15 +1044,21 @@ export function SettingsScreen({
                       Режим
                     </div>
                     <div className="mt-1 text-2xl font-black tracking-tight text-foreground">
-                      {brollTimingMode === "semantic_pause" ? "Смысл" : "Fixed"}
+                      {brollTimingMode === "semantic_pause" ? "Смысл" : brollTimingMode === "coverage_percent" ? "Покрытие" : "Fixed"}
                     </div>
                   </div>
                   <div className="rounded-2xl border border-white/70 bg-white/70 p-4 text-xs leading-6 text-foreground">
                     {brollTimingMode === "semantic_pause" ? (
                       <>
-                        <div><span className="font-bold">Аватар:</span> держим до ближайшей сильной паузы или конца фразы.</div>
-                        <div><span className="font-bold">Перебивка:</span> вставляем окно примерно на {pacingPreview.averageBrollSeconds.toFixed(1)}с, если текст визуально это поддерживает.</div>
-                        <div><span className="font-bold">Ритм:</span> целимся в среднем раз в {brollIntervalSeconds.toFixed(1)}с, но без жёсткой сетки.</div>
+                        <div><span className="font-bold">Логика:</span> LLM читает весь transcript с timestamps и сам выбирает смысловые блоки, которые стоит иллюстрировать.</div>
+                        <div><span className="font-bold">Перебивки:</span> подбираются по теме сценария с целевым покрытием около {brollCoveragePercent.toFixed(0)}% ролика.</div>
+                        <div><span className="font-bold">Приоритет:</span> {semanticRelevancePreview.title}. Product clip policy: {productClipPolicyPreview.title.toLowerCase()}.</div>
+                      </>
+                    ) : brollTimingMode === "coverage_percent" ? (
+                      <>
+                        <div><span className="font-bold">Аватар:</span> остаётся базой, но система сама решает, где лучше уступить место перебивкам.</div>
+                        <div><span className="font-bold">Перебивки:</span> подбираем окна так, чтобы b-roll занял примерно {brollCoveragePercent.toFixed(0)}% длительности ролика.</div>
+                        <div><span className="font-bold">Ритм:</span> частота, длина и даже подряд идущие перебивки определяются автоматически по смыслу сценария.</div>
                       </>
                     ) : (
                       <>
@@ -1008,14 +1087,15 @@ export function SettingsScreen({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="semantic_pause">По паузам и смыслу</SelectItem>
+                      <SelectItem value="coverage_percent">По проценту покрытия</SelectItem>
                       <SelectItem value="fixed">Фиксированный интервал</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                {brollTimingMode === "semantic_pause" ? (
+                {brollTimingMode !== "fixed" ? (
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      Профиль темпа
+                      {brollTimingMode === "semantic_pause" ? "Ритм монтажа" : "Профиль темпа"}
                     </label>
                     <Select
                       value={brollPacingProfile}
@@ -1039,8 +1119,15 @@ export function SettingsScreen({
                 {brollTimingMode === "semantic_pause" ? (
                   <>
                     <div><span className="font-semibold text-foreground">Профиль:</span> {pacingPreview.title}</div>
-                    <div><span className="font-semibold text-foreground">Характер:</span> {pacingPreview.description}</div>
-                    <div><span className="font-semibold text-foreground">Как работает:</span> система ищет точки склейки у пауз и концов фраз, а не режет ролик по таймеру.</div>
+                    <div><span className="font-semibold text-foreground">Приоритет точности:</span> {semanticRelevancePreview.title}</div>
+                    <div><span className="font-semibold text-foreground">Product clip:</span> {productClipPolicyPreview.title}</div>
+                    <div><span className="font-semibold text-foreground">Как работает:</span> модель смотрит на весь script и timestamps, сама раскладывает смысловые блоки и предлагает тайминги, а код только валидирует окна монтажа.</div>
+                  </>
+                ) : brollTimingMode === "coverage_percent" ? (
+                  <>
+                    <div><span className="font-semibold text-foreground">Профиль:</span> {pacingPreview.title}</div>
+                    <div><span className="font-semibold text-foreground">Цель покрытия:</span> примерно {brollCoveragePercent.toFixed(0)}% ролика занимают перебивки.</div>
+                    <div><span className="font-semibold text-foreground">Как работает:</span> система сама распределяет окна по смыслам и естественному ритму речи так, чтобы уложиться в выбранную долю b-roll без жёсткой сетки.</div>
                   </>
                 ) : (
                   <>
@@ -1050,10 +1137,11 @@ export function SettingsScreen({
                   </>
                 )}
               </div>
-              <div className="space-y-3">
+              {brollTimingMode === "fixed" ? (
+                <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    {brollTimingMode === "semantic_pause" ? "Целевой средний интервал" : "Жёсткий интервал перебивок"}
+                    Жёсткий интервал перебивок
                   </label>
                   <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
                     {brollIntervalSeconds.toFixed(1)} сек
@@ -1076,40 +1164,108 @@ export function SettingsScreen({
                   <span>5.0 сек</span>
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">
-                  {brollTimingMode === "semantic_pause"
-                    ? "Это мягкая цель по среднему ритму. Алгоритм всё равно будет искать ближайшие паузы и смысловые границы, чтобы монтаж не дёргался. Минимальная длина перебивки теперь 2 секунды."
-                    : "В fixed-режиме это жёсткий шаг, по которому ролик режется на avatar и b-roll блоки. Минимум 2 секунды."}
+                  В fixed-режиме это жёсткий шаг, по которому ролик режется на avatar и b-roll блоки. Минимум 2 секунды.
                 </p>
-              </div>
-              {brollTimingMode === "semantic_pause" ? (
+                </div>
+              ) : null}
+              {brollTimingMode === "coverage_percent" || brollTimingMode === "semantic_pause" ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      Порог сильной паузы
+                      {brollTimingMode === "semantic_pause" ? "Целевое покрытие перебивками" : "Целевое покрытие перебивками"}
                     </label>
                     <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
-                      {pauseThresholdSeconds.toFixed(2)} сек
+                      {brollCoveragePercent.toFixed(0)}%
                     </div>
                   </div>
                   <input
                     type="range"
-                    min={0.15}
-                    max={1.2}
-                    step={0.05}
-                    value={pauseThresholdSeconds}
+                    min={15}
+                    max={100}
+                    step={1}
+                    value={brollCoveragePercent}
                     onChange={(event) =>
-                      setDraftSettings((prev) => ({ ...prev, broll_pause_threshold_seconds: Number(event.target.value) }))
+                      setDraftSettings((prev) => ({ ...prev, broll_coverage_percent: Number(event.target.value) }))
                     }
                     className="w-full accent-primary"
                   />
                   <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                    <span>0.15 сек</span>
-                    <span>0.45 сек</span>
-                    <span>1.20 сек</span>
+                    <span>15%</span>
+                    <span>35%</span>
+                    <span>100%</span>
                   </div>
                   <p className="text-xs leading-5 text-muted-foreground">
-                    Меньше значение делает монтаж живее и чувствительнее к микро-паузам. Больше значение даёт более редкие, уверенные и спокойные точки склейки.
+                    {brollTimingMode === "semantic_pause"
+                      ? "LLM старается покрыть перебивками примерно эту долю ролика, но приоритет остаётся у смысловых блоков. При высоком покрытии перебивки могут идти подряд, если это лучше раскрывает сценарий."
+                      : "Алгоритм старается занять перебивками примерно эту долю ролика. При высоком покрытии перебивки могут идти подряд, если это лучше иллюстрирует сценарий."}
                   </p>
+                </div>
+              ) : null}
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Генератор перебивок
+                </label>
+                <Select
+                  value={brollGeneratorModel}
+                  onValueChange={(value: Settings["broll_generator_model"]) =>
+                    setDraftSettings((prev) => ({ ...prev, broll_generator_model: value }))
+                  }
+                >
+                  <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bytedance/v1-pro-text-to-video">KIE V1 Pro</SelectItem>
+                    <SelectItem value="bytedance/seedance-1.5-pro">Seedance 1.5 Pro</SelectItem>
+                    <SelectItem value="grok-imagine/text-to-video">Grok Imagine T2V</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs leading-5 text-muted-foreground">{brollGeneratorModelPreview.description}</p>
+              </div>
+              {brollTimingMode === "semantic_pause" ? (
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Приоритет точности смысла
+                    </label>
+                    <Select
+                      value={semanticRelevancePriority}
+                      onValueChange={(value: Settings["broll_semantic_relevance_priority"]) =>
+                        setDraftSettings((prev) => ({ ...prev, broll_semantic_relevance_priority: value }))
+                      }
+                    >
+                      <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="precision">Максимально в тему</SelectItem>
+                        <SelectItem value="balanced">Баланс</SelectItem>
+                        <SelectItem value="dynamic">Больше динамики</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs leading-5 text-muted-foreground">{semanticRelevancePreview.description}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Product clip policy
+                    </label>
+                    <Select
+                      value={productClipPolicy}
+                      onValueChange={(value: Settings["broll_product_clip_policy"]) =>
+                        setDraftSettings((prev) => ({ ...prev, broll_product_clip_policy: value }))
+                      }
+                    >
+                      <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="contextual">Только если уместно</SelectItem>
+                        <SelectItem value="prefer">Стараться вставить</SelectItem>
+                        <SelectItem value="required">Обязательно вставить</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs leading-5 text-muted-foreground">{productClipPolicyPreview.description}</p>
+                  </div>
                 </div>
               ) : null}
             </div>
@@ -1132,48 +1288,89 @@ export function SettingsScreen({
             <div className="space-y-3 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Product video
+                  Product assets
                 </label>
-                <input
-                  value={draftSettings.product_video_url}
-                  onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_video_url: event.target.value }))}
-                  className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                  placeholder="/uploads/product-videos/client-1/clip.mp4"
-                />
+                <p className="text-xs text-muted-foreground">
+                  Можно загрузить несколько видео и фото. Фото автоматически конвертируются в вертикальные mp4-клипы по 4 секунды, а при product clip система случайно выберет один из ассетов.
+                </p>
               </div>
 
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                 <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-[#d6e0e8] bg-white px-4 py-3 text-sm font-medium text-foreground transition hover:bg-[#f7fafc]">
                   <input
                     type="file"
-                    accept="video/mp4,video/quicktime,video/webm"
+                    accept="video/mp4,video/quicktime,video/webm,image/jpeg,image/png,image/webp"
                     className="hidden"
                     onChange={handleProductVideoUpload}
                     disabled={!selectedClientId || isUploadingProductVideo}
+                    multiple
                   />
-                  {isUploadingProductVideo ? "Загружаю видео..." : "Загрузить готовое видео"}
+                  {isUploadingProductVideo ? "Загружаю ассеты..." : "Загрузить видео и фото"}
                 </label>
-                {draftSettings.product_video_url ? (
-                  <a
-                    href={draftSettings.product_video_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-                  >
-                    Открыть текущее product video
-                  </a>
-                ) : (
-                  <div className="text-xs text-muted-foreground">Видео пока не загружено.</div>
-                )}
+                <div className="text-xs text-muted-foreground">
+                  Сейчас в пуле: {(draftSettings.product_media_assets || []).length}
+                </div>
               </div>
 
-              {draftSettings.product_video_url ? (
-                <video
-                  src={draftSettings.product_video_url}
-                  controls
-                  className="w-full rounded-2xl border border-[#e5ebf0] bg-black"
+              {(draftSettings.product_media_assets || []).length ? (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                  {(draftSettings.product_media_assets || []).map((asset) => (
+                    <div key={asset.id} className="space-y-2 rounded-2xl border border-[#e5ebf0] bg-white p-3">
+                      <video
+                        src={asset.url}
+                        controls
+                        className="aspect-[9/16] w-full rounded-xl border border-[#e5ebf0] bg-black object-cover"
+                      />
+                      <div className="space-y-1">
+                        <div className="truncate text-sm font-medium text-foreground">{asset.name}</div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {asset.source_type === "image" ? "Фото -> видео 4s" : "Видео файл"}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDraftSettings((prev) => ({
+                              ...prev,
+                              product_video_url: asset.url,
+                            }))
+                          }
+                          className="rounded-xl border border-[#d6e0e8] px-3 py-2 text-xs font-medium text-foreground transition hover:bg-[#f7fafc]"
+                        >
+                          Сделать основным
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveProductAsset(asset.id)}
+                          className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-dashed border-[#d6e0e8] bg-white px-4 py-6 text-center text-xs text-muted-foreground">
+                  Пул product assets пока пуст.
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Fallback product URL
+                </label>
+                <input
+                  value={draftSettings.product_video_url}
+                  onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_video_url: event.target.value }))}
+                  className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                  placeholder="/uploads/product-assets/client-1/clip.mp4"
                 />
-              ) : null}
+                <p className="text-xs text-muted-foreground">
+                  Используется как запасной одиночный source, если пул ассетов пуст.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1185,9 +1382,11 @@ export function SettingsScreen({
               <p>Целевая аудитория помогает выбирать правильные боли, примеры и обещания.</p>
               <p>TTS Provider определяет, пойдёт ли озвучка через MiniMax или ElevenLabs, а ниже задаются соответствующие параметры голоса.</p>
               <p>Целевая длина задаёт желаемую длительность итогового сценария вместо жёсткой привязки к референсу.</p>
-              <p>Режим тайминга определяет, режем ли мы ролик по смыслу и паузам или по жёсткому интервалу.</p>
-              <p>Профиль темпа задаёт монтажный характер: спокойный, сбалансированный или более динамичный.</p>
-              <p>Целевой средний интервал и порог сильной паузы позволяют тонко настроить, насколько часто и насколько уверенно будут появляться перебивки.</p>
+              <p>Режим тайминга определяет, режем ли мы ролик по смыслу и паузам, по целевому проценту покрытия перебивками или по жёсткому интервалу.</p>
+              <p>Ритм монтажа задаёт общий характер нарезки: спокойный, сбалансированный или более динамичный.</p>
+              <p>Для режима по паузам и смыслу модель сама ищет сильные смысловые блоки по всему transcript, а ты управляешь только покрытием, точностью и политикой product clip.</p>
+              <p>Генератор перебивок определяет, какая именно KIE-модель будет использоваться при ручном запуске видео и в автоматическом пайплайне.</p>
+              <p>В fixed-режиме работает только жёсткий интервал. В режимах по смыслу и покрытию важнее общая доля b-roll и релевантность перебивок сценарию.</p>
               <p>Product keyword и product video позволяют использовать готовый брендовый клип вместо генерации, когда продукт упоминается в сценарии.</p>
             </div>
             <Button

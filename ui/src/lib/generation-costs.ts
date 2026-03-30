@@ -1,7 +1,28 @@
 import { Scenario, ScenarioVideoPromptItem, WordTimestamp } from "@/types";
 
 export const PROMPT_GENERATION_COST_USD = 0.03;
+export const SEEDANCE_15_PRO_GENERATION_COST_USD = 0.07;
+export const GROK_IMAGINE_TEXT_TO_VIDEO_COST_USD = 0.1;
 export const HEYGEN_COST_PER_MINUTE_USD = 1;
+
+export type BrollGeneratorModel =
+  | "bytedance/v1-pro-text-to-video"
+  | "bytedance/seedance-1.5-pro"
+  | "grok-imagine/text-to-video";
+
+export function getScenarioBrollGeneratorModel(scenario?: Scenario | null): BrollGeneratorModel {
+  const rawModel = scenario?.video_generation_prompts?.generator_model;
+  if (rawModel === "bytedance/seedance-1.5-pro" || rawModel === "grok-imagine/text-to-video") {
+    return rawModel;
+  }
+  return "bytedance/v1-pro-text-to-video";
+}
+
+export function getBrollGenerationUnitCostUsd(model: BrollGeneratorModel): number {
+  if (model === "bytedance/seedance-1.5-pro") return SEEDANCE_15_PRO_GENERATION_COST_USD;
+  if (model === "grok-imagine/text-to-video") return GROK_IMAGINE_TEXT_TO_VIDEO_COST_USD;
+  return PROMPT_GENERATION_COST_USD;
+}
 
 export function getScenarioDurationSeconds(words?: WordTimestamp[] | null): number {
   const normalizedWords = words || [];
@@ -11,21 +32,33 @@ export function getScenarioDurationSeconds(words?: WordTimestamp[] | null): numb
   }, 0);
 }
 
+export function getScenarioActualDurationSeconds(scenario?: Scenario | null): number {
+  if (!scenario) return 0;
+  const savedAudioDuration = Number(scenario.tts_audio_duration_seconds || 0);
+  if (Number.isFinite(savedAudioDuration) && savedAudioDuration > 0) {
+    return savedAudioDuration;
+  }
+  return getScenarioDurationSeconds(scenario.tts_word_timestamps?.words);
+}
+
 export function getGeneratedPromptCount(prompts?: ScenarioVideoPromptItem[] | null): number {
   return (prompts || []).filter((item) => !item.use_ready_asset && item.prompt_json).length;
 }
 
 export function getScenarioGenerationCosts(scenario: Scenario) {
   const prompts = scenario.video_generation_prompts?.prompts || [];
-  const words = scenario.tts_word_timestamps?.words || [];
   const generatedPromptCount = getGeneratedPromptCount(prompts);
-  const promptCostUsd = generatedPromptCount * PROMPT_GENERATION_COST_USD;
-  const heygenDurationSeconds = getScenarioDurationSeconds(words);
+  const generatorModel = getScenarioBrollGeneratorModel(scenario);
+  const promptUnitCostUsd = getBrollGenerationUnitCostUsd(generatorModel);
+  const promptCostUsd = generatedPromptCount * promptUnitCostUsd;
+  const heygenDurationSeconds = getScenarioActualDurationSeconds(scenario);
   const heygenCostUsd = (heygenDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
   const totalCostUsd = promptCostUsd + heygenCostUsd;
 
   return {
     generatedPromptCount,
+    generatorModel,
+    promptUnitCostUsd,
     promptCostUsd,
     heygenDurationSeconds,
     heygenCostUsd,

@@ -84,6 +84,78 @@ HOOK_BAN_PHRASES = [
     "прикол в том",
 ]
 
+UNSHOWABLE_REFERENCE_NOUNS_PATTERN = (
+    r"(?:"
+    r"сайт(?:а|ы|ов)?|"
+    r"сервис(?:а|ы|ов)?|"
+    r"приложени(?:е|я|й)|"
+    r"платформ(?:а|ы)|"
+    r"ссылк(?:а|и|у|е|ой|ами|ах)?|"
+    r"товар(?:а|ы|ов)?|"
+    r"продукт(?:а|ы|ов)?|"
+    r"крем(?:а|ы|ов)?|"
+    r"спрей(?:я|и|ев)?|"
+    r"лекарств(?:о|а)?|"
+    r"витамин(?:ы|ов)?|"
+    r"капсул(?:а|ы|у|е|ой|ами|ах)?|"
+    r"таблетк(?:а|и|у|е|ой|ами|ах)?|"
+    r"маз(?:ь|и)|"
+    r"флакон(?:а|ы|ов)?|"
+    r"бутылк(?:а|и|у|е|ой|ами|ах)?"
+    r")"
+)
+
+UNSHOWABLE_REFERENCE_PATTERNS = [
+    (
+        re.compile(
+            rf"\b(?:вот\s+это|(?:вот\s+)?(?:этот|эта|эту|эти|этих))\s+(?:[а-яa-z0-9-]+\s+){{0,2}}{UNSHOWABLE_REFERENCE_NOUNS_PATTERN}\b",
+            flags=re.IGNORECASE,
+        ),
+        "direct_demonstrative_reference",
+    ),
+    (
+        re.compile(
+            rf"\b(?:перв(?:ый|ая|ое)|втор(?:ой|ая|ое)|трет(?:ий|ья|ье))\s+(?:[а-яa-z0-9-]+\s+){{0,2}}{UNSHOWABLE_REFERENCE_NOUNS_PATTERN}\b",
+            flags=re.IGNORECASE,
+        ),
+        "ordinal_specific_reference",
+    ),
+]
+
+
+def find_unshowable_asset_reference_issues(script: str):
+    normalized = re.sub(r"\s+", " ", (script or "").strip()).lower().replace("ё", "е")
+    if not normalized:
+        return []
+
+    issues = []
+    seen = set()
+    for pattern, reason in UNSHOWABLE_REFERENCE_PATTERNS:
+        for match in pattern.finditer(normalized):
+            snippet = match.group(0).strip()
+            key = (reason, snippet)
+            if key in seen:
+                continue
+            seen.add(key)
+            issues.append({"reason": reason, "match": snippet})
+    return issues
+
+
+def has_unshowable_asset_reference_issues(script: str) -> bool:
+    return bool(find_unshowable_asset_reference_issues(script))
+
+
+def _asset_visibility_guardrails() -> str:
+    return """
+    ASSET VISIBILITY CONSTRAINTS:
+    - We cannot show real third-party websites, app screens, or arbitrary consumer products unless a real asset was prepared in advance.
+    - Therefore do NOT write lines that point at a concrete unseen object as if the viewer can see it on screen.
+    - Forbidden examples: "вот эти сайты", "вот этот сайт", "первый сайт", "второй сайт", "вот этот крем", "вот этот спрей", "вот это приложение".
+    - If you need to mention resources or items, speak generically and non-pointingly: "есть сервис, который...", "одна платформа помогает...", "несколько сайтов с визовой информацией", "средство от комаров", "крем с высоким SPF".
+    - Do not build the script around numbered unseen websites or products that imply on-screen demonstration.
+    - The script must remain truthful for a talking-head video even if no external website/product footage is shown.
+    """
+
 
 def _split_sentences(text: str):
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
@@ -195,6 +267,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Treat third-party promo fragments in the source as replaceable scaffolding, not as facts that must be preserved.
     - This is variation #{variation_index} out of {total_variations}. The wording can shift, but the script should still feel like the same winning reel.
     - Do NOT default to generic anti-pattern hooks or stock openers that were NOT present in the source.
+    {_asset_visibility_guardrails()}
 
     HOOK PRESERVATION RULES:
     - Source opening sentence 1: {hook_context["first_sentence"] or "N/A"}
@@ -312,6 +385,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Did I remove the source author's ads, channels, affiliate mentions, and чужие promo lines?
     - Did I preserve the detected pattern_type and not accidentally turn a list into a story, or a story into a generic explainer?
     - Does the rewrite feel almost as rich and watchable as the source?
+    - Did I avoid demonstrative references to unseen websites, apps, or products like "вот эти сайты" or "первый сайт"?
 
     RETURN JSON:
     {{
@@ -410,6 +484,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
        - Если стадия "Неосведомлен" — давите на боль и проблему.
        - Если стадия "Осознает продукт" — делайте упор на экспертные детали и сравнение.
     6. **Human Touch**: Используйте маркеры живой речи из Linguistic Fingerprint оригинала (связки, обращения, темп).
+    7. Не используйте указательные формулировки для внешних сайтов, приложений и товаров, которые зритель не увидит в кадре: нельзя "вот эти сайты", "первый сайт", "вот этот крем". Говорите только обобщенно: "есть сервис", "одна платформа", "несколько сайтов", "средство от комаров".
 
     ВЕРНИТЕ JSON:
     {{
@@ -514,6 +589,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     6. Если референсы открываются утверждением-наблюдением, открывайтесь утверждением-наблюдением. Если они открываются списком, открывайтесь списком. Если они открываются прямым советом/командой, сохраняйте эту механику.
     7. Не использовать штампы "Думаешь...", "Думаете...", "А вот и нет!", "Забудьте!", "Прикол в том, что..." если таких открытий нет среди исходных референсов.
     8. Вариация №{variation_index} из {total_variations}.
+    9. Не используйте указательные формулировки для неподготовленных внешних сайтов, приложений и товаров: нельзя "вот эти сайты", "первый сайт", "второй сайт", "вот этот спрей". Если нужно упомянуть ресурс или предмет, описывайте его обобщенно и без визуального указания.
 
     OPENING REFERENCES TO FOLLOW STRUCTURALLY:
     {json.dumps(reference_openings, ensure_ascii=False, indent=2)}
@@ -586,6 +662,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     5. NATURAL VOICE: Write for a human "Talking Head". Use conversational связки (так вот, прикол в том, короче).
     6. PRODUCT INTEGRATION: Woven the product naturally as the "Enabler". It shouldn't feel like a mid-roll ad, it should be the logical solution to the pain point mentioned.
     7. Avoid repetitive stock openers if they were not present in the source hook. Forbidden phrases unless present in the source opening: {json.dumps(banned_hook_phrases, ensure_ascii=False)}
+    8. Do NOT use demonstrative references to third-party sites, apps, or consumer products that the viewer cannot literally see on screen. Forbidden examples: "вот эти сайты", "первый сайт", "вот этот крем". Use generic wording instead: "есть сервис", "одна платформа", "несколько сайтов", "крем с высоким SPF".
 
     TOPIC CARD (The "What"):
     {json.dumps(topic_meta or topic_card, ensure_ascii=False, indent=2)}

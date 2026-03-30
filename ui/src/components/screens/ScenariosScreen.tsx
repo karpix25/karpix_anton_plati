@@ -5,7 +5,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Scenario, ScenarioKeywordSegment, ScenarioVideoPromptItem, WordTimestamp } from "@/types";
-import { formatUsd, getGeneratedPromptCount, getScenarioDurationSeconds, getScenarioGenerationCosts, HEYGEN_COST_PER_MINUTE_USD, PROMPT_GENERATION_COST_USD } from "@/lib/generation-costs";
+import { formatUsd, getBrollGenerationUnitCostUsd, getGeneratedPromptCount, getScenarioActualDurationSeconds, getScenarioBrollGeneratorModel, getScenarioDurationSeconds, getScenarioGenerationCosts, HEYGEN_COST_PER_MINUTE_USD } from "@/lib/generation-costs";
 import {
   Dialog,
   DialogContent,
@@ -106,6 +106,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [generatedKeywordSegments, setGeneratedKeywordSegments] = useState<ScenarioKeywordSegment[]>([]);
   const [generatedVideoPrompts, setGeneratedVideoPrompts] = useState<ScenarioVideoPromptItem[]>([]);
   const [isPollingVideoStatus, setIsPollingVideoStatus] = useState(false);
+  const [actualAudioDurationSeconds, setActualAudioDurationSeconds] = useState<number | null>(null);
   const latestScenarioId = scenarios[0]?.id ?? null;
   const isLatestScenario = !!selectedScenario && selectedScenario.id === latestScenarioId;
 
@@ -142,6 +143,13 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     };
   }, [generatedAudioUrl]);
 
+  const effectiveAudioUrl =
+    generatedAudioUrl && generatedAudioScenarioId === selectedScenario?.id
+      ? generatedAudioUrl
+      : selectedScenario?.tts_audio_path
+        ? `/api/tts/audio?scenarioId=${selectedScenario.id}`
+        : null;
+
   useEffect(() => {
     if (!selectedScenario) return;
 
@@ -155,6 +163,41 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     setGeneratedKeywordSegments(savedKeywordSegments);
     setGeneratedVideoPrompts(savedVideoPrompts);
   }, [selectedScenario]);
+
+  useEffect(() => {
+    if (!effectiveAudioUrl) {
+      setActualAudioDurationSeconds(null);
+      return;
+    }
+
+    let cancelled = false;
+    const audio = new Audio();
+    audio.preload = "metadata";
+    audio.src = effectiveAudioUrl;
+
+    const handleLoadedMetadata = () => {
+      if (cancelled) return;
+      const duration = Number(audio.duration || 0);
+      setActualAudioDurationSeconds(Number.isFinite(duration) && duration > 0 ? duration : null);
+    };
+
+    const handleError = () => {
+      if (!cancelled) {
+        setActualAudioDurationSeconds(null);
+      }
+    };
+
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("error", handleError);
+
+    return () => {
+      cancelled = true;
+      audio.pause();
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("error", handleError);
+      audio.src = "";
+    };
+  }, [effectiveAudioUrl]);
 
   useEffect(() => {
     if (!selectedScenario) return;
@@ -398,22 +441,28 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     a.remove();
   };
 
-  const effectiveAudioUrl =
-    generatedAudioUrl && generatedAudioScenarioId === selectedScenario?.id
-      ? generatedAudioUrl
-      : selectedScenario?.tts_audio_path
-        ? `/api/tts/audio?scenarioId=${selectedScenario.id}`
-        : null;
-
   const scenarioCosts = selectedScenario ? getScenarioGenerationCosts(selectedScenario) : null;
-  const currentWordDurationSeconds = getScenarioDurationSeconds(
+  const currentTranscriptDurationSeconds = getScenarioDurationSeconds(
     generatedWordTimestamps.length ? generatedWordTimestamps : selectedScenario?.tts_word_timestamps?.words
   );
+  const currentActualDurationSeconds =
+    actualAudioDurationSeconds ??
+    (generatedAudioScenarioId === selectedScenario?.id && generatedAudioUrl
+      ? currentTranscriptDurationSeconds
+      : getScenarioActualDurationSeconds(selectedScenario));
   const currentGeneratedPromptCount = getGeneratedPromptCount(
     generatedVideoPrompts.length ? generatedVideoPrompts : selectedScenario?.video_generation_prompts?.prompts
   );
-  const currentPromptCostUsd = currentGeneratedPromptCount * PROMPT_GENERATION_COST_USD;
-  const currentHeygenCostUsd = (currentWordDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
+  const currentBrollGeneratorModel = getScenarioBrollGeneratorModel(selectedScenario);
+  const currentBrollGeneratorLabel =
+    currentBrollGeneratorModel === "bytedance/seedance-1.5-pro"
+      ? "Seedance 1.5 Pro"
+      : currentBrollGeneratorModel === "grok-imagine/text-to-video"
+        ? "Grok Imagine T2V"
+        : "KIE V1 Pro";
+  const currentPromptUnitCostUsd = getBrollGenerationUnitCostUsd(currentBrollGeneratorModel);
+  const currentPromptCostUsd = currentGeneratedPromptCount * currentPromptUnitCostUsd;
+  const currentHeygenCostUsd = (currentActualDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
   const currentTotalCostUsd = currentPromptCostUsd + currentHeygenCostUsd;
   const effectiveMontageUrl =
     selectedScenario?.montage_video_path && selectedScenario?.id
@@ -602,14 +651,21 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                 <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{formatUsd(currentTotalCostUsd)}</div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Seedance prompts</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{currentBrollGeneratorLabel}</div>
                 <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{currentGeneratedPromptCount}</div>
-                <div className="mt-1 text-xs text-slate-500">{formatUsd(currentPromptCostUsd)} по ${PROMPT_GENERATION_COST_USD.toFixed(3)} за prompt</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  {formatUsd(currentPromptCostUsd)} по ${currentPromptUnitCostUsd.toFixed(3)} за генерацию
+                </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">HeyGen длительность</div>
-                <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{currentWordDurationSeconds.toFixed(1)}s</div>
+                <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{currentActualDurationSeconds.toFixed(1)}s</div>
                 <div className="mt-1 text-xs text-slate-500">{formatUsd(currentHeygenCostUsd)} по $1.00 за минуту</div>
+                {Math.abs(currentActualDurationSeconds - currentTranscriptDurationSeconds) > 0.35 ? (
+                  <div className="mt-1 text-[11px] text-amber-600">
+                    transcript timestamps: {currentTranscriptDurationSeconds.toFixed(1)}s
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Сохранено в БД</div>

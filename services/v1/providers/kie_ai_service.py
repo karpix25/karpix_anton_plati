@@ -10,18 +10,59 @@ logger = logging.getLogger(__name__)
 
 KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 KIE_RECORD_INFO_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
-KIE_MODEL = "bytedance/v1-pro-text-to-video"
+DEFAULT_KIE_MODEL = "bytedance/v1-pro-text-to-video"
+SEEDANCE_15_PRO_MODEL = "bytedance/seedance-1.5-pro"
+GROK_IMAGINE_TEXT_TO_VIDEO_MODEL = "grok-imagine/text-to-video"
+SUPPORTED_KIE_MODELS = {
+    DEFAULT_KIE_MODEL,
+    SEEDANCE_15_PRO_MODEL,
+    GROK_IMAGINE_TEXT_TO_VIDEO_MODEL,
+}
 
 
 def _get_api_key() -> str | None:
     return os.getenv("KIE_API_KEY") or os.getenv("KIE_AI_API_KEY")
 
 
-def build_kie_request_payload(prompt_json: Dict[str, Any]) -> Dict[str, Any]:
+def normalize_kie_model(value: str | None) -> str:
+    normalized = str(value or DEFAULT_KIE_MODEL).strip()
+    return normalized if normalized in SUPPORTED_KIE_MODELS else DEFAULT_KIE_MODEL
+
+
+def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
+    resolved_model = normalize_kie_model(model)
+    prompt_text = json.dumps(prompt_json, ensure_ascii=False)
+
+    if resolved_model == SEEDANCE_15_PRO_MODEL:
+        return {
+            "model": resolved_model,
+            "input": {
+                "prompt": prompt_text,
+                "aspect_ratio": "9:16",
+                "resolution": "720p",
+                "duration": "4",
+                "fixed_lens": False,
+                "generate_audio": False,
+                "nsfw_checker": True,
+            },
+        }
+
+    if resolved_model == GROK_IMAGINE_TEXT_TO_VIDEO_MODEL:
+        return {
+            "model": resolved_model,
+            "input": {
+                "prompt": prompt_text,
+                "aspect_ratio": "9:16",
+                "mode": "normal",
+                "duration": "6",
+                "resolution": "720p",
+            },
+        }
+
     return {
-        "model": KIE_MODEL,
+        "model": resolved_model,
         "input": {
-            "prompt": json.dumps(prompt_json, ensure_ascii=False),
+            "prompt": prompt_text,
             "aspect_ratio": "9:16",
             "resolution": "720p",
             "duration": "5",
@@ -33,13 +74,15 @@ def build_kie_request_payload(prompt_json: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def submit_kie_video_task(prompt_json: Dict[str, Any]) -> Dict[str, Any]:
+def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
     api_key = _get_api_key()
-    payload = build_kie_request_payload(prompt_json)
+    resolved_model = normalize_kie_model(model)
+    payload = build_kie_request_payload(prompt_json, resolved_model)
 
     if not api_key:
         return {
             "provider": "kie.ai",
+            "provider_model": resolved_model,
             "submission_status": "skipped",
             "task_id": None,
             "request_payload": payload,
@@ -63,6 +106,7 @@ def submit_kie_video_task(prompt_json: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "provider": "kie.ai",
+        "provider_model": resolved_model,
         "submission_status": "submitted" if task_id else "unknown",
         "task_id": task_id,
         "task_state": "waiting" if task_id else None,
@@ -73,7 +117,7 @@ def submit_kie_video_task(prompt_json: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: str | None = None) -> List[Dict[str, Any]]:
     enriched_prompts: List[Dict[str, Any]] = []
 
     for item in prompts or []:
@@ -81,6 +125,7 @@ def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[Dict[str
             enriched_prompts.append({
                 **item,
                 "provider": "ready_asset",
+                "provider_model": None,
                 "submission_status": "not_applicable",
                 "task_id": None,
                 "task_state": None,
@@ -92,7 +137,7 @@ def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[Dict[str
             continue
 
         try:
-            submission = submit_kie_video_task(item["prompt_json"])
+            submission = submit_kie_video_task(item["prompt_json"], model=model)
             enriched_prompts.append({
                 **item,
                 **submission,
@@ -102,10 +147,11 @@ def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[Dict[str
             enriched_prompts.append({
                 **item,
                 "provider": "kie.ai",
+                "provider_model": normalize_kie_model(model),
                 "submission_status": "failed",
                 "task_id": None,
                 "task_state": "fail",
-                "request_payload": build_kie_request_payload(item["prompt_json"]),
+                "request_payload": build_kie_request_payload(item["prompt_json"], model),
                 "response_payload": None,
                 "result_urls": [],
                 "error": str(error),
@@ -114,7 +160,7 @@ def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[Dict[str
     return enriched_prompts
 
 
-def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: str | None = None) -> List[Dict[str, Any]]:
     enriched_prompts: List[Dict[str, Any]] = []
 
     for item in prompts or []:
@@ -122,6 +168,7 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[
             enriched_prompts.append({
                 **item,
                 "provider": item.get("provider") or "ready_asset",
+                "provider_model": item.get("provider_model"),
                 "submission_status": item.get("submission_status") or "not_applicable",
                 "task_id": item.get("task_id"),
                 "task_state": item.get("task_state"),
@@ -137,7 +184,7 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[
             continue
 
         try:
-            submission = submit_kie_video_task(item["prompt_json"])
+            submission = submit_kie_video_task(item["prompt_json"], model=model)
             enriched_prompts.append({
                 **item,
                 **submission,
@@ -147,10 +194,11 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]]) -> List[
             enriched_prompts.append({
                 **item,
                 "provider": "kie.ai",
+                "provider_model": normalize_kie_model(model),
                 "submission_status": "failed",
                 "task_id": None,
                 "task_state": "fail",
-                "request_payload": build_kie_request_payload(item["prompt_json"]),
+                "request_payload": build_kie_request_payload(item["prompt_json"], model),
                 "response_payload": None,
                 "result_urls": [],
                 "error": str(error),
@@ -204,6 +252,7 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
         return {
             **item,
             "provider": "kie.ai",
+            "provider_model": item.get("provider_model") or data.get("model") or ((item.get("request_payload") or {}).get("model")),
             "submission_status": "completed" if task_state == "success" else ("failed" if task_state == "fail" else "submitted"),
             "task_state": task_state,
             "response_payload": response_payload,
@@ -221,6 +270,7 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
         return {
             **item,
             "provider": "kie.ai",
+            "provider_model": item.get("provider_model"),
             "submission_status": "failed" if "404" in str(error) else item.get("submission_status", "submitted"),
             "error": str(error),
         }
