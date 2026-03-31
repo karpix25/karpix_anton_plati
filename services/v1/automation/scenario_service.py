@@ -208,6 +208,40 @@ def _hook_context_from_transcript(transcript: str):
     }
 
 
+def _classify_hook_shape(text: str) -> str:
+    opening = _compact_spaces((text or "").lower().replace("ё", "е"))
+    if not opening:
+        return "unknown"
+    if re.match(r"^\d+\b", opening):
+        return "numbered_list"
+    if opening.endswith("?"):
+        return "question"
+    if re.match(r"^(не |никогда |хватит |перестан|забуд|не пытай|не едь|не делай)", opening):
+        return "warning_or_contrarian"
+    if re.match(r"^(смотри|запомни|проверь|знай|езжай|бери|делай|используй|сохрани)", opening):
+        return "direct_command"
+    if ":" in opening[:40]:
+        return "label_or_list_setup"
+    return "statement"
+
+
+def _hook_blueprint(text: str) -> dict:
+    context = _hook_context_from_transcript(text)
+    opening = context["opening"] or _compact_spaces(text)
+    first_sentence = context["first_sentence"] or opening
+    opening_words = first_sentence.split()
+    return {
+        "opening": opening,
+        "first_sentence": first_sentence,
+        "second_sentence": context["second_sentence"],
+        "shape": _classify_hook_shape(first_sentence),
+        "first_words": " ".join(opening_words[:8]),
+        "first_sentence_word_count": len(opening_words),
+        "has_numbered_opening": bool(re.match(r"^\d+\b", first_sentence.strip())),
+        "has_question_mark": "?" in first_sentence,
+    }
+
+
 def _hook_context_from_source_cards(topic_card=None, structure_card=None):
     source_content_id = (
         structure_card.get("source_content_id")
@@ -258,6 +292,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     wpm_label = f"{source_wpm:.1f} слов/мин" if source_wpm else "не определен"
     desired_duration_label = duration_targets["duration_range_label"]
     hook_context = _hook_context_from_transcript(transcript)
+    hook_blueprint = _hook_blueprint(hook_context["opening"] or transcript)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
     prompt = f"""
@@ -305,8 +340,11 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Source opening sentence 1: {hook_context["first_sentence"] or "N/A"}
     - Source opening sentence 2: {hook_context["second_sentence"] or "N/A"}
     - Proven opening block to preserve structurally: {hook_context["opening"] or "N/A"}
+    - Hook blueprint: {json.dumps(hook_blueprint, ensure_ascii=False)}
     - Preserve the source hook format: if the source starts with a statement, keep a statement. If it starts with a command, keep a command. If it starts with a list/countdown, keep a list/countdown. If it starts with a contrarian observation, keep a contrarian observation.
     - Do NOT replace the source opening with a lazy rhetorical-question template unless the source itself uses that exact mechanic.
+    - The first sentence should stay in the same hook family and roughly the same length band as the source opening.
+    - Reuse the same opening energy: if the source opens with a hard claim, your rewrite also opens with a hard claim; if it opens with a fast list setup, your rewrite also opens with a fast list setup.
     - Forbidden generic hook phrases unless they already existed in the source: {json.dumps(banned_hook_phrases, ensure_ascii=False)}
 
     FACT PRESERVATION RULES:
@@ -391,6 +429,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     3. Rewrite the script in Russian as a close variation.
     4. Preserve the original hook logic, sequence, emotional progression, factual density, and CTA placement.
     4a. The first 1-2 sentences must mirror the source opening architecture and should not collapse into a generic "Думаешь/А вот и нет/Забудь" opener unless the source truly did that.
+    4b. The first sentence must preserve the same hook shape as the blueprint above and should feel recognizably derived from the source opening mechanism.
     5. Preserve the detected `pattern_type` and its content shape.
     6. If the pattern is `top_list`, keep it list-like. If it is `route_story`, keep route progression. If it is `comparison`, keep comparison logic. If it is `opinion_take`, keep the contrarian stance. If it is `mistakes`, keep the warning structure.
     7. If a destination hint is provided, relocate the script to that destination while keeping the same narrative engine and factual density.
@@ -480,6 +519,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     desired_duration_label = duration_targets["duration_range_label"]
     source_hook = atoms.get("verbal_hook") or ""
     normalized_source_hook = source_hook.lower().replace("ё", "е")
+    hook_blueprint = _hook_blueprint(source_hook)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in normalized_source_hook]
 
     prompt = f"""
@@ -494,6 +534,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     - Стадия осознанности (Лестница Ханта): {hunt.get('stage')} (Причина: {hunt.get('reason')})
     - Главный секрет успеха: {viral_dna}
     - Хук: {atoms.get('verbal_hook')} (Механика: {atoms.get('psychological_trigger')})
+    - Hook blueprint: {json.dumps(hook_blueprint, ensure_ascii=False)}
     - Скелет (Смысловые блоки): {json.dumps(atoms.get('narrative_skeleton'), ensure_ascii=False)}
     - Точки напряжения (Враг/Миф): {json.dumps(atoms.get('tension_points'), ensure_ascii=False)}
     - Призыв (CTA): {atoms.get('cta_mechanism')}
@@ -516,6 +557,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     3. **Mirror the Hook**: Создайте хук с ТОЙ ЖЕ психологической механикой и тем же форматом захода, что и у референса, но на тему нашего продукта.
     3a. Если референс начинает ролик не вопросом, не превращайте начало в вопрос.
     3b. Не использовать штампы {json.dumps(banned_hook_phrases, ensure_ascii=False)} если их нет в хукe референса.
+    3c. Первое предложение должно сохранить тот же hook shape, длину захода и ощущение "той же механики", а не просто ту же тему.
     4. **Curiosity Gap**: Сохраните тот же открытый вопрос в начале, ответ на который зритель получит только в конце.
     5. **Hunt Ladder Alignment**: 
        - Если стадия "Неосведомлен" — давите на боль и проблему.
@@ -561,9 +603,6 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     )
     word_min = max(duration_targets["min_word_target"], 30)
     word_max = max(duration_targets["max_word_target"], 60)
-    hook_context = _hook_context_from_source_cards(topic_card=topic_card, structure_card=structure_card)
-    banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
-
     normalized_references = []
     for idx, audit in enumerate(reference_audits, start=1):
         atoms = audit.get("atoms", {})
@@ -592,10 +631,14 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
             "reference_number": item.get("reference_number"),
             "hook": item.get("hook"),
             "trigger": item.get("trigger"),
+            "blueprint": _hook_blueprint(item.get("hook") or ""),
         }
         for item in normalized_references[:6]
         if item.get("hook")
     ]
+    reference_hook_text = " ".join(item.get("hook") or "" for item in normalized_references[:3] if item.get("hook"))
+    hook_context = _hook_context_from_transcript(reference_hook_text)
+    banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
     target_topic = topic or normalized_references[0].get("topic_cluster") or niche
     target_angle = angle or normalized_references[0].get("topic_angle") or "Сохрани исходный угол подачи"
@@ -629,6 +672,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     4. **Density Control**: Сохраняйте высокую плотность полезной информации (цифры, сравнения), как в лучших референсах.
     5. **Hook Fidelity**: Первые 1-2 предложения должны опираться на реальные opening hooks кластера, а не на универсальный шаблон модели.
     6. Если референсы открываются утверждением-наблюдением, открывайтесь утверждением-наблюдением. Если они открываются списком, открывайтесь списком. Если они открываются прямым советом/командой, сохраняйте эту механику.
+    6a. Внутренне определи доминирующий hook shape кластера и сохрани его в первом предложении нового сценария.
     7. Не использовать штампы "Думаешь...", "Думаете...", "А вот и нет!", "Забудьте!", "Прикол в том, что..." если таких открытий нет среди исходных референсов.
     8. Вариация №{variation_index} из {total_variations}.
     9. Не используйте указательные формулировки для неподготовленных внешних сайтов, приложений и товаров: нельзя "вот эти сайты", "первый сайт", "второй сайт", "вот этот спрей". Если нужно упомянуть ресурс или предмет, описывайте его обобщенно и без визуального указания.
@@ -721,6 +765,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     - Opening sentence 1: {hook_context["first_sentence"] or "N/A"}
     - Opening sentence 2: {hook_context["second_sentence"] or "N/A"}
     - Proven opening block: {hook_context["opening"] or "N/A"}
+    - Hook blueprint: {json.dumps(_hook_blueprint(hook_context["opening"] or ""), ensure_ascii=False)}
 
     TARGET PRODUCT:
     {product_context}
@@ -740,6 +785,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     2. Apply the TOPIC from the Topic Card to that thesis.
     3. Generate a {word_min}-{word_max} word script in Russian.
     4. Ensure the hook matches the `hook_style` from the Structure Card and also preserves the real opening format from the source hook above.
+    4a. The first sentence should preserve the same hook family as the source blueprint: question stays question, list stays list, direct statement stays direct statement.
     5. Ensure the product integration matches the `integration_style` but feels organic.
 
     RETURN JSON:
