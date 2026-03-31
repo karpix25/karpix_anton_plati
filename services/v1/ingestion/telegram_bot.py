@@ -34,9 +34,8 @@ if not token:
 
 bot = TeleBot(token)
 
-
-def _escape_markdown(text):
-    return str(text or "").replace("*", "\\*").replace("_", "\\_").replace("`", "\\`")
+def _plain(text):
+    return str(text or "").replace("`", "").replace("*", "")
 
 
 def _detect_topic_name(message):
@@ -47,37 +46,37 @@ def _detect_topic_name(message):
 
 def build_connection_help_message(message, config=None):
     topic_id = str(message.message_thread_id or "0")
-    topic_name = _escape_markdown(_detect_topic_name(message))
-    client_name = _escape_markdown((config or {}).get("client_name"))
+    topic_name = _plain(_detect_topic_name(message))
+    client_name = _plain((config or {}).get("client_name"))
 
     lines = [
-        "🤖 *Как подключить проект к Telegram-боту*",
+        "Как подключить проект к Telegram-боту",
         "",
-        "1. Создайте проект командой `/new_client НазваниеПроекта`",
-        "2. Перейдите в нужный топик и привяжите проект: `/assign_client НазваниеПроекта`",
+        "1. Создайте проект командой /new_client НазваниеПроекта",
+        "2. Перейдите в нужный топик и привяжите проект: /assign_client НазваниеПроекта",
         "3. При необходимости задайте контекст:",
-        "`/set_client_product ...`",
-        "`/set_brand ...`",
+        "/set_client_product ...",
+        "/set_brand ...",
         "4. После этого просто отправляйте Instagram Reel ссылку в этот топик",
         "",
-        f"🧵 *Текущий topic_id:* `{topic_id}`",
-        f"🏷 *Текущая ниша / имя топика:* *{topic_name}*",
+        f"Текущий topic_id: {topic_id}",
+        f"Текущая ниша / имя топика: {topic_name}",
     ]
 
     if config:
         lines.extend(
             [
-                f"✅ *Сейчас подключен клиент:* *{client_name}*",
-                f"🎯 *Ниша по конфигу:* *{_escape_markdown(config.get('niche'))}*",
+                f"Сейчас подключен клиент: {client_name}",
+                f"Ниша по конфигу: {_plain(config.get('niche'))}",
             ]
         )
     else:
         lines.extend(
             [
-                "⚠️ *Сейчас этот топик не привязан ни к одному проекту.*",
+                "Сейчас этот топик не привязан ни к одному проекту.",
                 "Быстрый пример:",
-                "`/new_client Plati`",
-                "`/assign_client Plati`",
+                "/new_client Plati",
+                "/assign_client Plati",
             ]
         )
 
@@ -88,10 +87,10 @@ def build_commands_help_message(message, config=None):
     connection_help = build_connection_help_message(message, config=config)
     return (
         f"{connection_help}\n\n"
-        "*Основные команды*\n"
-        "`/client_info` показать текущий проект в топике\n"
-        "`/connect_help` показать инструкцию по подключению\n"
-        "`/whereami` показать topic_id и статус привязки\n"
+        "Основные команды\n"
+        "/client_info показать текущий проект в топике\n"
+        "/connect_help показать инструкцию по подключению\n"
+        "/whereami показать topic_id и статус привязки\n"
     )
 
 def extract_reel_link(text):
@@ -105,14 +104,14 @@ def extract_reel_link(text):
 def handle_start(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
-    bot.reply_to(message, build_commands_help_message(message, config=config), parse_mode="Markdown")
+    bot.reply_to(message, build_commands_help_message(message, config=config))
 
 
 @bot.message_handler(commands=['connect_help'])
 def handle_connect_help(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
-    bot.reply_to(message, build_connection_help_message(message, config=config), parse_mode="Markdown")
+    bot.reply_to(message, build_connection_help_message(message, config=config))
 
 
 @bot.message_handler(commands=['whereami'])
@@ -123,31 +122,29 @@ def handle_whereami(message):
         bot.reply_to(
             message,
             (
-                f"📍 *chat_id:* `{message.chat.id}`\n"
-                f"🧵 *topic_id:* `{topic_id}`\n"
-                f"👤 *Клиент:* *{_escape_markdown(config['client_name'])}*\n"
-                f"🎯 *Ниша:* *{_escape_markdown(config['niche'])}*"
+                f"chat_id: {message.chat.id}\n"
+                f"topic_id: {topic_id}\n"
+                f"Клиент: {_plain(config['client_name'])}\n"
+                f"Ниша: {_plain(config['niche'])}"
             ),
-            parse_mode="Markdown",
         )
         return
 
     bot.reply_to(
         message,
         (
-            f"📍 *chat_id:* `{message.chat.id}`\n"
-            f"🧵 *topic_id:* `{topic_id}`\n"
-            "⚠️ *Этот топик пока не привязан к проекту.*\n\n"
+            f"chat_id: {message.chat.id}\n"
+            f"topic_id: {topic_id}\n"
+            "Этот топик пока не привязан к проекту.\n\n"
             f"{build_connection_help_message(message)}"
         ),
-        parse_mode="Markdown",
     )
 
 @bot.message_handler(commands=['new_client'])
 def handle_new_client(message):
     name = message.text.replace('/new_client', '').strip()
     if not name:
-        bot.reply_to(message, "Укажите имя клиента. Пример: `/new_client Nike`", parse_mode="Markdown")
+        bot.reply_to(message, "Укажите имя клиента. Пример: /new_client Nike")
         return
     
     client_id = create_client(name)
@@ -155,10 +152,9 @@ def handle_new_client(message):
         bot.reply_to(
             message,
             (
-                f"✅ Клиент *{_escape_markdown(name)}* создан (ID: `{client_id}`).\n"
-                f"Теперь привяжите его в этом топике командой:\n`/assign_client {name}`"
+                f"Клиент {_plain(name)} создан (ID: {client_id}).\n"
+                f"Теперь привяжите его в этом топике командой:\n/assign_client {name}"
             ),
-            parse_mode="Markdown",
         )
     else:
         bot.reply_to(message, "❌ Ошибка создания клиента. Возможно, имя уже занято.")
@@ -170,8 +166,7 @@ def handle_assign_client(message):
     if not name:
         bot.reply_to(
             message,
-            "Укажите имя клиента. Пример: `/assign_client Nike`\n\nЕсли проект ещё не создан, сначала выполните `/new_client Nike`.",
-            parse_mode="Markdown",
+            "Укажите имя клиента. Пример: /assign_client Nike\n\nЕсли проект ещё не создан, сначала выполните /new_client Nike.",
         )
         return
     
@@ -180,10 +175,9 @@ def handle_assign_client(message):
         bot.reply_to(
             message,
             (
-                f"❌ Клиент *{_escape_markdown(name)}* не найден.\n"
-                f"Создайте его через `/new_client {name}` и затем повторите `/assign_client {name}`."
+                f"Клиент {_plain(name)} не найден.\n"
+                f"Создайте его через /new_client {name} и затем повторите /assign_client {name}."
             ),
-            parse_mode="Markdown",
         )
         return
     
@@ -196,14 +190,13 @@ def handle_assign_client(message):
     bot.reply_to(
         message,
         (
-            f"✅ Этот топик теперь привязан к клиенту *{_escape_markdown(name)}*.\n"
-            f"Ниша по умолчанию: *{_escape_markdown(niche)}*.\n\n"
+            f"Этот топик теперь привязан к клиенту {_plain(name)}.\n"
+            f"Ниша по умолчанию: {_plain(niche)}.\n\n"
             "Теперь можно:\n"
             "- отправлять Reel-ссылки для разбора\n"
             "- смотреть `/client_info`\n"
             "- настроить `/set_client_product` и `/set_brand`"
         ),
-        parse_mode="Markdown",
     )
 
 @bot.message_handler(commands=['client_info'])
@@ -214,26 +207,26 @@ def handle_client_info(message):
         bot.reply_to(message, build_connection_help_message(message), parse_mode="Markdown")
         return
     
-    info = f"""
-👤 **Клиент:** {config['client_name']}
-🎯 **Ниша:** {config['niche']}
-🚀 **Продукт:** {config.get('product_info') or 'Не задан'}
-🗣 **Voice:** {config.get('brand_voice') or 'Стандартный'}
-👥 **Audience:** {config.get('target_audience') or 'Не задана'}
-    """
-    bot.reply_to(message, info, parse_mode="Markdown")
+    info = (
+        f"Клиент: {_plain(config['client_name'])}\n"
+        f"Ниша: {_plain(config['niche'])}\n"
+        f"Продукт: {_plain(config.get('product_info') or 'Не задан')}\n"
+        f"Voice: {_plain(config.get('brand_voice') or 'Стандартный')}\n"
+        f"Audience: {_plain(config.get('target_audience') or 'Не задана')}"
+    )
+    bot.reply_to(message, info)
 
 @bot.message_handler(commands=['set_brand'])
 def handle_set_brand(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
     if not config:
-        bot.reply_to(message, "⚠️ Сначала привяжите клиента через `/assign_client`.")
+        bot.reply_to(message, "Сначала привяжите клиента через /assign_client.")
         return
     
     brand_voice = message.text.replace('/set_brand', '').strip()
     if not brand_voice:
-        bot.reply_to(message, "Опишите Brand Voice. Пример: `/set_brand Дерзкий, молодежный, много сленга`", parse_mode="Markdown")
+        bot.reply_to(message, "Опишите Brand Voice. Пример: /set_brand Дерзкий, молодежный, много сленга")
         return
     
     try:
@@ -252,12 +245,12 @@ def handle_set_client_product(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
     if not config:
-        bot.reply_to(message, "⚠️ Сначала привяжите клиента через `/assign_client`.")
+        bot.reply_to(message, "Сначала привяжите клиента через /assign_client.")
         return
     
     product = message.text.replace('/set_client_product', '').strip()
     if not product:
-        bot.reply_to(message, "Опишите продукт. Пример: `/set_client_product Новая коллекция кроссовок`", parse_mode="Markdown")
+        bot.reply_to(message, "Опишите продукт. Пример: /set_client_product Новая коллекция кроссовок")
         return
     
     try:
@@ -287,14 +280,13 @@ def handle_message(message):
                 message,
                 "🛑 Этот топик не привязан к проекту.\n\n"
                 + build_connection_help_message(message),
-                parse_mode="Markdown",
             )
             return
 
         logger.info(f"[{message.chat.id}] Client: {config['client_name']} | Reel: {reel_url}")
         
-        status_msg = f"🔍 **Разбираю референс для {config['client_name']}**\nНиша: {config['niche']}"
-        bot.reply_to(message, status_msg + "\n\n🚀 Запускаю атомарную деконструкцию...", parse_mode="Markdown")
+        status_msg = f"Разбираю референс для {_plain(config['client_name'])}\nНиша: {_plain(config['niche'])}"
+        bot.reply_to(message, status_msg + "\n\nЗапускаю атомарную деконструкцию...")
         
         try:
             job_id = f"tg_{message.chat.id}_{message.message_id}"
@@ -314,19 +306,15 @@ def handle_message(message):
                 audit = result["audit"]
                 atoms = audit.get("atoms", {})
                 
-                response = f"""
-✅ **Анализ для {config['client_name']} готов!**
-
-🪝 **Хук:** {atoms.get('verbal_hook')}
-🧠 **Триггер:** {atoms.get('psychological_trigger')}
-
-📊 **Скелет:**
-{chr(10).join([f"• {b}" for b in atoms.get('narrative_skeleton', [])])}
-
-💡 **DNA:** {audit.get('viral_dna_synthesis')}
-📈 **Score:** {audit.get('viral_score')}/100
-                """
-                bot.reply_to(message, response, parse_mode="Markdown")
+                response = (
+                    f"Анализ для {_plain(config['client_name'])} готов!\n\n"
+                    f"Хук: {_plain(atoms.get('verbal_hook'))}\n"
+                    f"Триггер: {_plain(atoms.get('psychological_trigger'))}\n\n"
+                    f"Скелет:\n{chr(10).join([f'- {_plain(b)}' for b in atoms.get('narrative_skeleton', [])])}\n\n"
+                    f"DNA: {_plain(audit.get('viral_dna_synthesis'))}\n"
+                    f"Score: {_plain(audit.get('viral_score'))}/100"
+                )
+                bot.reply_to(message, response)
 
             elif result["status"] == "scenario_complete":
                 audit = result.get("audit", {})
@@ -334,23 +322,19 @@ def handle_message(message):
                 atoms = audit.get("atoms", {})
                 hunt = (audit.get("hunt_ladder") or {}).get("stage", "Не определена")
 
-                response = f"""
-✅ **Разбор и сценарий для {config['client_name']} готовы!**
-
-🪝 **Хук:** {atoms.get('verbal_hook')}
-🧠 **Триггер:** {atoms.get('psychological_trigger')}
-🪜 **Стадия Ханта:** {hunt}
-
-📝 **Сценарий:**
-{scenario.get('script', 'Сценарий не найден')}
-                """
-                bot.reply_to(message, response, parse_mode="Markdown")
+                response = (
+                    f"Разбор и сценарий для {_plain(config['client_name'])} готовы!\n\n"
+                    f"Хук: {_plain(atoms.get('verbal_hook'))}\n"
+                    f"Триггер: {_plain(atoms.get('psychological_trigger'))}\n"
+                    f"Стадия Ханта: {_plain(hunt)}\n\n"
+                    f"Сценарий:\n{_plain(scenario.get('script', 'Сценарий не найден'))}"
+                )
+                bot.reply_to(message, response)
 
             elif result["status"] == "quota_exceeded":
                 bot.reply_to(
                     message,
-                    f"⚠️ Лимит генераций достигнут.\n\n{result.get('message', 'Месячный лимит исчерпан.')}",
-                    parse_mode="Markdown"
+                    f"Лимит генераций достигнут.\n\n{_plain(result.get('message', 'Месячный лимит исчерпан.'))}",
                 )
             
         except Exception as e:
@@ -360,7 +344,7 @@ def handle_message(message):
 
     lowered_text = message.text.lower()
     if any(trigger in lowered_text for trigger in ["подключ", "как подключ", "help", "/help", "старт", "start"]):
-        bot.reply_to(message, build_commands_help_message(message, config=config), parse_mode="Markdown")
+        bot.reply_to(message, build_commands_help_message(message, config=config))
 
 if __name__ == "__main__":
     logger.info("Starting Multi-Client Bot...")
