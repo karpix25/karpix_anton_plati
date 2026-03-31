@@ -76,6 +76,34 @@ def _transcript_meta(audit_json, transcript_meta=None):
     return audit_json.get("transcript_meta", {}) or {}
 
 
+def _resolve_duration_targets(
+    source_duration_seconds=None,
+    source_wpm=None,
+    target_duration_seconds=None,
+    target_duration_min_seconds=None,
+    target_duration_max_seconds=None,
+):
+    fallback_duration = float(target_duration_seconds or source_duration_seconds or 50)
+    resolved_min = float(target_duration_min_seconds or target_duration_seconds or fallback_duration)
+    resolved_max = float(target_duration_max_seconds or target_duration_seconds or resolved_min)
+    resolved_min = max(resolved_min, 1.0)
+    resolved_max = max(resolved_max, resolved_min)
+    resolved_center = float(target_duration_seconds or ((resolved_min + resolved_max) / 2.0))
+
+    effective_wpm = float(source_wpm or 150.0)
+    min_word_target = max(int(effective_wpm * (resolved_min / 60.0) * 0.9), 1)
+    max_word_target = max(int(effective_wpm * (resolved_max / 60.0) * 1.1), min_word_target)
+
+    return {
+        "min_seconds": resolved_min,
+        "max_seconds": resolved_max,
+        "center_seconds": resolved_center,
+        "min_word_target": min_word_target,
+        "max_word_target": max_word_target,
+        "duration_range_label": f"{resolved_min:.0f}-{resolved_max:.0f} сек",
+    }
+
+
 HOOK_BAN_PHRASES = [
     "думаешь",
     "думаете",
@@ -201,7 +229,7 @@ def _hook_context_from_source_cards(topic_card=None, structure_card=None):
         return _hook_context_from_transcript("")
 
 
-def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None):
+def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
     """
     Produces a very close rewrite of the source transcript.
     The structure, pacing, theme, and dramatic arc should stay almost identical.
@@ -217,14 +245,18 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     source_word_count = int(meta.get("word_count") or len((transcript or "").split()))
     source_duration_seconds = float(meta.get("duration_seconds") or 0)
     source_wpm = float(meta.get("words_per_minute") or 0)
-    desired_duration_seconds = float(target_duration_seconds or source_duration_seconds or 50)
-    effective_wpm = source_wpm or 150.0
-    target_word_center = max(int(effective_wpm * (desired_duration_seconds / 60.0)), 1)
-    min_word_target = max(int(target_word_center * 0.9), 1)
-    max_word_target = max(int(target_word_center * 1.1), min_word_target)
+    duration_targets = _resolve_duration_targets(
+        source_duration_seconds=source_duration_seconds,
+        source_wpm=source_wpm,
+        target_duration_seconds=target_duration_seconds,
+        target_duration_min_seconds=target_duration_min_seconds,
+        target_duration_max_seconds=target_duration_max_seconds,
+    )
+    min_word_target = duration_targets["min_word_target"]
+    max_word_target = duration_targets["max_word_target"]
     duration_label = f"{source_duration_seconds:.1f} сек" if source_duration_seconds else "не определена"
     wpm_label = f"{source_wpm:.1f} слов/мин" if source_wpm else "не определен"
-    desired_duration_label = f"{desired_duration_seconds:.0f} сек"
+    desired_duration_label = duration_targets["duration_range_label"]
     hook_context = _hook_context_from_transcript(transcript)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
@@ -309,7 +341,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
 
     SOURCE PACING CONSTRAINTS:
     - Source duration: {duration_label}
-    - Desired target duration: {desired_duration_label}
+    - Desired target duration range: {desired_duration_label}
     - Source word count: {source_word_count}
     - Source speaking pace: {wpm_label}
     - Target word-count range: {min_word_target}-{max_word_target}
@@ -396,6 +428,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
         "source_duration_seconds": {source_duration_seconds or 0},
         "source_word_count": {source_word_count},
         "source_words_per_minute": {source_wpm or 0},
+        "target_duration_range_seconds": "{desired_duration_label}",
         "target_word_count_range": "{min_word_target}-{max_word_target}",
         "preserved_fact_units": ["List 5-10 concrete fact units preserved or concretely adapted"],
         "pattern_preservation_notes": "How the underlying pattern and slot structure were preserved",
@@ -415,7 +448,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
             "rewrite_type": "close_rewrite"
         }
 
-def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None):
+def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
     """
     Generates a NEW scenario by "Mirroring" the viral DNA of the source video 
     into a script for the target product.
@@ -434,13 +467,17 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     source_word_count = int(meta.get("word_count") or 0)
     source_duration = float(meta.get("duration_seconds") or 0)
     
-    desired_duration_seconds = float(target_duration_seconds or source_duration or 50)
-    effective_wpm = float(meta.get("words_per_minute") or 150)
-    target_word_center = max(int(effective_wpm * (desired_duration_seconds / 60.0)), 30)
-    word_min = max(int(target_word_center * 0.85), 30)
-    word_max = max(int(target_word_center * 1.15), 60)
+    duration_targets = _resolve_duration_targets(
+        source_duration_seconds=source_duration,
+        source_wpm=meta.get("words_per_minute"),
+        target_duration_seconds=target_duration_seconds,
+        target_duration_min_seconds=target_duration_min_seconds,
+        target_duration_max_seconds=target_duration_max_seconds,
+    )
+    word_min = max(duration_targets["min_word_target"], 30)
+    word_max = max(duration_targets["max_word_target"], 60)
     duration_label = f"{source_duration:.1f} сек" if source_duration else "неизвестна"
-    desired_duration_label = f"{desired_duration_seconds:.0f} сек"
+    desired_duration_label = duration_targets["duration_range_label"]
     source_hook = atoms.get("verbal_hook") or ""
     normalized_source_hook = source_hook.lower().replace("ё", "е")
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in normalized_source_hook]
@@ -504,7 +541,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
             "script": "Error generating script"
         }
 
-def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None):
+def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
     """
     Generates a scenario from a cluster of similar references instead of a single audit.
     This keeps the resulting script much closer to a chosen topic and angle.
@@ -515,10 +552,15 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     product_context = target_product_info or f"Сервис в нише: {niche}"
     voice_context = brand_voice or "Естественный, разговорный, без канцелярита"
     audience_context = target_audience or "Люди, которым важны быстрые и понятные решения"
-    desired_duration_seconds = float(target_duration_seconds or 50)
-    target_word_center = max(int(150 * (desired_duration_seconds / 60.0)), 30)
-    word_min = max(int(target_word_center * 0.85), 30)
-    word_max = max(int(target_word_center * 1.15), 60)
+    duration_targets = _resolve_duration_targets(
+        source_duration_seconds=None,
+        source_wpm=150,
+        target_duration_seconds=target_duration_seconds,
+        target_duration_min_seconds=target_duration_min_seconds,
+        target_duration_max_seconds=target_duration_max_seconds,
+    )
+    word_min = max(duration_targets["min_word_target"], 30)
+    word_max = max(duration_targets["max_word_target"], 60)
     hook_context = _hook_context_from_source_cards(topic_card=topic_card, structure_card=structure_card)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
@@ -577,7 +619,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     - Продукт: {product_context}
     - Тон бренда: {voice_context}
     - Аудитория: {audience_context}
-    - Желаемая длительность: {desired_duration_seconds:.0f} сек
+    - Желаемая длительность: {duration_targets["duration_range_label"]}
     - Целевой диапазон слов: {word_min}-{word_max}
 
     ЗАДАЧА:
@@ -615,17 +657,22 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
             "topic_angle": target_angle
         }
 
-def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None):
+def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
     """
     Generates a new scenario by combining a reusable topic card and a reusable structure card.
     """
     product_context = target_product_info or f"Сервис в нише: {niche}"
     voice_context = brand_voice or "Естественный, разговорный, уверенный"
     audience_context = target_audience or "Люди, которым важно удобно путешествовать и платить за границей"
-    desired_duration_seconds = float(target_duration_seconds or 50)
-    target_word_center = max(int(150 * (desired_duration_seconds / 60.0)), 30)
-    word_min = max(int(target_word_center * 0.85), 30)
-    word_max = max(int(target_word_center * 1.15), 60)
+    duration_targets = _resolve_duration_targets(
+        source_duration_seconds=None,
+        source_wpm=150,
+        target_duration_seconds=target_duration_seconds,
+        target_duration_min_seconds=target_duration_min_seconds,
+        target_duration_max_seconds=target_duration_max_seconds,
+    )
+    word_min = max(duration_targets["min_word_target"], 30)
+    word_max = max(duration_targets["max_word_target"], 60)
     hook_context = _hook_context_from_source_cards(topic_card=topic_card, structure_card=structure_card)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
@@ -655,7 +702,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     Your task is to generate a NEW script by combining a modular TOPIC card and a modular STRUCTURE card.
 
     CORE CONSTRAINTS (NON-NEGOTIABLE):
-    1. BREVITY: The script MUST be between 100 and 140 words. No more, no less.
+    1. BREVITY: The script MUST stay inside the requested word-count range. No more, no less.
     2. NO HELLOS: Start DIRECTLY with the hook. No "Привет всем", "Всем привет", "Привет, друзья", or any other introductory filler.
     3. VIRAL HOOK: The first 1-2 sentences must follow the proven opening architecture of the reference behind these cards, not a generic LLM hook.
     4. FACTUAL DENSITY: Avoid vague adjectives like "удобно", "быстро", "выгодно". Replace them with concrete numbers, names, or proof points.
@@ -685,7 +732,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     {audience_context}
 
     LENGTH TARGET:
-    - Desired target duration: {desired_duration_seconds:.0f} сек
+    - Desired target duration: {duration_targets["duration_range_label"]}
     - Requested word-count range: {word_min}-{word_max} слов
 
     TASK:

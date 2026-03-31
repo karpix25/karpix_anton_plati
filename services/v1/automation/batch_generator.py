@@ -90,6 +90,8 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     brand_voice = client.get("brand_voice")
     target_audience = client.get("target_audience")
     target_duration_seconds = client.get("target_duration_seconds")
+    target_duration_min_seconds = client.get("target_duration_min_seconds")
+    target_duration_max_seconds = client.get("target_duration_max_seconds")
     broll_interval_seconds = client.get("broll_interval_seconds")
     broll_timing_mode = client.get("broll_timing_mode")
     broll_pacing_profile = client.get("broll_pacing_profile")
@@ -166,6 +168,8 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 brand_voice=brand_voice,
                 target_audience=target_audience,
                 target_duration_seconds=target_duration_seconds,
+                target_duration_min_seconds=target_duration_min_seconds,
+                target_duration_max_seconds=target_duration_max_seconds,
                 variation_index=i + 1,
                 total_variations=count,
             )
@@ -185,6 +189,8 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 brand_voice=brand_voice,
                 target_audience=target_audience,
                 target_duration_seconds=target_duration_seconds,
+                target_duration_min_seconds=target_duration_min_seconds,
+                target_duration_max_seconds=target_duration_max_seconds,
                 variation_index=i + 1,
                 total_variations=count
             )
@@ -197,7 +203,9 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 target_product_info=target_product_info,
                 brand_voice=brand_voice,
                 target_audience=target_audience,
-                target_duration_seconds=target_duration_seconds
+                target_duration_seconds=target_duration_seconds,
+                target_duration_min_seconds=target_duration_min_seconds,
+                target_duration_max_seconds=target_duration_max_seconds,
             )
             source_references = [ref["reels_url"]]
             source_reference = ref["reels_url"]
@@ -212,7 +220,9 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 total_variations=count,
                 brand_voice=brand_voice,
                 target_audience=target_audience,
-                target_duration_seconds=target_duration_seconds
+                target_duration_seconds=target_duration_seconds,
+                target_duration_min_seconds=target_duration_min_seconds,
+                target_duration_max_seconds=target_duration_max_seconds,
             )
             source_references = [item["reels_url"] for item in cluster_references]
             source_reference = ref["reels_url"]

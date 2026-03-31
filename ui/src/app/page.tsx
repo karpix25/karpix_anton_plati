@@ -61,11 +61,18 @@ export default function CuratorDashboard() {
   );
 
   const clientSettings = useMemo<Settings>(
-    () => ({
+    () => {
+      const targetDurationSeconds = selectedClient?.target_duration_seconds || 50;
+      const targetDurationMinSeconds = selectedClient?.target_duration_min_seconds || targetDurationSeconds;
+      const targetDurationMaxSeconds = selectedClient?.target_duration_max_seconds || targetDurationSeconds;
+
+      return {
       product_info: selectedClient?.product_info || "",
       brand_voice: selectedClient?.brand_voice || "",
       target_audience: selectedClient?.target_audience || "",
-      target_duration_seconds: selectedClient?.target_duration_seconds || 50,
+      target_duration_seconds: targetDurationSeconds,
+      target_duration_min_seconds: Math.min(targetDurationMinSeconds, targetDurationMaxSeconds),
+      target_duration_max_seconds: Math.max(targetDurationMinSeconds, targetDurationMaxSeconds),
       broll_interval_seconds: selectedClient?.broll_interval_seconds || 3,
       broll_timing_mode: selectedClient?.broll_timing_mode || "semantic_pause",
       broll_pacing_profile: selectedClient?.broll_pacing_profile || "balanced",
@@ -84,7 +91,7 @@ export default function CuratorDashboard() {
       monthly_final_video_limit: selectedClient?.monthly_final_video_limit || 30,
       monthly_final_video_count: selectedClient?.monthly_final_video_count || 0,
       open_final_video_jobs: selectedClient?.open_final_video_jobs || 0,
-    }),
+    }},
     [selectedClient]
   );
 

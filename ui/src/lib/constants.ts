@@ -13,6 +13,8 @@ export const defaultSettings: ClientSettings = {
   product_info: "",
   target_audience: "",
   target_duration_seconds: 50,
+  target_duration_min_seconds: 50,
+  target_duration_max_seconds: 50,
   broll_interval_seconds: 3,
   broll_timing_mode: "semantic_pause",
   broll_pacing_profile: "balanced",

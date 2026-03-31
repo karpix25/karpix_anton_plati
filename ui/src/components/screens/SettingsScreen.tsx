@@ -273,9 +273,16 @@ export function SettingsScreen({
   const semanticRelevancePreview = SEMANTIC_RELEVANCE_LABELS[semanticRelevancePriority];
   const productClipPolicyPreview = PRODUCT_CLIP_POLICY_LABELS[productClipPolicy];
   const brollGeneratorModelPreview = BROLL_GENERATOR_MODEL_LABELS[brollGeneratorModel];
-  const estimatedWords = Math.round(draftSettings.target_duration_seconds * 2.4);
-  const estimatedWordMin = Math.max(Math.round(estimatedWords * 0.85), 20);
-  const estimatedWordMax = Math.max(Math.round(estimatedWords * 1.15), estimatedWordMin);
+  const targetDurationMinSeconds = Math.min(
+    Number(draftSettings.target_duration_min_seconds || draftSettings.target_duration_seconds || 50),
+    Number(draftSettings.target_duration_max_seconds || draftSettings.target_duration_seconds || 50)
+  );
+  const targetDurationMaxSeconds = Math.max(
+    Number(draftSettings.target_duration_min_seconds || draftSettings.target_duration_seconds || 50),
+    Number(draftSettings.target_duration_max_seconds || draftSettings.target_duration_seconds || 50)
+  );
+  const estimatedWordMin = Math.max(Math.round(targetDurationMinSeconds * 2.4 * 0.85), 20);
+  const estimatedWordMax = Math.max(Math.round(targetDurationMaxSeconds * 2.4 * 1.15), estimatedWordMin);
   const ttsProvider = draftSettings.tts_provider || "minimax";
   const selectedVoice = minimaxVoices.find((voice) => voice.voice_id === draftSettings.tts_voice_id);
   const selectedElevenLabsVoice = elevenlabsVoices.find(
@@ -1006,20 +1013,20 @@ export function SettingsScreen({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Целевая длина сценария
+                  Длина сценария
                 </label>
                 <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
-                  {draftSettings.target_duration_seconds} сек
+                  {targetDurationMinSeconds} - {targetDurationMaxSeconds} сек
                 </div>
               </div>
               <div className="rounded-2xl bg-[#f0f4f7] p-4">
                 <div className="flex items-end justify-between gap-4">
                   <div>
                     <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                      Текущая цель
+                      Целевой диапазон
                     </div>
                     <div className="mt-1 text-2xl font-black tracking-tight text-foreground">
-                      {draftSettings.target_duration_seconds} сек
+                      {targetDurationMinSeconds} - {targetDurationMaxSeconds} сек
                     </div>
                   </div>
                   <div className="text-right">
@@ -1032,22 +1039,60 @@ export function SettingsScreen({
                   </div>
                 </div>
               </div>
-              <input
-                type="range"
-                min={15}
-                max={120}
-                step={5}
-                value={draftSettings.target_duration_seconds}
-                onChange={(event) => setDraftSettings((prev) => ({ ...prev, target_duration_seconds: Number(event.target.value) }))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                <span>15 сек</span>
-                <span>60 сек</span>
-                <span>120 сек</span>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    От
+                  </div>
+                  <input
+                    type="number"
+                    min={15}
+                    max={120}
+                    step={5}
+                    value={targetDurationMinSeconds}
+                    onChange={(event) =>
+                      setDraftSettings((prev) => {
+                        const nextMin = Math.max(15, Math.min(120, Number(event.target.value) || 15));
+                        const nextMax = Math.max(nextMin, Number(prev.target_duration_max_seconds || prev.target_duration_seconds || nextMin));
+                        return {
+                          ...prev,
+                          target_duration_min_seconds: nextMin,
+                          target_duration_max_seconds: nextMax,
+                          target_duration_seconds: Math.round((nextMin + nextMax) / 2),
+                        };
+                      })
+                    }
+                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    До
+                  </div>
+                  <input
+                    type="number"
+                    min={15}
+                    max={120}
+                    step={5}
+                    value={targetDurationMaxSeconds}
+                    onChange={(event) =>
+                      setDraftSettings((prev) => {
+                        const nextMax = Math.max(targetDurationMinSeconds, Math.min(120, Number(event.target.value) || targetDurationMinSeconds));
+                        const nextMin = Math.min(Number(prev.target_duration_min_seconds || prev.target_duration_seconds || nextMax), nextMax);
+                        return {
+                          ...prev,
+                          target_duration_min_seconds: nextMin,
+                          target_duration_max_seconds: nextMax,
+                          target_duration_seconds: Math.round((nextMin + nextMax) / 2),
+                        };
+                      })
+                    }
+                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                  />
+                </label>
               </div>
               <p className="text-xs leading-5 text-muted-foreground">
-                Эта настройка задаёт желаемую длину итогового сценария. Генератор будет подстраивать объём текста под выбранный тайминг, а не просто копировать длину референса.
+                Генератор будет получать диапазон длительности и подбирать объём текста внутри него, а не пытаться попасть в одну фиксированную цифру.
               </p>
             </div>
 

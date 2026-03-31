@@ -7,6 +7,8 @@ export interface Client {
   auto_generate?: boolean;
   monthly_limit?: number;
   target_duration_seconds?: number;
+  target_duration_min_seconds?: number;
+  target_duration_max_seconds?: number;
   broll_interval_seconds?: number;
   broll_timing_mode?: "fixed" | "semantic_pause" | "coverage_percent";
   broll_pacing_profile?: "calm" | "balanced" | "dynamic";
@@ -103,6 +105,8 @@ export interface Settings {
   product_info: string;
   target_audience: string;
   target_duration_seconds: number;
+  target_duration_min_seconds: number;
+  target_duration_max_seconds: number;
   broll_interval_seconds: number;
   broll_timing_mode: "fixed" | "semantic_pause" | "coverage_percent";
   broll_pacing_profile: "calm" | "balanced" | "dynamic";

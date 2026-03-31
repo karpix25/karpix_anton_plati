@@ -78,6 +78,8 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
         brand_voice = None
         target_audience = None
         target_duration_seconds = None
+        target_duration_min_seconds = None
+        target_duration_max_seconds = None
         broll_interval_seconds = None
         broll_timing_mode = None
         broll_pacing_profile = None
@@ -100,6 +102,8 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
                 target_audience = client_data.get("target_audience")
                 target_product_info = target_product_info or client_data.get("product_info")
                 target_duration_seconds = client_data.get("target_duration_seconds")
+                target_duration_min_seconds = client_data.get("target_duration_min_seconds")
+                target_duration_max_seconds = client_data.get("target_duration_max_seconds")
                 broll_interval_seconds = client_data.get("broll_interval_seconds")
                 broll_timing_mode = client_data.get("broll_timing_mode")
                 broll_pacing_profile = client_data.get("broll_pacing_profile")
@@ -127,7 +131,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
             target_product_info=target_product_info,
             brand_voice=brand_voice,
             target_audience=target_audience,
-            target_duration_seconds=target_duration_seconds
+            target_duration_seconds=target_duration_seconds,
+            target_duration_min_seconds=target_duration_min_seconds,
+            target_duration_max_seconds=target_duration_max_seconds,
         )
         
         import uuid
