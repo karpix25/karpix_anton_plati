@@ -13,6 +13,12 @@ type HeygenAvatarLook = {
   image_url?: string | null;
 };
 
+type HeygenPhotoAvatarDetails = {
+  id?: string;
+  is_motion?: boolean;
+  status?: string;
+};
+
 async function heygenFetch(path: string) {
   const apiKey = process.env.HEYGEN_API_KEY;
   if (!apiKey) {
@@ -44,15 +50,38 @@ export async function GET() {
         try {
           const looksPayload = await heygenFetch(`/v2/avatar_group/${group.id}/avatars`);
           const looks: HeygenAvatarLook[] = looksPayload?.data?.avatar_list || [];
+          const lookDetails = await Promise.all(
+            looks.map(async (look) => {
+              try {
+                const detailsPayload = await heygenFetch(`/v2/photo_avatar/${encodeURIComponent(look.id)}`);
+                const details = (detailsPayload?.data || {}) as HeygenPhotoAvatarDetails;
+                return {
+                  look,
+                  isMotion: details.is_motion === true,
+                };
+              } catch (error) {
+                console.error(`HeyGen look details import failed for ${look.id}:`, error);
+                return {
+                  look,
+                  isMotion: false,
+                };
+              }
+            })
+          );
+          const nonMotionLooks = lookDetails.filter((item) => !item.isMotion).map((item) => item.look);
+
+          if (looks.length > 0 && nonMotionLooks.length === 0) {
+            return null;
+          }
 
           return {
             avatar_id: group.id,
             avatar_name: group.name || group.id,
             folder_name: group.group_type || "HEYGEN",
-            preview_image_url: group.preview_image || looks[0]?.image_url || "",
+            preview_image_url: group.preview_image || nonMotionLooks[0]?.image_url || looks[0]?.image_url || "",
             is_active: true,
             sort_order: index,
-            looks: looks.map((look, lookIndex) => ({
+            looks: nonMotionLooks.map((look, lookIndex) => ({
               look_id: look.id,
               look_name: look.name || `${group.name || group.id} look ${lookIndex + 1}`,
               preview_image_url: look.image_url || "",
@@ -75,7 +104,7 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json(groupLookResults);
+    return NextResponse.json(groupLookResults.filter(Boolean));
   } catch (error) {
     console.error("HeyGen catalog GET error:", error);
     return NextResponse.json(

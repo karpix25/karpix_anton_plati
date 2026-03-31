@@ -151,8 +151,13 @@ const getAvatarConfigKey = (avatar: HeygenAvatarConfig, avatarIndex: number) => 
   return `index:${avatarIndex}`;
 };
 
-const mergeCatalogIntoAvatarConfigs = (current: HeygenAvatarConfig[], catalog: HeygenAvatarConfig[]): HeygenAvatarConfig[] => {
+const mergeCatalogIntoAvatarConfigs = (
+  current: HeygenAvatarConfig[],
+  catalog: HeygenAvatarConfig[],
+  options?: { pruneMissingPersisted?: boolean }
+): HeygenAvatarConfig[] => {
   const currentByAvatarId = new Map(current.map((avatar) => [avatar.avatar_id, avatar]));
+  const catalogAvatarIds = new Set(catalog.map((avatar) => avatar.avatar_id).filter(Boolean));
   const merged: HeygenAvatarConfig[] = [];
 
   for (const currentAvatar of current) {
@@ -161,6 +166,9 @@ const mergeCatalogIntoAvatarConfigs = (current: HeygenAvatarConfig[], catalog: H
       : null;
 
     if (!catalogAvatar) {
+      if (options?.pruneMissingPersisted && currentAvatar.avatar_id && !catalogAvatarIds.has(currentAvatar.avatar_id)) {
+        continue;
+      }
       merged.push(currentAvatar);
       continue;
     }
@@ -565,7 +573,9 @@ export function SettingsScreen({
       const freshCatalog = onRefreshHeygenCatalog ? await onRefreshHeygenCatalog() : heygenCatalog;
       const sourceCatalog = freshCatalog.length > 0 ? freshCatalog : heygenCatalog;
       const normalizedSourceCatalog = sourceCatalog.map((avatar, avatarIndex) => normalizeAvatar(avatar, avatarIndex));
-      setAvatarConfigs((prev) => mergeCatalogIntoAvatarConfigs(prev, normalizedSourceCatalog));
+      setAvatarConfigs((prev) =>
+        mergeCatalogIntoAvatarConfigs(prev, normalizedSourceCatalog, { pruneMissingPersisted: true })
+      );
     } catch (error) {
       console.error("HeyGen catalog refresh error:", error);
       alert(error instanceof Error ? error.message : "Не удалось обновить каталог HeyGen.");
