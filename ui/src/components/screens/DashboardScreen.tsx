@@ -1,5 +1,4 @@
-import { Button } from "@/components/ui/button";
-import { Sparkles, Zap, LoaderCircle, Network, ArrowRight } from "lucide-react";
+import { Network, ArrowRight } from "lucide-react";
 import { Client, Reference, Scenario, Screen, TopicCard } from "@/types";
 import { formatUsd, getTotalGenerationCosts } from "@/lib/generation-costs";
 
@@ -9,10 +8,6 @@ interface DashboardScreenProps {
   scenarios: Scenario[];
   topicCards: TopicCard[];
   generatedCount: number;
-  batchRewritePending: boolean;
-  batchMixPending: boolean;
-  onBatchRewrite: () => void;
-  onBatchMix: () => void;
   setScreen: (screen: Screen) => void;
 }
 
@@ -22,10 +17,6 @@ export function DashboardScreen({
   scenarios,
   topicCards,
   generatedCount,
-  batchRewritePending,
-  batchMixPending,
-  onBatchRewrite,
-  onBatchMix,
   setScreen
 }: DashboardScreenProps) {
   const totalCosts = getTotalGenerationCosts(scenarios);
@@ -43,34 +34,6 @@ export function DashboardScreen({
           <p className="max-w-md text-muted-foreground">
             Управляй референсами, извлеченными паттернами и генерацией сценариев в одном рабочем контуре.
           </p>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <Button
-            className="primary-gradient h-12 rounded-xl px-6 font-bold text-white shadow-lg"
-            onClick={onBatchRewrite}
-            disabled={!selectedClient || batchRewritePending}
-          >
-            {batchRewritePending ? (
-              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="mr-2 h-4 w-4" />
-            )}
-            5 вариаций
-          </Button>
-          <Button
-            variant="outline"
-            className="h-12 rounded-xl border-none bg-white px-6 font-bold text-primary shadow-sm"
-            onClick={onBatchMix}
-            disabled={!selectedClient || batchMixPending}
-          >
-            {batchMixPending ? (
-              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Zap className="mr-2 h-4 w-4" />
-            )}
-            Тема + Структура
-          </Button>
         </div>
       </div>
 

@@ -1,8 +1,6 @@
 import { 
   BarChart3, 
-  Sparkles, 
-  HelpCircle, 
-  Archive 
+  Sparkles
 } from "lucide-react";
 import { 
   Select, 
@@ -90,17 +88,6 @@ export function Sidebar({
           </button>
         ))}
       </nav>
-
-      <div className="space-y-1 border-t border-border/20 pt-4">
-        <button className="flex w-full items-center gap-3 px-4 py-2 text-muted-foreground hover:text-primary">
-          <HelpCircle className="h-5 w-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Поддержка</span>
-        </button>
-        <button className="flex w-full items-center gap-3 px-4 py-2 text-muted-foreground hover:text-primary">
-          <Archive className="h-5 w-5" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider">Архив</span>
-        </button>
-      </div>
     </aside>
   );
 }

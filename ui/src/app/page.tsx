@@ -44,7 +44,6 @@ export default function CuratorDashboard() {
     saveSettingsMutation,
     deleteClientMutation,
     saveHeygenAvatarsMutation,
-    batchRewriteMutation,
     batchMixMutation,
     singleRewriteMutation,
     referencesQuery,
@@ -144,14 +143,6 @@ export default function CuratorDashboard() {
     saveSettingsMutation.mutate(settings);
   };
 
-  const handleBatchRewrite = () => {
-    batchRewriteMutation.mutate();
-  };
-
-  const handleBatchMix = () => {
-    batchMixMutation.mutate({});
-  };
-
   const handleGenerateMix = () => {
     if (selectedTopic && selectedStructure) {
       batchMixMutation.mutate({ 
@@ -206,10 +197,6 @@ export default function CuratorDashboard() {
               scenarios={scenarios}
               topicCards={topicCards}
               generatedCount={scenarios.length}
-              batchRewritePending={batchRewriteMutation.isPending}
-              batchMixPending={batchMixMutation.isPending}
-              onBatchRewrite={handleBatchRewrite}
-              onBatchMix={handleBatchMix}
               setScreen={setScreen}
             />
           )}
