@@ -191,7 +191,9 @@ def process_montage_stage(job: Dict[str, Any]) -> None:
     yandex_status = str(payload.get("montage_yandex_status") or "").lower()
     yandex_error = payload.get("montage_yandex_error")
 
-    if yandex_status == "failed" and (os.getenv("YANDEX_DISK_OAUTH_TOKEN") or os.getenv("YANDEX_DISK_TOKEN")):
+    if yandex_status == "failed" and (
+        os.getenv("YANDEX_DISK_OAUTH_TOKEN") or os.getenv("YANDEX_DISK_TOKEN") or os.getenv("YANDEX_TOKEN")
+    ):
         raise RuntimeError(str(yandex_error or "Yandex Disk upload failed"))
 
     complete_final_video_job(int(job["id"]))

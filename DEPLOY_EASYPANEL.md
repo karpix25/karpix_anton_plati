@@ -50,6 +50,8 @@ MINIMAX_GROUP_ID=
 ELEVENLABS_API_KEY=
 HEYGEN_API_KEY=
 YANDEX_DISK_OAUTH_TOKEN=
+YANDEX_DISK_TOKEN=
+YANDEX_TOKEN=
 RAPIDAPI_KEY=
 TELEGRAM_BOT_TOKEN=
 ```
@@ -75,7 +77,8 @@ YANDEX_DISK_PROJECT_FOLDER=Плати по миру
 ## Важные замечания
 
 - Временные файлы аудио и видео пишутся в `/tmp`
-- Финальные монтажи при наличии `YANDEX_DISK_OAUTH_TOKEN` будут загружаться в `disk:/<YANDEX_DISK_PROJECT_FOLDER>/<avatar>/final/`
+- Финальные монтажи будут загружаться в Яндекс Диск, если задан любой из токенов:
+  `YANDEX_DISK_OAUTH_TOKEN`, `YANDEX_DISK_TOKEN` или `YANDEX_TOKEN`
 - Если на проде планируется активный монтаж, контейнеру нужен достаточный диск и RAM
 - Если Postgres находится в другом сервисе EasyPanel, используй внутренние credentials этого Postgres-сервиса
 - В `docker-compose.production.yml` порты не публикуются наружу через `ports:`; EasyPanel должен проксировать `web:3000` сам
