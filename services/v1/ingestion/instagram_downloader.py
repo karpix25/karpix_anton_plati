@@ -3,6 +3,10 @@ import requests
 import logging
 import uuid
 import json
+import socket
+from contextlib import contextmanager
+
+from urllib3.util import connection as urllib3_connection
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +42,17 @@ def _build_rapidapi_attempts(url: str) -> list[tuple[str, dict[str, str]]]:
     return attempts
 
 
-def _raise_human_readable_download_error(error: Exception) -> None:
+@contextmanager
+def _force_ipv4_resolution():
+    original_allowed_gai_family = urllib3_connection.allowed_gai_family
+    urllib3_connection.allowed_gai_family = lambda: socket.AF_INET
+    try:
+        yield
+    finally:
+        urllib3_connection.allowed_gai_family = original_allowed_gai_family
+
+
+def _raise_human_readable_download_error(error: Exception, stage: str) -> None:
     message = str(error)
     lowered = message.lower()
 
@@ -46,21 +60,53 @@ def _raise_human_readable_download_error(error: Exception) -> None:
         "nameresolutionerror" in lowered
         or "temporary failure in name resolution" in lowered
         or "failed to resolve" in lowered
-        or "max retries exceeded" in lowered
     ):
+        if stage == "video_binary":
+            raise RuntimeError(
+                "Не удалось скачать видеофайл Reel с Instagram CDN. "
+                "RapidAPI уже отдал ссылку, но сервер не смог зарезолвить или достучаться до "
+                "cdninstagram.com. Проверьте исходящий доступ и DNS на сервере."
+            ) from error
         raise RuntimeError(
             "Не удалось связаться с Instagram API через RapidAPI. "
             "Похоже, на сервере сейчас проблема с DNS или исходящим доступом. "
             "Попробуйте позже."
         ) from error
 
+    if "network is unreachable" in lowered or "failed to establish a new connection" in lowered:
+        if stage == "video_binary":
+            raise RuntimeError(
+                "RapidAPI вернул ссылку на Reel, но сервер не смог скачать сам mp4 с Instagram CDN. "
+                "Чаще всего это проблема исходящего доступа к cdninstagram.com или попытка идти по IPv6 "
+                "без рабочего IPv6-маршрута."
+            ) from error
+        raise RuntimeError(
+            "Не удалось установить соединение с Instagram API через RapidAPI. "
+            "Проверьте исходящий доступ сервера в интернет."
+        ) from error
+
+    if "max retries exceeded" in lowered:
+        if stage == "video_binary":
+            raise RuntimeError(
+                "Не удалось скачать Reel с Instagram CDN после нескольких попыток. "
+                "Проверьте доступ сервера к cdninstagram.com."
+            ) from error
+        raise RuntimeError(
+            "Instagram API через RapidAPI не ответил после нескольких попыток. Попробуйте позже."
+        ) from error
+
     if "timeout" in lowered or "timed out" in lowered:
+        if stage == "video_binary":
+            raise RuntimeError(
+                "Скачивание Reel с Instagram CDN не завершилось вовремя. "
+                "Проверьте доступ сервера к cdninstagram.com и исходящий трафик."
+            ) from error
         raise RuntimeError(
             "Instagram API через RapidAPI не ответил вовремя. Попробуйте повторить позже."
         ) from error
 
     raise RuntimeError(
-        "Не удалось скачать Reel через Instagram API. Попробуйте позже."
+        "Не удалось скачать Reel. Попробуйте позже."
     ) from error
 
 def download_instagram_reel(url):
@@ -95,7 +141,10 @@ def download_instagram_reel(url):
             logger.error("RapidAPI metadata request failed for %s via %s: %s", url, api_url, error)
 
     if response is None:
-        _raise_human_readable_download_error(last_error or RuntimeError("Unknown RapidAPI request failure"))
+        _raise_human_readable_download_error(
+            last_error or RuntimeError("Unknown RapidAPI request failure"),
+            stage="rapidapi_metadata",
+        )
 
     data = response.json()
     logger.debug(f"API Response: {json.dumps(data)[:500]}...") # Log first 500 chars
@@ -131,11 +180,14 @@ def download_instagram_reel(url):
     # Phase 2: Download the binary
     logger.info(f"Downloading video binary from: {video_url[:50]}...")
     try:
-        video_response = requests.get(video_url, stream=True, timeout=(20, 120))
+        # Instagram CDN can prefer IPv6 on some hosts; force IPv4 here to avoid
+        # "Network is unreachable" on servers without a working IPv6 route.
+        with _force_ipv4_resolution():
+            video_response = requests.get(video_url, stream=True, timeout=(20, 120))
         video_response.raise_for_status()
     except requests.RequestException as error:
         logger.error("Video binary download failed for %s: %s", video_url, error)
-        _raise_human_readable_download_error(error)
+        _raise_human_readable_download_error(error, stage="video_binary")
     
     # Generate unique filename
     file_path = f"/tmp/reel_{uuid.uuid4().hex}.mp4"
