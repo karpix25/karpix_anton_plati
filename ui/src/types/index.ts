@@ -24,6 +24,8 @@ export interface Client {
   tts_voice_id?: string;
   elevenlabs_voice_id?: string;
   auto_generate_final_videos?: boolean;
+  daily_final_video_limit?: number;
+  daily_final_video_count?: number;
   monthly_final_video_limit?: number;
   monthly_final_video_count?: number;
   open_final_video_jobs?: number;
@@ -122,6 +124,8 @@ export interface Settings {
   tts_voice_id: string;
   elevenlabs_voice_id: string;
   auto_generate_final_videos: boolean;
+  daily_final_video_limit: number;
+  daily_final_video_count: number;
   monthly_final_video_limit: number;
   monthly_final_video_count: number;
   open_final_video_jobs: number;

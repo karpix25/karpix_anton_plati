@@ -300,6 +300,7 @@ def init_db() -> None:
             product_media_assets JSONB DEFAULT '[]'::jsonb, product_keyword TEXT, product_video_url TEXT, tts_provider TEXT DEFAULT 'minimax', tts_voice_id TEXT,
             elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY',
             auto_generate_final_videos BOOLEAN DEFAULT FALSE,
+            daily_final_video_limit INTEGER DEFAULT 3,
             monthly_final_video_limit INTEGER DEFAULT 30,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
@@ -430,6 +431,7 @@ def init_db() -> None:
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_voice_id TEXT",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_generate_final_videos BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_final_video_limit INTEGER DEFAULT 3",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS monthly_final_video_limit INTEGER DEFAULT 30",
         "ALTER TABLE processed_content ADD COLUMN IF NOT EXISTS topic_card_id INTEGER",
         "ALTER TABLE processed_content ADD COLUMN IF NOT EXISTS structure_card_id INTEGER",
@@ -874,6 +876,22 @@ def get_client_monthly_final_video_count(client_id: int) -> int:
         row = cursor.fetchone()
         return row["count"] if row else 0
 
+def get_client_daily_final_video_count(client_id: int) -> int:
+    """Returns the number of completed final videos for this client in the current calendar day."""
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM generated_scenarios
+            WHERE client_id = %s
+              AND montage_status = 'completed'
+              AND DATE_TRUNC('day', COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at)) = DATE_TRUNC('day', CURRENT_TIMESTAMP)
+            """,
+            (client_id,),
+        )
+        row = cursor.fetchone()
+        return row["count"] if row else 0
+
 def enqueue_final_video_job(
     client_id: int,
     *,
@@ -1050,12 +1068,19 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                 c.id,
                 c.name,
                 c.auto_generate_final_videos,
+                c.daily_final_video_limit,
                 c.monthly_final_video_limit,
+                COALESCE(completed.daily_completed_count, 0) AS daily_final_video_count,
                 COALESCE(completed.completed_count, 0) AS monthly_final_video_count,
                 COALESCE(open_jobs.open_count, 0) AS open_final_video_jobs
             FROM clients c
             LEFT JOIN (
-                SELECT client_id, COUNT(*)::int AS completed_count
+                SELECT
+                    client_id,
+                    COUNT(*) FILTER (
+                        WHERE DATE_TRUNC('day', COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at)) = DATE_TRUNC('day', CURRENT_TIMESTAMP)
+                    )::int AS daily_completed_count,
+                    COUNT(*)::int AS completed_count
                 FROM generated_scenarios
                 WHERE montage_status = 'completed'
                   AND DATE_TRUNC('month', COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at)) = DATE_TRUNC('month', CURRENT_TIMESTAMP)

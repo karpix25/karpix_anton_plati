@@ -19,14 +19,18 @@ def run_scheduler_cycle() -> int:
     queued = 0
 
     for client in clients:
+        completed_today = int(client.get("daily_final_video_count") or 0)
         completed = int(client.get("monthly_final_video_count") or 0)
         open_jobs = int(client.get("open_final_video_jobs") or 0)
+        daily_limit = max(0, int(client.get("daily_final_video_limit") or 0))
         limit = max(0, int(client.get("monthly_final_video_limit") or 0))
 
-        if limit <= 0:
+        if limit <= 0 or daily_limit <= 0:
             continue
 
-        remaining = max(0, limit - completed - open_jobs)
+        remaining_today = max(0, daily_limit - completed_today - open_jobs)
+        remaining_month = max(0, limit - completed - open_jobs)
+        remaining = min(remaining_today, remaining_month)
         backlog_room = max(0, max_backlog_per_client - open_jobs)
         to_enqueue = min(max_batch_per_client, remaining, backlog_room)
 
@@ -36,9 +40,11 @@ def run_scheduler_cycle() -> int:
 
         if to_enqueue:
             logger.info(
-                "Queued %s final video jobs for client_id=%s (%s/%s completed this month, %s open)",
+                "Queued %s final video jobs for client_id=%s (%s/%s completed today, %s/%s completed this month, %s open)",
                 to_enqueue,
                 client["id"],
+                completed_today,
+                daily_limit,
                 completed,
                 limit,
                 open_jobs,

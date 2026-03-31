@@ -946,6 +946,10 @@ export function SettingsScreen({
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
                 <div className="rounded-xl border border-white/70 bg-white px-4 py-3 text-xs leading-5 text-muted-foreground">
                   <div>
+                    <span className="font-semibold text-foreground">Сделано сегодня:</span>{" "}
+                    {draftSettings.daily_final_video_count} / {draftSettings.daily_final_video_limit}
+                  </div>
+                  <div>
                     <span className="font-semibold text-foreground">Сделано в этом месяце:</span>{" "}
                     {draftSettings.monthly_final_video_count} / {draftSettings.monthly_final_video_limit}
                   </div>
@@ -958,6 +962,27 @@ export function SettingsScreen({
                     {draftSettings.open_final_video_jobs}
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Лимит финальных роликов в день
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={draftSettings.daily_final_video_limit}
+                    onChange={(event) =>
+                      setDraftSettings((prev) => ({
+                        ...prev,
+                        daily_final_video_limit: Math.max(1, Number.parseInt(event.target.value || "1", 10) || 1),
+                      }))
+                    }
+                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                     Лимит финальных роликов в месяц
@@ -975,6 +1000,26 @@ export function SettingsScreen({
                     }
                     className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
                   />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Дневной лимит
+                  </label>
+                  <div className="h-11 overflow-hidden rounded-xl bg-[#f0f4f7]">
+                    <div
+                      className="h-full rounded-xl bg-primary/15 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            ((draftSettings.daily_final_video_count || 0) /
+                              Math.max(1, draftSettings.daily_final_video_limit || 1)) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -995,7 +1040,7 @@ export function SettingsScreen({
                   />
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Трекер считает сценарии этого проекта, у которых финальный монтаж завершён в текущем календарном месяце.
+                  Трекер считает сценарии этого проекта, у которых финальный монтаж завершён сегодня и в текущем календарном месяце.
                 </div>
               </div>
             </div>

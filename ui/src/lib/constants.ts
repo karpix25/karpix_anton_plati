@@ -30,6 +30,8 @@ export const defaultSettings: ClientSettings = {
   tts_voice_id: "Russian_Engaging_Podcaster_v1",
   elevenlabs_voice_id: "0ArNnoIAWKlT4WweaVMY",
   auto_generate_final_videos: false,
+  daily_final_video_limit: 3,
+  daily_final_video_count: 0,
   monthly_final_video_limit: 30,
   monthly_final_video_count: 0,
   open_final_video_jobs: 0,
