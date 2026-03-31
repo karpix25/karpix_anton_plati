@@ -23,6 +23,14 @@ export interface Client {
   tts_provider?: "minimax" | "elevenlabs";
   tts_voice_id?: string;
   elevenlabs_voice_id?: string;
+  subtitles_enabled?: boolean;
+  subtitle_mode?: "word_by_word" | "phrase_block";
+  subtitle_style_preset?: "classic" | "impact" | "soft_box";
+  subtitle_font_family?: "pt_sans" | "rubik" | "montserrat" | "oswald" | "noto_sans";
+  subtitle_font_color?: string;
+  subtitle_font_weight?: 400 | 700;
+  subtitle_outline_color?: string;
+  subtitle_outline_width?: number;
   auto_generate_final_videos?: boolean;
   daily_final_video_limit?: number;
   daily_final_video_count?: number;
@@ -30,6 +38,10 @@ export interface Client {
   monthly_final_video_count?: number;
   open_final_video_jobs?: number;
 }
+
+export type SubtitleMode = "word_by_word" | "phrase_block";
+export type SubtitleStylePreset = "classic" | "impact" | "soft_box";
+export type SubtitleFontFamily = "pt_sans" | "rubik" | "montserrat" | "oswald" | "noto_sans";
 
 export interface PatternFramework {
   pattern_type?: string;
@@ -123,6 +135,14 @@ export interface Settings {
   tts_provider: "minimax" | "elevenlabs";
   tts_voice_id: string;
   elevenlabs_voice_id: string;
+  subtitles_enabled: boolean;
+  subtitle_mode: SubtitleMode;
+  subtitle_style_preset: SubtitleStylePreset;
+  subtitle_font_family: SubtitleFontFamily;
+  subtitle_font_color: string;
+  subtitle_font_weight: 400 | 700;
+  subtitle_outline_color: string;
+  subtitle_outline_width: number;
   auto_generate_final_videos: boolean;
   daily_final_video_limit: number;
   daily_final_video_count: number;

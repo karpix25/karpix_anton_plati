@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Eye, EyeOff, LoaderCircle, Plus, Shuffle, Tr
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ElevenLabsVoiceOption, HeygenAvatarConfig, MinimaxVoiceOption, ProductMediaAsset, Settings } from "@/types";
+import { SUBTITLE_FONT_OPTIONS, SUBTITLE_MODE_OPTIONS, SUBTITLE_STYLE_PRESET_OPTIONS } from "@/lib/subtitles";
 
 interface SettingsScreenProps {
   settings: Settings;
@@ -284,10 +285,22 @@ export function SettingsScreen({
   const estimatedWordMin = Math.max(Math.round(targetDurationMinSeconds * 2.4 * 0.85), 20);
   const estimatedWordMax = Math.max(Math.round(targetDurationMaxSeconds * 2.4 * 1.15), estimatedWordMin);
   const ttsProvider = draftSettings.tts_provider || "minimax";
+  const subtitlesEnabled = draftSettings.subtitles_enabled || false;
+  const subtitleMode = draftSettings.subtitle_mode || "word_by_word";
+  const subtitleStylePreset = draftSettings.subtitle_style_preset || "classic";
+  const subtitleFontFamily = draftSettings.subtitle_font_family || "pt_sans";
+  const subtitleFontColor = draftSettings.subtitle_font_color || "#FFFFFF";
+  const subtitleOutlineColor = draftSettings.subtitle_outline_color || "#111111";
+  const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
+  const subtitleOutlineWidth = Number(draftSettings.subtitle_outline_width || 3);
   const selectedVoice = minimaxVoices.find((voice) => voice.voice_id === draftSettings.tts_voice_id);
   const selectedElevenLabsVoice = elevenlabsVoices.find(
     (voice) => voice.voice_id === (draftSettings.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID)
   );
+  const subtitleModePreview = SUBTITLE_MODE_OPTIONS[subtitleMode];
+  const subtitleStylePreview = SUBTITLE_STYLE_PRESET_OPTIONS[subtitleStylePreset];
+  const subtitleFontPreview = SUBTITLE_FONT_OPTIONS[subtitleFontFamily];
+  const subtitlePreviewFontFamily = `"${subtitleFontPreview.family}", "DejaVu Sans", sans-serif`;
 
   useEffect(() => {
     setDraftSettings(settings);
@@ -313,6 +326,23 @@ export function SettingsScreen({
   useEffect(() => {
     setAvatarConfigs(normalizedHeygenAvatars.length > 0 ? normalizedHeygenAvatars : normalizedCatalog);
   }, [normalizedHeygenAvatars, normalizedCatalog]);
+
+  useEffect(() => {
+    const styleId = `subtitle-preview-font-${subtitleFontFamily}`;
+    if (document.getElementById(styleId)) {
+      return;
+    }
+
+    const link = document.createElement("link");
+    link.id = styleId;
+    link.rel = "stylesheet";
+    link.href = subtitleFontPreview.stylesheetUrl;
+    document.head.appendChild(link);
+
+    return () => {
+      link.remove();
+    };
+  }, [subtitleFontFamily, subtitleFontPreview.stylesheetUrl]);
 
   useEffect(() => {
     if (!selectedClientId) {
@@ -924,6 +954,277 @@ export function SettingsScreen({
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Субтитры
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Вшиваются в финальный монтаж по реальным word timestamps. Можно выбрать режим показа, стиль, кириллический Google Font, цвет текста, жирность и обводку.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 rounded-xl bg-[#f0f4f7] px-3 py-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={subtitlesEnabled}
+                    onChange={(event) =>
+                      setDraftSettings((prev) => ({ ...prev, subtitles_enabled: event.target.checked }))
+                    }
+                    className="h-4 w-4 rounded border-[#d6e0e8]"
+                  />
+                  Включены
+                </label>
+              </div>
+
+              <div className="rounded-xl border border-white/70 bg-white px-4 py-3 text-xs leading-5 text-muted-foreground">
+                <div><span className="font-semibold text-foreground">Режим:</span> {subtitleModePreview.title}</div>
+                <div><span className="font-semibold text-foreground">Стиль:</span> {subtitleStylePreview.title}</div>
+                <div><span className="font-semibold text-foreground">Шрифт:</span> {subtitleFontPreview.title}</div>
+                <div><span className="font-semibold text-foreground">Вес:</span> {subtitleFontWeight === 700 ? "жирный" : "обычный"}</div>
+                <div><span className="font-semibold text-foreground">Обводка:</span> {subtitleOutlineWidth.toFixed(1)} px</div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-3">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Режим показа
+                  </label>
+                  <Select
+                    value={subtitleMode}
+                    onValueChange={(value: Settings["subtitle_mode"]) =>
+                      setDraftSettings((prev) => ({ ...prev, subtitle_mode: value }))
+                    }
+                  >
+                    <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="word_by_word">По одному слову</SelectItem>
+                      <SelectItem value="phrase_block">Фразами</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-muted-foreground">{subtitleModePreview.description}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Стиль
+                  </label>
+                  <Select
+                    value={subtitleStylePreset}
+                    onValueChange={(value: Settings["subtitle_style_preset"]) =>
+                      setDraftSettings((prev) => ({ ...prev, subtitle_style_preset: value }))
+                    }
+                  >
+                    <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="classic">Classic Outline</SelectItem>
+                      <SelectItem value="impact">Impact</SelectItem>
+                      <SelectItem value="soft_box">Soft Box</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-muted-foreground">{subtitleStylePreview.description}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Шрифт Google Fonts
+                  </label>
+                  <Select
+                    value={subtitleFontFamily}
+                    onValueChange={(value: Settings["subtitle_font_family"]) =>
+                      setDraftSettings((prev) => ({ ...prev, subtitle_font_family: value }))
+                    }
+                  >
+                    <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(SUBTITLE_FONT_OPTIONS).map(([fontKey, font]) => (
+                        <SelectItem key={fontKey} value={fontKey}>
+                          {font.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs leading-5 text-muted-foreground">{subtitleFontPreview.description}</p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="space-y-3 rounded-2xl border border-white/70 bg-white p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Цвет и обводка
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Цвет текста
+                      </div>
+                      <div className="flex items-center gap-3 rounded-xl bg-[#f0f4f7] px-3 py-2">
+                        <input
+                          type="color"
+                          value={subtitleFontColor}
+                          onChange={(event) =>
+                            setDraftSettings((prev) => ({ ...prev, subtitle_font_color: event.target.value.toUpperCase() }))
+                          }
+                          className="h-8 w-10 rounded-md border-none bg-transparent"
+                        />
+                        <input
+                          value={subtitleFontColor}
+                          onChange={(event) =>
+                            setDraftSettings((prev) => ({ ...prev, subtitle_font_color: event.target.value.toUpperCase() }))
+                          }
+                          className="w-full bg-transparent text-sm text-foreground outline-none"
+                        />
+                      </div>
+                    </label>
+
+                    <label className="space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Цвет обводки
+                      </div>
+                      <div className="flex items-center gap-3 rounded-xl bg-[#f0f4f7] px-3 py-2">
+                        <input
+                          type="color"
+                          value={subtitleOutlineColor}
+                          onChange={(event) =>
+                            setDraftSettings((prev) => ({ ...prev, subtitle_outline_color: event.target.value.toUpperCase() }))
+                          }
+                          className="h-8 w-10 rounded-md border-none bg-transparent"
+                        />
+                        <input
+                          value={subtitleOutlineColor}
+                          onChange={(event) =>
+                            setDraftSettings((prev) => ({ ...prev, subtitle_outline_color: event.target.value.toUpperCase() }))
+                          }
+                          className="w-full bg-transparent text-sm text-foreground outline-none"
+                        />
+                      </div>
+                    </label>
+                  </div>
+
+                  <label className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Толщина обводки
+                      </div>
+                      <div className="rounded-full bg-[#f0f4f7] px-3 py-1 text-xs font-bold text-foreground">
+                        {subtitleOutlineWidth.toFixed(1)} px
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={8}
+                      step={0.5}
+                      value={subtitleOutlineWidth}
+                      onChange={(event) =>
+                        setDraftSettings((prev) => ({ ...prev, subtitle_outline_width: Number(event.target.value) }))
+                      }
+                      className="w-full accent-primary"
+                    />
+                  </label>
+                </div>
+
+                <div className="space-y-3 rounded-2xl border border-white/70 bg-white p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Насыщенность и превью
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Жирность
+                    </label>
+                    <Select
+                      value={String(subtitleFontWeight)}
+                      onValueChange={(value) =>
+                        setDraftSettings((prev) => ({
+                          ...prev,
+                          subtitle_font_weight: value === "400" ? 400 : 700,
+                        }))
+                      }
+                    >
+                      <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="400">Обычный</SelectItem>
+                        <SelectItem value="700">Жирный</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="rounded-2xl bg-[#f0f4f7] p-4">
+                    <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Превью
+                    </div>
+                    <div className="rounded-[1.75rem] bg-[#0f172a] p-3 shadow-inner">
+                      <div className="mx-auto aspect-[9/16] max-h-[340px] w-full max-w-[190px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,#334155_0%,#111827_48%,#020617_100%)]">
+                        <div className="flex h-full flex-col justify-between p-3">
+                          <div className="space-y-2 pt-2">
+                            <div className="h-5 w-20 rounded-full bg-white/10" />
+                            <div className="h-3 w-28 rounded-full bg-white/10" />
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                              <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/60">
+                                Финальный кадр
+                              </span>
+                            </div>
+                            <div
+                              className={`mx-auto max-w-[92%] text-center uppercase leading-[1.08] tracking-wide ${
+                                subtitleStylePreset === "soft_box" ? "rounded-2xl bg-black/45 px-3 py-2.5" : ""
+                              }`}
+                              style={{
+                                color: subtitleFontColor,
+                                fontFamily: subtitlePreviewFontFamily,
+                                fontWeight: subtitleFontWeight,
+                                WebkitTextStroke:
+                                  subtitleStylePreset === "soft_box" ? undefined : `${subtitleOutlineWidth}px ${subtitleOutlineColor}`,
+                                textShadow:
+                                  subtitleStylePreset === "soft_box"
+                                    ? "none"
+                                    : `0 0 ${Math.max(1, subtitleOutlineWidth)}px ${subtitleOutlineColor}`,
+                                fontSize:
+                                  subtitleStylePreset === "impact"
+                                    ? "1.4rem"
+                                    : subtitleStylePreset === "soft_box"
+                                      ? "1.18rem"
+                                      : "1.24rem",
+                              }}
+                            >
+                              {subtitleMode === "word_by_word" ? (
+                                <div className="space-y-1">
+                                  <div className="opacity-45">ПУТЕШЕСТВУЙ</div>
+                                  <div>СВОБОДНО</div>
+                                  <div className="opacity-45">ПО МИРУ</div>
+                                </div>
+                              ) : (
+                                <div>ПУТЕШЕСТВУЙ СВОБОДНО ПО МИРУ</div>
+                              )}
+                            </div>
+                            <div className="rounded-full bg-white/8 px-2 py-1 text-center text-[9px] font-medium text-white/55">
+                              {subtitleMode === "word_by_word"
+                                ? "В финале слова будут появляться по отдельности"
+                                : "В финале титр будет идти короткими фразами"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                На первом монтаже сервер подтянет выбранный Google Font с кириллицей и закеширует его. Если сеть недоступна, сборка откатится на системный кириллический шрифт.
+              </div>
+            </div>
+
+            <div className="space-y-4 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                     Автоматика финальных роликов
                   </div>
                   <p className="text-sm text-muted-foreground">
@@ -1508,6 +1809,7 @@ export function SettingsScreen({
               <p>Tone of voice нужен, чтобы сценарии звучали в нужной манере.</p>
               <p>Целевая аудитория помогает выбирать правильные боли, примеры и обещания.</p>
               <p>TTS Provider определяет, пойдёт ли озвучка через MiniMax или ElevenLabs, а ниже задаются соответствующие параметры голоса.</p>
+              <p>Субтитры вшиваются в финальный монтаж по word timestamps: можно выбрать режим показа, стиль, кириллический Google Font, цвет текста, жирность и обводку.</p>
               <p>Целевая длина задаёт желаемую длительность итогового сценария вместо жёсткой привязки к референсу.</p>
               <p>Режим тайминга определяет, режем ли мы ролик по смыслу и паузам, по целевому проценту покрытия перебивками или по жёсткому интервалу.</p>
               <p>Ритм монтажа задаёт общий характер нарезки: спокойный, сбалансированный или более динамичный.</p>

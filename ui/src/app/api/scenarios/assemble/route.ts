@@ -5,14 +5,34 @@ import path from "path";
 import { spawn } from "child_process";
 import pool from "@/lib/db";
 import { isYandexDiskConfigured, uploadFinalVideoToYandexDisk } from "@/lib/server/yandex-disk";
+import { materializeSubtitleTrack } from "@/lib/server/subtitles";
+import { Settings } from "@/types";
 
 type ScenarioRow = {
   id: number;
   tts_audio_path: string | null;
-  tts_word_timestamps: { words?: Array<{ end?: number }> } | null;
+  tts_word_timestamps:
+    | {
+        words?: Array<{
+          word: string;
+          punctuated_word?: string;
+          start: number;
+          end: number;
+          confidence?: number | null;
+        }>;
+      }
+    | null;
   heygen_video_url: string | null;
   heygen_avatar_id: string | null;
   heygen_avatar_name: string | null;
+  subtitles_enabled: boolean | null;
+  subtitle_mode: Settings["subtitle_mode"] | null;
+  subtitle_style_preset: Settings["subtitle_style_preset"] | null;
+  subtitle_font_family: Settings["subtitle_font_family"] | null;
+  subtitle_font_color: string | null;
+  subtitle_font_weight: Settings["subtitle_font_weight"] | null;
+  subtitle_outline_color: string | null;
+  subtitle_outline_width: number | null;
   video_generation_prompts:
     | {
         prompts?: Array<{
@@ -118,9 +138,25 @@ function runCommandCapture(command: string, args: string[]) {
 
 async function getScenario(scenarioId: number) {
   const { rows } = await pool.query<ScenarioRow>(
-    `SELECT id, tts_audio_path, tts_word_timestamps, heygen_video_url, heygen_avatar_id, heygen_avatar_name, video_generation_prompts
-     FROM generated_scenarios
-     WHERE id = $1`,
+    `SELECT
+        gs.id,
+        gs.tts_audio_path,
+        gs.tts_word_timestamps,
+        gs.heygen_video_url,
+        gs.heygen_avatar_id,
+        gs.heygen_avatar_name,
+        gs.video_generation_prompts,
+        c.subtitles_enabled,
+        c.subtitle_mode,
+        c.subtitle_style_preset,
+        c.subtitle_font_family,
+        c.subtitle_font_color,
+        c.subtitle_font_weight,
+        c.subtitle_outline_color,
+        c.subtitle_outline_width
+     FROM generated_scenarios gs
+     LEFT JOIN clients c ON c.id = gs.client_id
+     WHERE gs.id = $1`,
     [scenarioId]
   );
 
@@ -414,6 +450,25 @@ async function buildMontage(scenarioId: number) {
   );
 
   const outputPath = path.join(workdir, `scenario_${scenarioId}_montage.mp4`);
+  const subtitleTrack = await materializeSubtitleTrack({
+    settings: {
+      subtitles_enabled: scenario.subtitles_enabled ?? false,
+      subtitle_mode: scenario.subtitle_mode || "word_by_word",
+      subtitle_style_preset: scenario.subtitle_style_preset || "classic",
+      subtitle_font_family: scenario.subtitle_font_family || "pt_sans",
+      subtitle_font_color: scenario.subtitle_font_color || "#FFFFFF",
+      subtitle_font_weight: scenario.subtitle_font_weight || 700,
+      subtitle_outline_color: scenario.subtitle_outline_color || "#111111",
+      subtitle_outline_width: Number(scenario.subtitle_outline_width || 3),
+    },
+    words: scenario.tts_word_timestamps?.words || [],
+    totalDuration: audioDuration > 0 ? audioDuration : totalDuration,
+    workdir,
+  });
+  const subtitleFilter = subtitleTrack
+    ? `,subtitles=${subtitleTrack.subtitlePath}${subtitleTrack.fontsDir ? `:fontsdir=${subtitleTrack.fontsDir}` : ""}`
+    : "";
+
   await runCommand("ffmpeg", [
     "-y",
     "-f",
@@ -425,7 +480,7 @@ async function buildMontage(scenarioId: number) {
     "-i",
     scenario.tts_audio_path,
     "-filter_complex",
-    "[0:v]tpad=stop_mode=clone:stop_duration=600[v]",
+    `[0:v]tpad=stop_mode=clone:stop_duration=600${subtitleFilter}[v]`,
     "-map",
     "[v]",
     "-map",
