@@ -107,6 +107,29 @@ const DEFAULT_HEYGEN_MOTION_PROMPT = `Лёгкое естественное ды
 const safeTrim = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 const normalizeMotionPrompt = (value: unknown) => safeTrim(value).slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH);
 const isPendingMotionStatus = (value: unknown) => PENDING_MOTION_STATUSES.has(safeTrim(value).toLowerCase());
+const normalizeProductMediaAssets = (value: unknown): ProductMediaAsset[] => {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is ProductMediaAsset => Boolean(item && typeof item === "object"));
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is ProductMediaAsset => Boolean(item && typeof item === "object"))
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+const normalizeSettings = (settings: Settings): Settings => ({
+  ...settings,
+  product_media_assets: normalizeProductMediaAssets(settings.product_media_assets),
+});
 
 const normalizeLook = (look: Partial<HeygenAvatarConfig["looks"][number]> | null | undefined, lookIndex: number) => {
   const lookId = safeTrim(look?.look_id);
@@ -259,7 +282,7 @@ export function SettingsScreen({
     [heygenCatalog]
   );
 
-  const [draftSettings, setDraftSettings] = useState<Settings>(settings);
+  const [draftSettings, setDraftSettings] = useState<Settings>(() => normalizeSettings(settings));
   const [avatarConfigs, setAvatarConfigs] = useState<HeygenAvatarConfig[]>(
     normalizedHeygenAvatars.length > 0 ? normalizedHeygenAvatars : normalizedCatalog
   );
@@ -303,7 +326,7 @@ export function SettingsScreen({
   const subtitlePreviewFontFamily = `"${subtitleFontPreview.family}", "DejaVu Sans", sans-serif`;
 
   useEffect(() => {
-    setDraftSettings(settings);
+    setDraftSettings(normalizeSettings(settings));
   }, [settings]);
 
   useEffect(() => {

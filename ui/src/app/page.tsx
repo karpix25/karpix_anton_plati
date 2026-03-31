@@ -15,6 +15,23 @@ import { ReferenceModal } from "@/components/ReferenceModal";
 import { Screen, Reference, TopicCard, StructureCard, Settings } from "@/types";
 import { navItems } from "@/lib/constants";
 
+const normalizeProductMediaAssets = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
 export default function CuratorDashboard() {
   // --- Local State ---
   const [screen, setScreen] = useState<Screen>("dashboard");
@@ -80,7 +97,7 @@ export default function CuratorDashboard() {
       broll_semantic_relevance_priority: selectedClient?.broll_semantic_relevance_priority || "balanced",
       broll_product_clip_policy: selectedClient?.broll_product_clip_policy || "contextual",
       broll_generator_model: selectedClient?.broll_generator_model || "bytedance/v1-pro-text-to-video",
-      product_media_assets: selectedClient?.product_media_assets || [],
+      product_media_assets: normalizeProductMediaAssets(selectedClient?.product_media_assets),
       product_keyword: selectedClient?.product_keyword || "",
       product_video_url: selectedClient?.product_video_url || "",
       tts_provider: selectedClient?.tts_provider || "minimax",

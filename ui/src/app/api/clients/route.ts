@@ -1,6 +1,23 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
+function normalizeProductMediaAssets(value: unknown) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
 async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
   await pool.query('ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
@@ -70,7 +87,12 @@ export async function GET() {
       ) stats ON stats.client_id = c.id
       ORDER BY c.created_at DESC
     `);
-    return NextResponse.json(rows);
+    return NextResponse.json(
+      rows.map((row) => ({
+        ...row,
+        product_media_assets: normalizeProductMediaAssets(row.product_media_assets),
+      }))
+    );
   } catch (error) {
     console.error('Database error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
@@ -153,7 +175,7 @@ export async function POST(request: Request) {
         broll_semantic_relevance_priority || 'balanced',
         broll_product_clip_policy || 'contextual',
         broll_generator_model || 'bytedance/v1-pro-text-to-video',
-        product_media_assets || [],
+        normalizeProductMediaAssets(product_media_assets),
         product_keyword || null,
         product_video_url || null,
         tts_provider || 'minimax',
@@ -252,7 +274,7 @@ export async function PUT(request: Request) {
         broll_semantic_relevance_priority || 'balanced',
         broll_product_clip_policy || 'contextual',
         broll_generator_model || 'bytedance/v1-pro-text-to-video',
-        product_media_assets || [],
+        normalizeProductMediaAssets(product_media_assets),
         product_keyword || null,
         product_video_url || null,
         tts_provider || 'minimax',
