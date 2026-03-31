@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Eye, EyeOff, LoaderCircle, Plus, Shuffle, Trash2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -330,7 +330,8 @@ export function SettingsScreen({
     320,
     Math.max(40, Number(draftSettings.subtitle_margin_v ?? subtitleMarginDefault))
   );
-  const subtitleMarginPreview = Math.round(subtitleMarginV * 0.18);
+  const subtitlePreviewRef = useRef<HTMLDivElement | null>(null);
+  const [subtitlePreviewScale, setSubtitlePreviewScale] = useState(0.24);
   const selectedVoice = minimaxVoices.find((voice) => voice.voice_id === draftSettings.tts_voice_id);
   const selectedElevenLabsVoice = elevenlabsVoices.find(
     (voice) => voice.voice_id === (draftSettings.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID)
@@ -382,6 +383,23 @@ export function SettingsScreen({
     };
   }, [subtitleFontFamily, subtitleFontPreview.stylesheetUrl]);
 
+  useEffect(() => {
+    const node = subtitlePreviewRef.current;
+    if (!node || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const updateScale = () => {
+      const height = node.clientHeight || 1;
+      const scale = height / 1280;
+      setSubtitlePreviewScale(Number.isFinite(scale) && scale > 0 ? scale : 0.24);
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     if (!selectedClientId) {
       return;
@@ -1346,57 +1364,71 @@ export function SettingsScreen({
                       Превью
                     </div>
                     <div className="rounded-[1.75rem] bg-[#0f172a] p-3 shadow-inner">
-                      <div className="mx-auto aspect-[9/16] max-h-[340px] w-full max-w-[190px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,#334155_0%,#111827_48%,#020617_100%)]">
-                        <div className="flex h-full flex-col justify-between p-3">
-                          <div className="space-y-2 pt-2">
-                            <div className="h-5 w-20 rounded-full bg-white/10" />
-                            <div className="h-3 w-28 rounded-full bg-white/10" />
-                          </div>
-                          <div className="space-y-2" style={{ transform: `translateY(-${subtitleMarginPreview}px)` }}>
-                            <div className="flex items-center gap-1.5">
-                              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                              <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/60">
-                                Финальный кадр
-                              </span>
+                      <div
+                        ref={subtitlePreviewRef}
+                        className="relative mx-auto aspect-[9/16] max-h-[340px] w-full max-w-[190px] overflow-hidden rounded-[1.5rem] border border-white/10 bg-[radial-gradient(circle_at_top,#334155_0%,#111827_48%,#020617_100%)]"
+                      >
+                        <div
+                          className="absolute left-0 top-0"
+                          style={{
+                            width: 720,
+                            height: 1280,
+                            transform: `scale(${subtitlePreviewScale})`,
+                            transformOrigin: "top left",
+                          }}
+                        >
+                          <div className="relative h-full w-full">
+                            <div className="absolute left-[96px] top-[96px] space-y-3">
+                              <div className="h-14 w-44 rounded-full bg-white/10" />
+                              <div className="h-8 w-64 rounded-full bg-white/10" />
                             </div>
                             <div
-                              className={`mx-auto max-w-[92%] text-center uppercase leading-[1.08] tracking-wide ${
-                                subtitleStylePreset === "soft_box" ? "rounded-2xl bg-black/45 px-3 py-2.5" : ""
-                              }`}
-                              style={{
-                                color: subtitleFontColor,
-                                fontFamily: subtitlePreviewFontFamily,
-                                fontWeight: subtitleFontWeight,
-                                WebkitTextStroke:
-                                  subtitleStylePreset === "soft_box" ? undefined : `${subtitleOutlineWidth}px ${subtitleOutlineColor}`,
-                                textShadow:
-                                  subtitleStylePreset === "soft_box"
-                                    ? "none"
-                                    : `0 0 ${Math.max(1, subtitleOutlineWidth)}px ${subtitleOutlineColor}`,
-                                fontSize:
-                                  subtitleStylePreset === "impact"
-                                    ? "1.4rem"
-                                    : subtitleStylePreset === "soft_box"
-                                      ? "1.18rem"
-                                      : "1.24rem",
-                              }}
+                              className="absolute left-[42px] right-[42px]"
+                              style={{ bottom: subtitleMarginV }}
                             >
-                              {subtitleMode === "word_by_word" ? (
-                                <div className="space-y-1">
-                                  <div className="opacity-45">ПУТЕШЕСТВУЙ</div>
-                                  <div>СВОБОДНО</div>
-                                  <div className="opacity-45">ПО МИРУ</div>
-                                </div>
-                              ) : (
-                                <div>ПУТЕШЕСТВУЙ СВОБОДНО ПО МИРУ</div>
-                              )}
-                            </div>
-                            <div className="rounded-full bg-white/8 px-2 py-1 text-center text-[9px] font-medium text-white/55">
-                              {subtitleMode === "word_by_word"
-                                ? "В финале слова будут появляться по отдельности"
-                                : "В финале титр будет идти короткими фразами"}
+                              <div className="flex items-center gap-3 pb-3 text-[20px] font-bold uppercase tracking-[0.24em] text-white/60">
+                                <span className="inline-block h-4 w-4 rounded-full bg-emerald-400" />
+                                Финальный кадр
+                              </div>
+                              <div
+                                className={`mx-auto text-center uppercase leading-[1.08] tracking-wide ${
+                                  subtitleStylePreset === "soft_box" ? "rounded-[28px] bg-black/45 px-14 py-10" : ""
+                                }`}
+                                style={{
+                                  color: subtitleFontColor,
+                                  fontFamily: subtitlePreviewFontFamily,
+                                  fontWeight: subtitleFontWeight,
+                                  WebkitTextStroke:
+                                    subtitleStylePreset === "soft_box" ? undefined : `${subtitleOutlineWidth}px ${subtitleOutlineColor}`,
+                                  textShadow:
+                                    subtitleStylePreset === "soft_box"
+                                      ? "none"
+                                      : `0 0 ${Math.max(1, subtitleOutlineWidth)}px ${subtitleOutlineColor}`,
+                                  fontSize:
+                                    subtitleStylePreset === "impact"
+                                      ? 28
+                                      : subtitleStylePreset === "soft_box"
+                                        ? 24
+                                        : 25,
+                                }}
+                              >
+                                {subtitleMode === "word_by_word" ? (
+                                  <div className="space-y-2">
+                                    <div className="opacity-45">ПУТЕШЕСТВУЙ</div>
+                                    <div>СВОБОДНО</div>
+                                    <div className="opacity-45">ПО МИРУ</div>
+                                  </div>
+                                ) : (
+                                  <div>ПУТЕШЕСТВУЙ СВОБОДНО ПО МИРУ</div>
+                                )}
+                              </div>
                             </div>
                           </div>
+                        </div>
+                        <div className="absolute inset-x-0 bottom-3 text-center text-[10px] font-medium text-white/60">
+                          {subtitleMode === "word_by_word"
+                            ? "Слова будут появляться по отдельности"
+                            : "Титры пойдут короткими фразами"}
                         </div>
                       </div>
                     </div>
