@@ -6,6 +6,37 @@ import json
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RAPIDAPI_INSTAGRAM_HOST = "instagram-social-api.p.rapidapi.com"
+DEFAULT_RAPIDAPI_INSTAGRAM_ENDPOINT = "/v1/post_info"
+
+
+def _get_rapidapi_instagram_config() -> tuple[str, str]:
+    host = os.getenv("RAPIDAPI_INSTAGRAM_HOST", DEFAULT_RAPIDAPI_INSTAGRAM_HOST).strip()
+    endpoint = os.getenv("RAPIDAPI_INSTAGRAM_ENDPOINT", DEFAULT_RAPIDAPI_INSTAGRAM_ENDPOINT).strip()
+    if not endpoint.startswith("/"):
+        endpoint = f"/{endpoint}"
+    return host, endpoint
+
+
+def _build_rapidapi_attempts(url: str) -> list[tuple[str, dict[str, str]]]:
+    host, configured_endpoint = _get_rapidapi_instagram_config()
+    attempts: list[tuple[str, dict[str, str]]] = []
+
+    def add_attempt(endpoint: str, param_key: str) -> None:
+        normalized_endpoint = endpoint if endpoint.startswith("/") else f"/{endpoint}"
+        candidate = (f"https://{host}{normalized_endpoint}", {param_key: url})
+        if candidate not in attempts:
+            attempts.append(candidate)
+
+    if "reels" in configured_endpoint:
+        add_attempt(configured_endpoint, "username_or_id_or_url")
+    else:
+        add_attempt(configured_endpoint, "code_or_id_or_url")
+
+    add_attempt("/v1/reels", "username_or_id_or_url")
+    add_attempt("/v1/post_info", "code_or_id_or_url")
+    return attempts
+
 
 def _raise_human_readable_download_error(error: Exception) -> None:
     message = str(error)
@@ -41,24 +72,31 @@ def download_instagram_reel(url):
     if not api_key:
         raise ValueError("RAPIDAPI_KEY not found in environment")
 
+    rapidapi_host, rapidapi_endpoint = _get_rapidapi_instagram_config()
+
     # Phase 1: Get Video Info
-    # Updated to match working example provided by user
-    api_url = "https://instagram-social-api.p.rapidapi.com/v1/post_info"
-    querystring = {"code_or_id_or_url": url}
-    
     headers = {
         "x-rapidapi-key": api_key,
-        "x-rapidapi-host": "instagram-social-api.p.rapidapi.com"
+        "x-rapidapi-host": rapidapi_host
     }
-    
-    logger.info(f"Fetching Reel info for: {url}")
-    try:
-        response = requests.get(api_url, headers=headers, params=querystring, timeout=(20, 60))
-        response.raise_for_status()
-    except requests.RequestException as error:
-        logger.error("RapidAPI metadata request failed for %s: %s", url, error)
-        _raise_human_readable_download_error(error)
-    
+
+    logger.info("Fetching Reel info for: %s via RapidAPI host=%s endpoint=%s", url, rapidapi_host, rapidapi_endpoint)
+    response = None
+    last_error: Exception | None = None
+
+    for api_url, querystring in _build_rapidapi_attempts(url):
+        try:
+            logger.info("Trying RapidAPI request: %s params=%s", api_url, list(querystring.keys()))
+            response = requests.get(api_url, headers=headers, params=querystring, timeout=(20, 60))
+            response.raise_for_status()
+            break
+        except requests.RequestException as error:
+            last_error = error
+            logger.error("RapidAPI metadata request failed for %s via %s: %s", url, api_url, error)
+
+    if response is None:
+        _raise_human_readable_download_error(last_error or RuntimeError("Unknown RapidAPI request failure"))
+
     data = response.json()
     logger.debug(f"API Response: {json.dumps(data)[:500]}...") # Log first 500 chars
 
