@@ -38,6 +38,17 @@ def _plain(text):
     return str(text or "").replace("`", "").replace("*", "")
 
 
+def _reply_in_same_thread(message, text: str):
+    kwargs = {
+        "chat_id": message.chat.id,
+        "text": text,
+        "reply_to_message_id": message.message_id,
+    }
+    if getattr(message, "message_thread_id", None):
+        kwargs["message_thread_id"] = message.message_thread_id
+    return bot.send_message(**kwargs)
+
+
 def _detect_topic_name(message):
     if message.reply_to_message and getattr(message.reply_to_message, "forum_topic_created", None):
         return message.reply_to_message.forum_topic_created.name
@@ -104,14 +115,14 @@ def extract_reel_link(text):
 def handle_start(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
-    bot.reply_to(message, build_commands_help_message(message, config=config))
+    _reply_in_same_thread(message, build_commands_help_message(message, config=config))
 
 
 @bot.message_handler(commands=['connect_help'])
 def handle_connect_help(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
-    bot.reply_to(message, build_connection_help_message(message, config=config))
+    _reply_in_same_thread(message, build_connection_help_message(message, config=config))
 
 
 @bot.message_handler(commands=['whereami'])
@@ -119,7 +130,7 @@ def handle_whereami(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
     if config:
-        bot.reply_to(
+        _reply_in_same_thread(
             message,
             (
                 f"chat_id: {message.chat.id}\n"
@@ -130,7 +141,7 @@ def handle_whereami(message):
         )
         return
 
-    bot.reply_to(
+    _reply_in_same_thread(
         message,
         (
             f"chat_id: {message.chat.id}\n"
@@ -144,12 +155,12 @@ def handle_whereami(message):
 def handle_new_client(message):
     name = message.text.replace('/new_client', '').strip()
     if not name:
-        bot.reply_to(message, "Укажите имя клиента. Пример: /new_client Nike")
+        _reply_in_same_thread(message, "Укажите имя клиента. Пример: /new_client Nike")
         return
     
     client_id = create_client(name)
     if client_id:
-        bot.reply_to(
+        _reply_in_same_thread(
             message,
             (
                 f"Клиент {_plain(name)} создан (ID: {client_id}).\n"
@@ -157,14 +168,14 @@ def handle_new_client(message):
             ),
         )
     else:
-        bot.reply_to(message, "❌ Ошибка создания клиента. Возможно, имя уже занято.")
+        _reply_in_same_thread(message, "❌ Ошибка создания клиента. Возможно, имя уже занято.")
 
 @bot.message_handler(commands=['assign_client'])
 def handle_assign_client(message):
     topic_id = str(message.message_thread_id or "0")
     name = message.text.replace('/assign_client', '').strip()
     if not name:
-        bot.reply_to(
+        _reply_in_same_thread(
             message,
             "Укажите имя клиента. Пример: /assign_client Nike\n\nЕсли проект ещё не создан, сначала выполните /new_client Nike.",
         )
@@ -172,7 +183,7 @@ def handle_assign_client(message):
     
     client = get_client(name=name)
     if not client:
-        bot.reply_to(
+        _reply_in_same_thread(
             message,
             (
                 f"Клиент {_plain(name)} не найден.\n"
@@ -187,7 +198,7 @@ def handle_assign_client(message):
         niche = message.reply_to_message.forum_topic_created.name
 
     save_topic_config(topic_id, client["id"], niche)
-    bot.reply_to(
+    _reply_in_same_thread(
         message,
         (
             f"Этот топик теперь привязан к клиенту {_plain(name)}.\n"
@@ -204,7 +215,7 @@ def handle_client_info(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
     if not config:
-        bot.reply_to(message, build_connection_help_message(message), parse_mode="Markdown")
+        _reply_in_same_thread(message, build_connection_help_message(message))
         return
     
     info = (
@@ -214,19 +225,19 @@ def handle_client_info(message):
         f"Voice: {_plain(config.get('brand_voice') or 'Стандартный')}\n"
         f"Audience: {_plain(config.get('target_audience') or 'Не задана')}"
     )
-    bot.reply_to(message, info)
+    _reply_in_same_thread(message, info)
 
 @bot.message_handler(commands=['set_brand'])
 def handle_set_brand(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
     if not config:
-        bot.reply_to(message, "Сначала привяжите клиента через /assign_client.")
+        _reply_in_same_thread(message, "Сначала привяжите клиента через /assign_client.")
         return
     
     brand_voice = message.text.replace('/set_brand', '').strip()
     if not brand_voice:
-        bot.reply_to(message, "Опишите Brand Voice. Пример: /set_brand Дерзкий, молодежный, много сленга")
+        _reply_in_same_thread(message, "Опишите Brand Voice. Пример: /set_brand Дерзкий, молодежный, много сленга")
         return
     
     try:
@@ -236,21 +247,21 @@ def handle_set_brand(message):
         conn.commit()
         cursor.close()
         conn.close()
-        bot.reply_to(message, "✅ Brand Voice успешно обновлен!")
+        _reply_in_same_thread(message, "✅ Brand Voice успешно обновлен!")
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка обновления: {e}")
+        _reply_in_same_thread(message, f"❌ Ошибка обновления: {e}")
 
 @bot.message_handler(commands=['set_client_product'])
 def handle_set_client_product(message):
     topic_id = str(message.message_thread_id or "0")
     config = get_topic_config(topic_id)
     if not config:
-        bot.reply_to(message, "Сначала привяжите клиента через /assign_client.")
+        _reply_in_same_thread(message, "Сначала привяжите клиента через /assign_client.")
         return
     
     product = message.text.replace('/set_client_product', '').strip()
     if not product:
-        bot.reply_to(message, "Опишите продукт. Пример: /set_client_product Новая коллекция кроссовок")
+        _reply_in_same_thread(message, "Опишите продукт. Пример: /set_client_product Новая коллекция кроссовок")
         return
     
     try:
@@ -260,9 +271,9 @@ def handle_set_client_product(message):
         conn.commit()
         cursor.close()
         conn.close()
-        bot.reply_to(message, "✅ Описание продукта обновлено!")
+        _reply_in_same_thread(message, "✅ Описание продукта обновлено!")
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка обновления: {e}")
+        _reply_in_same_thread(message, f"❌ Ошибка обновления: {e}")
 
 @bot.message_handler(func=lambda message: True)
 def handle_message(message):
@@ -276,7 +287,7 @@ def handle_message(message):
     
     if reel_url:
         if not config:
-            bot.reply_to(
+            _reply_in_same_thread(
                 message,
                 "🛑 Этот топик не привязан к проекту.\n\n"
                 + build_connection_help_message(message),
@@ -286,7 +297,7 @@ def handle_message(message):
         logger.info(f"[{message.chat.id}] Client: {config['client_name']} | Reel: {reel_url}")
         
         status_msg = f"Разбираю референс для {_plain(config['client_name'])}\nНиша: {_plain(config['niche'])}"
-        bot.reply_to(message, status_msg + "\n\nЗапускаю атомарную деконструкцию...")
+        _reply_in_same_thread(message, status_msg + "\n\nЗапускаю атомарную деконструкцию...")
         
         try:
             job_id = f"tg_{message.chat.id}_{message.message_id}"
@@ -314,7 +325,7 @@ def handle_message(message):
                     f"DNA: {_plain(audit.get('viral_dna_synthesis'))}\n"
                     f"Score: {_plain(audit.get('viral_score'))}/100"
                 )
-                bot.reply_to(message, response)
+                _reply_in_same_thread(message, response)
 
             elif result["status"] == "scenario_complete":
                 audit = result.get("audit", {})
@@ -329,22 +340,22 @@ def handle_message(message):
                     f"Стадия Ханта: {_plain(hunt)}\n\n"
                     f"Сценарий:\n{_plain(scenario.get('script', 'Сценарий не найден'))}"
                 )
-                bot.reply_to(message, response)
+                _reply_in_same_thread(message, response)
 
             elif result["status"] == "quota_exceeded":
-                bot.reply_to(
+                _reply_in_same_thread(
                     message,
                     f"Лимит генераций достигнут.\n\n{_plain(result.get('message', 'Месячный лимит исчерпан.'))}",
                 )
             
         except Exception as e:
             logger.error(f"Error: {e}")
-            bot.reply_to(message, f"❌ Ошибка: {str(e)}")
+            _reply_in_same_thread(message, f"❌ Ошибка: {str(e)}")
         return
 
     lowered_text = message.text.lower()
     if any(trigger in lowered_text for trigger in ["подключ", "как подключ", "help", "/help", "старт", "start"]):
-        bot.reply_to(message, build_commands_help_message(message, config=config))
+        _reply_in_same_thread(message, build_commands_help_message(message, config=config))
 
 if __name__ == "__main__":
     logger.info("Starting Multi-Client Bot...")
