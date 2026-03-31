@@ -101,7 +101,7 @@ const ELEVENLABS_MODEL_ID = "eleven_v3";
 const DEFAULT_HEYGEN_MOTION_TYPE = "consistent";
 const HEYGEN_MOTION_PROMPT_MAX_LENGTH = 500;
 const PENDING_MOTION_STATUSES = new Set(["pending", "queued", "processing", "in_progress"]);
-const DEFAULT_HEYGEN_MOTION_PROMPT = `Create natural, realistic motion from this portrait while preserving identity and framing. Add subtle breathing, soft shoulder adjustments, slight torso sway, and tiny posture corrections. If hands are visible, allow restrained micro-movements only. Keep the performance calm, professional, and believable. Avoid dramatic gestures, exaggerated nodding, sudden motion, or over-animated behavior. If background elements are visible, allow only faint ambient movement.`;
+const DEFAULT_HEYGEN_MOTION_PROMPT = `Лёгкое естественное дыхание, мягкие движения плеч и корпуса, деликатная живая пластика без резких жестов. Если видны руки, допустимы только аккуратные микродвижения. Если виден фон, можно оставить едва заметное фоновое движение.`;
 
 const safeTrim = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 const normalizeMotionPrompt = (value: unknown) => safeTrim(value).slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH);
@@ -674,9 +674,10 @@ export function SettingsScreen({
     const avatar = avatarConfigs[avatarIndex];
     const look = avatar?.looks?.[lookIndex];
     const previewImageUrl = look?.preview_image_url || avatar?.preview_image_url || "";
+    const sourceText = (look?.motion_prompt || "").trim();
 
-    if (!previewImageUrl) {
-      alert("Для автогенерации нужен preview image URL у look-а или у аватара.");
+    if (!sourceText) {
+      alert("Сначала напиши по-русски, какое движение ты хочешь получить.");
       return;
     }
 
@@ -693,12 +694,13 @@ export function SettingsScreen({
           previewImageUrl,
           avatarName: avatar?.avatar_name || "",
           lookName: look?.look_name || "",
+          sourceText,
         }),
       });
 
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        throw new Error(payload?.error || "Failed to auto-generate motion prompt");
+        throw new Error(payload?.error || "Failed to adapt motion prompt");
       }
 
       setAvatarConfigs((prev) =>
@@ -720,7 +722,7 @@ export function SettingsScreen({
       );
     } catch (error) {
       console.error("HeyGen motion prompt generation error:", error);
-      alert(error instanceof Error ? error.message : "Не удалось сгенерировать motion prompt.");
+      alert(error instanceof Error ? error.message : "Не удалось адаптировать motion prompt.");
     } finally {
       setMotionPromptRequestKey(null);
     }
@@ -1900,7 +1902,7 @@ export function SettingsScreen({
                               </div>
                               <div className="space-y-2">
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                                  Motion Prompt
+                                  Описание motion
                                 </label>
                                 <textarea
                                   value={selectedLook.motion_prompt || DEFAULT_HEYGEN_MOTION_PROMPT}
@@ -1914,7 +1916,7 @@ export function SettingsScreen({
                                   }
                                   maxLength={HEYGEN_MOTION_PROMPT_MAX_LENGTH}
                                   className="min-h-[128px] w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                                  placeholder="Опишите желаемое движение аватара"
+                                  placeholder="Напиши по-русски, какое движение нужно. Например: лёгкое дыхание, мягкие движения плеч, немного живости в руках, без резких жестов."
                                 />
                                 <div className="text-right text-[11px] text-muted-foreground">
                                   {(selectedLook.motion_prompt || DEFAULT_HEYGEN_MOTION_PROMPT).length}/{HEYGEN_MOTION_PROMPT_MAX_LENGTH}
@@ -1925,15 +1927,15 @@ export function SettingsScreen({
                                 variant="secondary"
                                 size="sm"
                                 onClick={() => handleGenerateMotionPrompt(avatarIndex, selectedLookIndex)}
-                                disabled={(!selectedLook.preview_image_url && !avatar.preview_image_url) || motionPromptRequestKey === `${avatar.id || avatarIndex}-${selectedLook.id || selectedLookIndex}-prompt`}
+                                disabled={motionPromptRequestKey === `${avatar.id || avatarIndex}-${selectedLook.id || selectedLookIndex}-prompt`}
                               >
                                 {motionPromptRequestKey === `${avatar.id || avatarIndex}-${selectedLook.id || selectedLookIndex}-prompt` ? (
                                   <>
                                     <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                                    Анализирую превью...
+                                    Адаптирую prompt...
                                   </>
                                 ) : (
-                                  "Сгенерировать prompt"
+                                  "Адаптировать"
                                 )}
                               </Button>
                               <Button

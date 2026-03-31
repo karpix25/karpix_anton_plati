@@ -54,11 +54,12 @@ function normalizeMotionPrompt(value: string) {
 
 export async function POST(request: Request) {
   try {
-    const { previewImageUrl, avatarName, lookName } = await request.json();
+    const { previewImageUrl, avatarName, lookName, sourceText } = await request.json();
     const resolvedPreviewImageUrl = sanitizeUrl(previewImageUrl);
+    const resolvedSourceText = typeof sourceText === "string" ? sourceText.trim() : "";
 
-    if (!resolvedPreviewImageUrl) {
-      return NextResponse.json({ error: "previewImageUrl is required" }, { status: 400 });
+    if (!resolvedSourceText) {
+      return NextResponse.json({ error: "sourceText is required" }, { status: 400 });
     }
 
     const response = await fetch(`${OPENROUTER_API_BASE}/chat/completions`, {
@@ -78,17 +79,20 @@ export async function POST(request: Request) {
             content: [
               {
                 type: "text",
-                text: `You are writing a HeyGen Add Motion prompt for a photo avatar look.
-
-Analyze the preview image and write one English motion prompt that fits the exact framing, pose, clothing, visible body area, and visible background.
+                text: `You are adapting a user's Russian motion idea into a HeyGen Add Motion prompt for a photo avatar look.
 
 Context:
 - Avatar name: ${typeof avatarName === "string" && avatarName.trim() ? avatarName.trim() : "Unknown"}
 - Look name: ${typeof lookName === "string" && lookName.trim() ? lookName.trim() : "Unknown"}
+- User's source description in Russian:
+${resolvedSourceText}
 
 Rules:
 - Write only the final prompt text. No markdown. No labels.
+- The final output must be in English because it will be sent directly to HeyGen Add Motion.
+- Preserve the user's intended motion meaning, mood, and restrictions, but rewrite it into concise, production-ready prompt English.
 - The prompt must describe realistic motion that is physically compatible with what is visible in the image.
+- If no image is available, still adapt the user's Russian text into a clean, realistic HeyGen-ready motion prompt.
 - If only the head and shoulders are visible, do not invent large body gestures.
 - If upper torso or hands are visible, allow subtle natural torso, shoulder, and hand micro-movements.
 - If background elements are visible, include slight ambient background motion only when it makes sense.
@@ -96,14 +100,19 @@ Rules:
 - Avoid dramatic gestures, dancing, walking, camera moves, exaggerated nodding, or cinematic action.
 - Mention subtle breathing, posture adjustments, and gentle human liveliness where appropriate.
 - Keep it concise and specific. The final prompt must be no longer than 500 characters.
-- This prompt will be sent directly to HeyGen Add Motion.`,
+ - Remove vague filler and rewrite awkward phrasing into clean prompt language.
+ - This prompt will be sent directly to HeyGen Add Motion.`,
               },
-              {
-                type: "image_url",
-                image_url: {
-                  url: resolvedPreviewImageUrl,
-                },
-              },
+              ...(resolvedPreviewImageUrl
+                ? [
+                    {
+                      type: "image_url",
+                      image_url: {
+                        url: resolvedPreviewImageUrl,
+                      },
+                    } as const,
+                  ]
+                : []),
             ],
           },
         ],
