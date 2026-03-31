@@ -3,7 +3,12 @@ import { ChevronDown, ChevronRight, Eye, EyeOff, LoaderCircle, Plus, Shuffle, Tr
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ElevenLabsVoiceOption, HeygenAvatarConfig, MinimaxVoiceOption, ProductMediaAsset, Settings } from "@/types";
-import { SUBTITLE_FONT_OPTIONS, SUBTITLE_MODE_OPTIONS, SUBTITLE_STYLE_PRESET_OPTIONS } from "@/lib/subtitles";
+import {
+  SUBTITLE_FONT_OPTIONS,
+  SUBTITLE_MODE_OPTIONS,
+  SUBTITLE_PRESET_DEFAULT_MARGIN_V,
+  SUBTITLE_STYLE_PRESET_OPTIONS,
+} from "@/lib/subtitles";
 
 interface SettingsScreenProps {
   settings: Settings;
@@ -129,6 +134,10 @@ const normalizeProductMediaAssets = (value: unknown): ProductMediaAsset[] => {
 const normalizeSettings = (settings: Settings): Settings => ({
   ...settings,
   product_media_assets: normalizeProductMediaAssets(settings.product_media_assets),
+  subtitle_margin_v:
+    Number.isFinite(Number(settings.subtitle_margin_v)) && Number(settings.subtitle_margin_v) > 0
+      ? Number(settings.subtitle_margin_v)
+      : SUBTITLE_PRESET_DEFAULT_MARGIN_V[settings.subtitle_style_preset || "classic"],
 });
 
 const normalizeLook = (look: Partial<HeygenAvatarConfig["looks"][number]> | null | undefined, lookIndex: number) => {
@@ -316,6 +325,12 @@ export function SettingsScreen({
   const subtitleOutlineColor = draftSettings.subtitle_outline_color || "#111111";
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
   const subtitleOutlineWidth = Number(draftSettings.subtitle_outline_width || 3);
+  const subtitleMarginDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_V[subtitleStylePreset] || 140;
+  const subtitleMarginV = Math.min(
+    320,
+    Math.max(40, Number(draftSettings.subtitle_margin_v ?? subtitleMarginDefault))
+  );
+  const subtitleMarginPreview = Math.round(subtitleMarginV * 0.18);
   const selectedVoice = minimaxVoices.find((voice) => voice.voice_id === draftSettings.tts_voice_id);
   const selectedElevenLabsVoice = elevenlabsVoices.find(
     (voice) => voice.voice_id === (draftSettings.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID)
@@ -803,11 +818,12 @@ export function SettingsScreen({
       }
 
       const data = await response.json();
+      const mergedAssets = Array.isArray(data.all_assets) ? (data.all_assets as ProductMediaAsset[]) : null;
       const uploadedAssets = Array.isArray(data.assets) ? (data.assets as ProductMediaAsset[]) : [];
       setDraftSettings((prev) => ({
         ...prev,
-        product_media_assets: [...(prev.product_media_assets || []), ...uploadedAssets],
-        product_video_url: prev.product_video_url || uploadedAssets[0]?.url || data.url || "",
+        product_media_assets: mergedAssets ?? [...(prev.product_media_assets || []), ...uploadedAssets],
+        product_video_url: prev.product_video_url || mergedAssets?.[0]?.url || uploadedAssets[0]?.url || data.url || "",
       }));
     } catch (error) {
       console.error("Product video upload error:", error);
@@ -1128,6 +1144,7 @@ export function SettingsScreen({
                 <div><span className="font-semibold text-foreground">Шрифт:</span> {subtitleFontPreview.title}</div>
                 <div><span className="font-semibold text-foreground">Вес:</span> {subtitleFontWeight === 700 ? "жирный" : "обычный"}</div>
                 <div><span className="font-semibold text-foreground">Обводка:</span> {subtitleOutlineWidth.toFixed(1)} px</div>
+                <div><span className="font-semibold text-foreground">Высота:</span> {subtitleMarginV}px</div>
               </div>
 
               <div className="grid gap-4 xl:grid-cols-3">
@@ -1302,6 +1319,28 @@ export function SettingsScreen({
                     </Select>
                   </div>
 
+                  <label className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Высота субтитров
+                      </div>
+                      <div className="rounded-full bg-[#f0f4f7] px-3 py-1 text-xs font-bold text-foreground">
+                        {subtitleMarginV}px
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min={40}
+                      max={320}
+                      step={5}
+                      value={subtitleMarginV}
+                      onChange={(event) =>
+                        setDraftSettings((prev) => ({ ...prev, subtitle_margin_v: Number(event.target.value) }))
+                      }
+                      className="w-full accent-primary"
+                    />
+                  </label>
+
                   <div className="rounded-2xl bg-[#f0f4f7] p-4">
                     <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                       Превью
@@ -1313,7 +1352,7 @@ export function SettingsScreen({
                             <div className="h-5 w-20 rounded-full bg-white/10" />
                             <div className="h-3 w-28 rounded-full bg-white/10" />
                           </div>
-                          <div className="space-y-2">
+                          <div className="space-y-2" style={{ transform: `translateY(-${subtitleMarginPreview}px)` }}>
                             <div className="flex items-center gap-1.5">
                               <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
                               <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-white/60">

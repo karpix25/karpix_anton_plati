@@ -31,6 +31,7 @@ export interface Client {
   subtitle_font_weight?: 400 | 700;
   subtitle_outline_color?: string;
   subtitle_outline_width?: number;
+  subtitle_margin_v?: number;
   auto_generate_final_videos?: boolean;
   daily_final_video_limit?: number;
   daily_final_video_count?: number;
@@ -144,6 +145,7 @@ export interface Settings {
   subtitle_font_weight: 400 | 700;
   subtitle_outline_color: string;
   subtitle_outline_width: number;
+  subtitle_margin_v: number;
   auto_generate_final_videos: boolean;
   daily_final_video_limit: number;
   daily_final_video_count: number;

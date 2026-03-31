@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { spawn } from "child_process";
+import pool from "@/lib/db";
 
 const PRODUCT_ASSET_WIDTH = 720;
 const PRODUCT_ASSET_HEIGHT = 1280;
@@ -16,6 +17,36 @@ type UploadedProductAsset = {
   duration_seconds: number;
   created_at: string;
 };
+
+function normalizeProductMediaAssets(value: unknown): UploadedProductAsset[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+      const asset = item as Record<string, unknown>;
+      const url = typeof asset.url === "string" ? asset.url.trim() : "";
+      if (!url) return null;
+      return {
+        id: typeof asset.id === "string" ? asset.id.trim() : url,
+        url,
+        name: typeof asset.name === "string" ? asset.name.trim() : "Product Asset",
+        source_type: asset.source_type === "image" ? "image" : "video",
+        duration_seconds: Number(asset.duration_seconds || 0) || 0,
+        created_at: typeof asset.created_at === "string" ? asset.created_at : new Date().toISOString(),
+      };
+    })
+    .filter(Boolean) as UploadedProductAsset[];
+}
+
+async function ensureProductAssetColumns() {
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_video_url TEXT");
+}
 
 function runCommand(command: string, args: string[]) {
   return new Promise<void>((resolve, reject) => {
@@ -117,8 +148,25 @@ export async function POST(request: Request) {
       }
     }
 
+    await ensureProductAssetColumns();
+    const { rows } = await pool.query(
+      "SELECT product_media_assets, product_video_url FROM clients WHERE id = $1",
+      [Number(clientId)]
+    );
+    const existingAssets = normalizeProductMediaAssets(rows[0]?.product_media_assets);
+    const mergedAssets = [
+      ...existingAssets,
+      ...uploadedAssets.filter((asset) => !existingAssets.some((existing) => existing.url === asset.url)),
+    ];
+    const nextPrimaryUrl = rows[0]?.product_video_url || mergedAssets[0]?.url || "";
+    await pool.query(
+      "UPDATE clients SET product_media_assets = $1::jsonb, product_video_url = $2 WHERE id = $3",
+      [JSON.stringify(mergedAssets), nextPrimaryUrl, Number(clientId)]
+    );
+
     return NextResponse.json({
       assets: uploadedAssets,
+      all_assets: mergedAssets,
       url: uploadedAssets[0]?.url || "",
     });
   } catch (error) {

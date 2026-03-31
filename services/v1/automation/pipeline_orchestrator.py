@@ -22,7 +22,7 @@ from services.v1.database.db_service import (
     save_topic_structure_pair,
     choose_next_client_avatar_variant,
 )
-from services.v1.automation.notifier_service import send_telegram_notification
+from services.v1.automation.notifier_service import send_telegram_notification, notify_service_payment_issue
 
 # Note: This assumes cloud_storage utilities exist or will be added to this workspace.
 try:
@@ -110,7 +110,11 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
     if reels_url:
         logger.info(f"[{job_id}] Phase 0: Downloading and transcribing Reel")
         video_path = download_instagram_reel(reels_url)
-        transcription_data = transcribe_media_deepgram(video_path)
+        try:
+            transcription_data = transcribe_media_deepgram(video_path)
+        except Exception as error:
+            notify_service_payment_issue(client_id, "Deepgram", error)
+            raise
         transcript = transcription_data["transcript"]
         transcript_meta = transcription_data.get("transcript_meta")
         word_count = transcript_meta.get("word_count") if transcript_meta else None
@@ -215,8 +219,16 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
             tts_future = executor.submit(text_to_speech_minimax, script_text, tts_voice_id or None)
         editor_future = executor.submit(generate_broll_plan, scenario_json)
         
-        audio_local_path = tts_future.result()
-        broll_plan = editor_future.result()
+        try:
+            audio_local_path = tts_future.result()
+        except Exception as error:
+            notify_service_payment_issue(client_id, f"TTS/{tts_provider}", error)
+            raise
+        try:
+            broll_plan = editor_future.result()
+        except Exception as error:
+            notify_service_payment_issue(client_id, "B-roll planner", error)
+            raise
         
     # Phase 5: Avatar Video Generation
     # Upload audio to cloud storage so HeyGen can access it
@@ -230,15 +242,23 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
     look = selected_avatar_variant.get("look") if selected_avatar_variant else None
     motion_look_id = (look or {}).get("motion_look_id")
     fallback_look_id = (look or {}).get("look_id")
-    heygen_video_id = generate_avatar_video(
-        audio_url,
-        avatar_id,
-        look_id=motion_look_id or fallback_look_id,
-        fallback_look_id=fallback_look_id,
-    )
+    try:
+        heygen_video_id = generate_avatar_video(
+            audio_url,
+            avatar_id,
+            look_id=motion_look_id or fallback_look_id,
+            fallback_look_id=fallback_look_id,
+        )
+    except Exception as error:
+        notify_service_payment_issue(client_id, "HeyGen", error)
+        raise
     
     # Wait for result
-    final_video_url = wait_for_heygen_video(heygen_video_id)
+    try:
+        final_video_url = wait_for_heygen_video(heygen_video_id)
+    except Exception as error:
+        notify_service_payment_issue(client_id, "HeyGen", error)
+        raise
     save_content_data(job_id, final_video_url=final_video_url)
     
     if client_id:

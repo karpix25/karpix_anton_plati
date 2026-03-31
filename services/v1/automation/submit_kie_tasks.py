@@ -9,6 +9,7 @@ load_dotenv(override=True)
 
 from services.v1.database.db_service import get_client, get_generated_scenario_by_job_id, save_generated_scenario
 from services.v1.providers.kie_ai_service import submit_pending_kie_tasks_for_prompts
+from services.v1.automation.notifier_service import notify_service_payment_issue
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -34,6 +35,12 @@ def submit_saved_kie_tasks(job_id: str) -> Dict[str, Any]:
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     save_generated_scenario(str(scenario["job_id"]), video_generation_prompts=refreshed_payload)
+
+    client_id = scenario.get("client_id")
+    for item in submitted_prompts:
+        error_message = item.get("error")
+        if error_message and notify_service_payment_issue(client_id, "KIE.ai", error_message):
+            break
 
     submitted_count = sum(1 for item in submitted_prompts if item.get("task_id"))
     pending_count = sum(

@@ -19,6 +19,7 @@ from services.v1.automation.scenario_service import (
 )
 from services.v1.automation.visual_keyword_service import extract_visual_keyword_segments
 from services.v1.automation.video_prompt_service import generate_seedance_prompts
+from services.v1.automation.notifier_service import notify_service_payment_issue
 from services.v1.database.db_service import (
     get_db_connection,
     get_client,
@@ -310,6 +311,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 )
             except Exception as e:
                 logger.error(f"Failed to auto-generate TTS/timestamps/keywords for scenario {res_job_id}: {e}")
+                notify_service_payment_issue(client_id, f"TTS/{tts_provider}", e)
 
         # Save to Database (New Table)
         try:

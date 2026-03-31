@@ -111,6 +111,7 @@ export default function CuratorDashboard() {
       subtitle_font_weight: selectedClient?.subtitle_font_weight || 700,
       subtitle_outline_color: selectedClient?.subtitle_outline_color || "#111111",
       subtitle_outline_width: selectedClient?.subtitle_outline_width || 3,
+      subtitle_margin_v: selectedClient?.subtitle_margin_v || 140,
       auto_generate_final_videos: selectedClient?.auto_generate_final_videos || false,
       daily_final_video_limit: selectedClient?.daily_final_video_limit || 3,
       daily_final_video_count: selectedClient?.daily_final_video_count || 0,

@@ -2,7 +2,11 @@ import { existsSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { Settings, WordTimestamp } from "@/types";
-import { SUBTITLE_FONT_OPTIONS, SYSTEM_SUBTITLE_FALLBACK_FAMILY } from "@/lib/subtitles";
+import {
+  SUBTITLE_FONT_OPTIONS,
+  SUBTITLE_PRESET_DEFAULT_MARGIN_V,
+  SYSTEM_SUBTITLE_FALLBACK_FAMILY,
+} from "@/lib/subtitles";
 
 type SubtitleRenderSettings = Pick<
   Settings,
@@ -14,6 +18,7 @@ type SubtitleRenderSettings = Pick<
   | "subtitle_font_weight"
   | "subtitle_outline_color"
   | "subtitle_outline_width"
+  | "subtitle_margin_v"
 >;
 
 type SubtitleEvent = {
@@ -31,6 +36,7 @@ const DEFAULT_SUBTITLE_SETTINGS: SubtitleRenderSettings = {
   subtitle_font_weight: 700,
   subtitle_outline_color: "#111111",
   subtitle_outline_width: 3,
+  subtitle_margin_v: SUBTITLE_PRESET_DEFAULT_MARGIN_V.classic,
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -169,7 +175,12 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
   const outline = settings.subtitle_style_preset === "impact"
     ? clamp(Number(settings.subtitle_outline_width || 3) + 1, 0, 8)
     : clamp(Number(settings.subtitle_outline_width || 3), 0, 8);
-  const marginV = settings.subtitle_style_preset === "impact" ? 180 : settings.subtitle_style_preset === "soft_box" ? 155 : 140;
+  const presetMargin = SUBTITLE_PRESET_DEFAULT_MARGIN_V[settings.subtitle_style_preset] || 140;
+  const marginV = clamp(
+    Number(settings.subtitle_margin_v ?? presetMargin),
+    40,
+    320
+  );
   const spacing = settings.subtitle_style_preset === "impact" ? 0.4 : 0;
   const bold = Number(settings.subtitle_font_weight) === 400 ? 0 : -1;
 
@@ -196,18 +207,46 @@ ${events
 `;
 }
 
-async function downloadFileIfMissing(url: string, targetPath: string) {
+function buildFontFallbackUrls(url: string) {
+  const fallbacks: string[] = [];
+  if (url.startsWith("https://raw.githubusercontent.com/google/fonts/main/")) {
+    fallbacks.push(
+      url.replace(
+        "https://raw.githubusercontent.com/google/fonts/main/",
+        "https://github.com/google/fonts/raw/main/"
+      )
+    );
+  }
+  return fallbacks;
+}
+
+async function downloadFileIfMissing(urls: string[], targetPath: string) {
   if (existsSync(targetPath)) {
     return;
   }
 
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to download subtitle font: ${url}`);
+  const candidates = urls.filter(Boolean);
+  let lastError: Error | null = null;
+
+  for (const url of candidates) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12_000);
+      const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        throw new Error(`Failed to download subtitle font: ${url} (status ${response.status})`);
+      }
+
+      const fileBuffer = Buffer.from(await response.arrayBuffer());
+      await writeFile(targetPath, fileBuffer);
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
   }
 
-  const fileBuffer = Buffer.from(await response.arrayBuffer());
-  await writeFile(targetPath, fileBuffer);
+  throw lastError || new Error("Failed to download subtitle font: no valid URLs");
 }
 
 async function ensureSubtitleFontAssets(fontFamilyKey: SubtitleRenderSettings["subtitle_font_family"]) {
@@ -216,8 +255,14 @@ async function ensureSubtitleFontAssets(fontFamilyKey: SubtitleRenderSettings["s
   await mkdir(fontsDir, { recursive: true });
 
   try {
-    await downloadFileIfMissing(fontDefinition.regularUrl, path.join(fontsDir, "Regular.ttf"));
-    await downloadFileIfMissing(fontDefinition.boldUrl, path.join(fontsDir, "Bold.ttf"));
+    await downloadFileIfMissing(
+      [fontDefinition.regularUrl, ...buildFontFallbackUrls(fontDefinition.regularUrl)],
+      path.join(fontsDir, "Regular.ttf")
+    );
+    await downloadFileIfMissing(
+      [fontDefinition.boldUrl, ...buildFontFallbackUrls(fontDefinition.boldUrl)],
+      path.join(fontsDir, "Bold.ttf")
+    );
     return {
       fontsDir,
       fontFamily: fontDefinition.family,
@@ -244,6 +289,7 @@ export async function materializeSubtitleTrack(options: {
     subtitle_outline_color: normalizeHexColor(options.settings?.subtitle_outline_color, DEFAULT_SUBTITLE_SETTINGS.subtitle_outline_color),
     subtitle_font_weight: Number(options.settings?.subtitle_font_weight) === 400 ? 400 : 700,
     subtitle_outline_width: clamp(Number(options.settings?.subtitle_outline_width || DEFAULT_SUBTITLE_SETTINGS.subtitle_outline_width), 0, 8),
+    subtitle_margin_v: Number(options.settings?.subtitle_margin_v ?? DEFAULT_SUBTITLE_SETTINGS.subtitle_margin_v),
   };
 
   if (!settings.subtitles_enabled) {

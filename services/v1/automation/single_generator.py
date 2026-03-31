@@ -121,6 +121,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
                 
         # Only rewrite the scenario, bypassing the ingestion and transcription phases
         from services.v1.automation.scenario_service import rewrite_reference_script, find_unshowable_asset_reference_issues
+        from services.v1.automation.notifier_service import notify_service_payment_issue
         import uuid
         
         logger.info(f"Rewriting scenario for Content {content_id}")
@@ -223,6 +224,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
                 )
             except Exception as media_error:
                 logger.error(f"Failed to auto-generate media pipeline for single scenario {res_job_id}: {media_error}")
+                notify_service_payment_issue(resolved_client_id, f"TTS/{tts_provider}", media_error)
         
         save_generated_scenario(
             job_id=res_job_id,

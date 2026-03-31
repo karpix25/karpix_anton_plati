@@ -32,6 +32,12 @@ export const SUBTITLE_STYLE_PRESET_OPTIONS: Record<
   },
 };
 
+export const SUBTITLE_PRESET_DEFAULT_MARGIN_V: Record<SubtitleStylePreset, number> = {
+  classic: 140,
+  impact: 180,
+  soft_box: 155,
+};
+
 export const SUBTITLE_FONT_OPTIONS: Record<
   SubtitleFontFamily,
   {
