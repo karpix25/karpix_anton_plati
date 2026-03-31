@@ -9,6 +9,8 @@ type HeygenAvatarGroup = {
 
 type HeygenAvatarLook = {
   id: string;
+  avatar_id?: string;
+  look_id?: string;
   name?: string;
   image_url?: string | null;
 };
@@ -40,6 +42,13 @@ async function heygenFetch(path: string) {
   return data;
 }
 
+function resolveLookId(look: HeygenAvatarLook) {
+  const candidate = [look.id, look.avatar_id, look.look_id].find(
+    (value) => typeof value === "string" && value.trim()
+  );
+  return candidate?.trim() || "";
+}
+
 export async function GET() {
   try {
     const groupsPayload = await heygenFetch("/v2/avatar_group.list");
@@ -52,23 +61,38 @@ export async function GET() {
           const looks: HeygenAvatarLook[] = looksPayload?.data?.avatar_list || [];
           const lookDetails = await Promise.all(
             looks.map(async (look) => {
+              const resolvedLookId = resolveLookId(look);
+              if (!resolvedLookId) {
+                return {
+                  look,
+                  resolvedLookId: "",
+                  isMotion: false,
+                };
+              }
               try {
-                const detailsPayload = await heygenFetch(`/v2/photo_avatar/${encodeURIComponent(look.id)}`);
+                const detailsPayload = await heygenFetch(`/v2/photo_avatar/${encodeURIComponent(resolvedLookId)}`);
                 const details = (detailsPayload?.data || {}) as HeygenPhotoAvatarDetails;
                 return {
                   look,
+                  resolvedLookId,
                   isMotion: details.is_motion === true,
                 };
               } catch (error) {
-                console.error(`HeyGen look details import failed for ${look.id}:`, error);
+                console.error(`HeyGen look details import failed for ${resolvedLookId}:`, error);
                 return {
                   look,
+                  resolvedLookId,
                   isMotion: false,
                 };
               }
             })
           );
-          const nonMotionLooks = lookDetails.filter((item) => !item.isMotion).map((item) => item.look);
+          const nonMotionLooks = lookDetails
+            .filter((item) => item.resolvedLookId && !item.isMotion)
+            .map((item) => ({
+              ...item.look,
+              id: item.resolvedLookId,
+            }));
 
           if (looks.length > 0 && nonMotionLooks.length === 0) {
             return null;

@@ -962,48 +962,77 @@ export function SettingsScreen({
                     {draftSettings.open_final_video_jobs}
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Лимит финальных роликов в день
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={draftSettings.daily_final_video_limit}
-                    onChange={(event) =>
-                      setDraftSettings((prev) => ({
-                        ...prev,
-                        daily_final_video_limit: Math.max(1, Number.parseInt(event.target.value || "1", 10) || 1),
-                      }))
-                    }
-                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                  />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Лимит в день
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={draftSettings.daily_final_video_limit}
+                      onChange={(event) =>
+                        setDraftSettings((prev) => {
+                          const nextDailyLimit = Math.max(1, Number.parseInt(event.target.value || "1", 10) || 1);
+                          return {
+                            ...prev,
+                            daily_final_video_limit: nextDailyLimit,
+                            monthly_final_video_limit: Math.max(prev.monthly_final_video_limit || nextDailyLimit, nextDailyLimit),
+                          };
+                        })
+                      }
+                      className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      Лимит в месяц
+                    </label>
+                    <input
+                      type="number"
+                      min={Math.max(1, draftSettings.daily_final_video_limit || 1)}
+                      step={1}
+                      value={draftSettings.monthly_final_video_limit}
+                      onChange={(event) =>
+                        setDraftSettings((prev) => ({
+                          ...prev,
+                          monthly_final_video_limit: Math.max(
+                            prev.daily_final_video_limit || 1,
+                            Number.parseInt(event.target.value || "1", 10) || 1
+                          ),
+                        }))
+                      }
+                      className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                    />
+                  </div>
                 </div>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Лимит финальных роликов в месяц
+                    Прогресс за день
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={draftSettings.monthly_final_video_limit}
-                    onChange={(event) =>
-                      setDraftSettings((prev) => ({
-                        ...prev,
-                        monthly_final_video_limit: Math.max(1, Number.parseInt(event.target.value || "1", 10) || 1),
-                      }))
-                    }
-                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                  />
+                  <div className="h-11 overflow-hidden rounded-xl bg-[#f0f4f7]">
+                    <div
+                      className="h-full rounded-xl bg-primary/15 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            ((draftSettings.daily_final_video_count || 0) /
+                              Math.max(1, draftSettings.daily_final_video_limit || 1)) *
+                              100
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Дневной лимит
+                    Прогресс за месяц
                   </label>
                   <div className="h-11 overflow-hidden rounded-xl bg-[#f0f4f7]">
                     <div
@@ -1023,25 +1052,8 @@ export function SettingsScreen({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <div className="h-2 overflow-hidden rounded-full bg-[#e8eef3]">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{
-                      width: `${Math.min(
-                        100,
-                        Math.round(
-                          ((draftSettings.monthly_final_video_count || 0) /
-                            Math.max(1, draftSettings.monthly_final_video_limit || 1)) *
-                            100
-                        )
-                      )}%`,
-                    }}
-                  />
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  Трекер считает сценарии этого проекта, у которых финальный монтаж завершён сегодня и в текущем календарном месяце.
-                </div>
+              <div className="text-xs text-muted-foreground">
+                Месячный лимит не может быть меньше дневного. Если увеличить лимит в день, месячный автоматически подстроится.
               </div>
             </div>
 
