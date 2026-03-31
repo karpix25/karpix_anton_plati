@@ -193,6 +193,10 @@ def _split_sentences(text: str):
     return [part.strip() for part in parts if part.strip()]
 
 
+def _normalize_hook_text(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip()).lower().replace("ё", "е")
+
+
 def _hook_context_from_transcript(transcript: str):
     sentences = _split_sentences(transcript)
     first_sentence = sentences[0] if len(sentences) > 0 else ""
@@ -209,7 +213,7 @@ def _hook_context_from_transcript(transcript: str):
 
 
 def _classify_hook_shape(text: str) -> str:
-    opening = _compact_spaces((text or "").lower().replace("ё", "е"))
+    opening = _normalize_hook_text(text)
     if not opening:
         return "unknown"
     if re.match(r"^\d+\b", opening):
@@ -227,7 +231,7 @@ def _classify_hook_shape(text: str) -> str:
 
 def _hook_blueprint(text: str) -> dict:
     context = _hook_context_from_transcript(text)
-    opening = context["opening"] or _compact_spaces(text)
+    opening = context["opening"] or re.sub(r"\s+", " ", (text or "").strip())
     first_sentence = context["first_sentence"] or opening
     opening_words = first_sentence.split()
     return {

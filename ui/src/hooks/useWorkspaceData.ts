@@ -7,6 +7,35 @@ const API_BASE = "/api";
 const SCENARIO_POLL_WINDOW_MS = 90_000;
 const SCENARIO_POLL_INTERVAL_MS = 4_000;
 
+const normalizeProductMediaAssets = (value: unknown) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const asset = item as Record<string, unknown>;
+      const url = typeof asset.url === "string" ? asset.url.trim() : "";
+      if (!url) {
+        return null;
+      }
+
+      return {
+        id: typeof asset.id === "string" ? asset.id.trim() : url,
+        url,
+        name: typeof asset.name === "string" ? asset.name.trim() : "Product Asset",
+        source_type: asset.source_type === "image" ? "image" : "video",
+        duration_seconds: Number(asset.duration_seconds || 0) || 0,
+        created_at: typeof asset.created_at === "string" ? asset.created_at : null,
+      };
+    })
+    .filter(Boolean);
+};
+
 export function useWorkspaceData(selectedClientId: string) {
   const queryClient = useQueryClient();
   const [scenarioPolling, setScenarioPolling] = useState<{ clientId: string; deadline: number; baselineCount: number } | null>(null);
@@ -118,6 +147,7 @@ export function useWorkspaceData(selectedClientId: string) {
       await axios.put(`${API_BASE}/clients`, {
         id: Number(selectedClientId),
         ...settings,
+        product_media_assets: normalizeProductMediaAssets(settings.product_media_assets),
       });
     },
     onSuccess: () => {

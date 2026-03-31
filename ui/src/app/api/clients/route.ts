@@ -2,14 +2,49 @@ import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
 function normalizeProductMediaAssets(value: unknown) {
+  const normalizeAsset = (asset: unknown) => {
+    if (!asset || typeof asset !== "object" || Array.isArray(asset)) {
+      return null;
+    }
+
+    const candidate = asset as Record<string, unknown>;
+    const url = typeof candidate.url === "string" ? candidate.url.trim() : "";
+    if (!url) {
+      return null;
+    }
+
+    return {
+      id: typeof candidate.id === "string" ? candidate.id.trim() : url,
+      url,
+      name: typeof candidate.name === "string" ? candidate.name.trim() : "Product Asset",
+      source_type: candidate.source_type === "image" ? "image" : "video",
+      duration_seconds: Number(candidate.duration_seconds || 0) || 0,
+      created_at:
+        typeof candidate.created_at === "string" && candidate.created_at.trim()
+          ? candidate.created_at.trim()
+          : null,
+    };
+  };
+
   if (Array.isArray(value)) {
-    return value;
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          try {
+            return normalizeAsset(JSON.parse(item));
+          } catch {
+            return null;
+          }
+        }
+        return normalizeAsset(item);
+      })
+      .filter(Boolean);
   }
 
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
+      return normalizeProductMediaAssets(parsed);
     } catch {
       return [];
     }
