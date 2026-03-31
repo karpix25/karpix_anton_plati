@@ -49,6 +49,8 @@
 }
 
 :root {
+  --font-inter: "Avenir Next", "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
+  --font-outfit: "Avenir Next", "Trebuchet MS", "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif;
   --background: #f7f9fb;
   --foreground: #2a3439;
   --card: #ffffff;
