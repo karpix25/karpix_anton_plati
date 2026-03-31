@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+import socket
 from deepgram import DeepgramClient
 
 logger = logging.getLogger(__name__)
@@ -140,5 +141,23 @@ def transcribe_media_deepgram(file_path):
             "transcript_meta": _build_transcript_meta(transcript, word_list),
         }
     except Exception as e:
+        message = str(e).lower()
+        if isinstance(e, socket.gaierror) or "name or service not known" in message or "failed to resolve" in message:
+            logger.error("Deepgram transcription failed due to DNS resolution error: %s", e)
+            raise RuntimeError(
+                "Не удалось связаться с Deepgram. Похоже, сервер не может зарезолвить api.deepgram.com. "
+                "Проверьте DNS и исходящий доступ сервера."
+            ) from e
+        if "network is unreachable" in message or "failed to establish a new connection" in message:
+            logger.error("Deepgram transcription failed due to outbound network error: %s", e)
+            raise RuntimeError(
+                "Не удалось подключиться к Deepgram. Проверьте исходящий доступ сервера в интернет."
+            ) from e
+        if "timeout" in message or "timed out" in message:
+            logger.error("Deepgram transcription timed out: %s", e)
+            raise RuntimeError(
+                "Deepgram не ответил вовремя. Попробуйте позже."
+            ) from e
+
         logger.error(f"Deepgram transcription failed: {e}")
         raise
