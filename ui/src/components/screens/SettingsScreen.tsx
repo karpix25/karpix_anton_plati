@@ -831,28 +831,154 @@ export function SettingsScreen({
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Описание продукта
-              </label>
-              <textarea
-                value={draftSettings.product_info}
-                onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_info: event.target.value }))}
-                rows={5}
-                className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-              />
-            </div>
+            <div className="space-y-4 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-4">
+              <div className="space-y-1">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Продукт и аудитория
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Базовый продуктовый контекст, который используется в сценариях, product clip и брендовой интеграции.
+                </p>
+              </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Tone of voice
-              </label>
-              <textarea
-                value={draftSettings.brand_voice}
-                onChange={(event) => setDraftSettings((prev) => ({ ...prev, brand_voice: event.target.value }))}
-                rows={4}
-                className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-              />
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Описание продукта
+                </label>
+                <textarea
+                  value={draftSettings.product_info}
+                  onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_info: event.target.value }))}
+                  rows={5}
+                  className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Tone of voice
+                </label>
+                <textarea
+                  value={draftSettings.brand_voice}
+                  onChange={(event) => setDraftSettings((prev) => ({ ...prev, brand_voice: event.target.value }))}
+                  rows={4}
+                  className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Целевая аудитория
+                </label>
+                <textarea
+                  value={draftSettings.target_audience}
+                  onChange={(event) => setDraftSettings((prev) => ({ ...prev, target_audience: event.target.value }))}
+                  rows={4}
+                  className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  Product keyword
+                </label>
+                <input
+                  value={draftSettings.product_keyword}
+                  onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_keyword: event.target.value }))}
+                  className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                  placeholder="Например, Плати по миру"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Если это слово или фраза встречается в keyword segment, вместо генерации будет использован готовый product clip.
+                </p>
+              </div>
+
+              <div className="space-y-3 rounded-2xl border border-white/70 bg-white p-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Product assets
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Можно загрузить несколько видео и фото. Фото автоматически конвертируются в вертикальные mp4-клипы по 4 секунды, а при product clip система случайно выберет один из ассетов.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-[#d6e0e8] bg-white px-4 py-3 text-sm font-medium text-foreground transition hover:bg-[#f7fafc]">
+                    <input
+                      type="file"
+                      accept="video/mp4,video/quicktime,video/webm,image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={handleProductVideoUpload}
+                      disabled={!selectedClientId || isUploadingProductVideo}
+                      multiple
+                    />
+                    {isUploadingProductVideo ? "Загружаю ассеты..." : "Загрузить видео и фото"}
+                  </label>
+                  <div className="text-xs text-muted-foreground">
+                    Сейчас в пуле: {(draftSettings.product_media_assets || []).length}
+                  </div>
+                </div>
+
+                {(draftSettings.product_media_assets || []).length ? (
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {(draftSettings.product_media_assets || []).map((asset) => (
+                      <div key={asset.id} className="space-y-2 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-3">
+                        <video
+                          src={asset.url}
+                          controls
+                          className="aspect-[9/16] w-full rounded-xl border border-[#e5ebf0] bg-black object-cover"
+                        />
+                        <div className="space-y-1">
+                          <div className="truncate text-sm font-medium text-foreground">{asset.name}</div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {asset.source_type === "image" ? "Фото -> видео 4s" : "Видео файл"}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDraftSettings((prev) => ({
+                                ...prev,
+                                product_video_url: asset.url,
+                              }))
+                            }
+                            className="rounded-xl border border-[#d6e0e8] px-3 py-2 text-xs font-medium text-foreground transition hover:bg-[#f7fafc]"
+                          >
+                            Сделать основным
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveProductAsset(asset.id)}
+                            className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+                          >
+                            Удалить
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-[#d6e0e8] bg-[#fbfcfd] px-4 py-6 text-center text-xs text-muted-foreground">
+                    Пул product assets пока пуст.
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Fallback product URL
+                  </label>
+                  <input
+                    value={draftSettings.product_video_url}
+                    onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_video_url: event.target.value }))}
+                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+                    placeholder="/uploads/product-assets/client-1/clip.mp4"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Используется как запасной одиночный source, если пул ассетов пуст.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-3 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-4">
@@ -1358,18 +1484,6 @@ export function SettingsScreen({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Целевая аудитория
-              </label>
-              <textarea
-                value={draftSettings.target_audience}
-                onChange={(event) => setDraftSettings((prev) => ({ ...prev, target_audience: event.target.value }))}
-                rows={4}
-                className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm leading-6 text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-              />
-            </div>
-
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -1698,108 +1812,6 @@ export function SettingsScreen({
               ) : null}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Product keyword
-              </label>
-              <input
-                value={draftSettings.product_keyword}
-                onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_keyword: event.target.value }))}
-                className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                placeholder="Например, Плати по миру"
-              />
-              <p className="text-xs text-muted-foreground">
-                Если это слово или фраза встречается в keyword segment, вместо генерации будет использован готовый product clip.
-              </p>
-            </div>
-
-            <div className="space-y-3 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Product assets
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Можно загрузить несколько видео и фото. Фото автоматически конвертируются в вертикальные mp4-клипы по 4 секунды, а при product clip система случайно выберет один из ассетов.
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-                <label className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-[#d6e0e8] bg-white px-4 py-3 text-sm font-medium text-foreground transition hover:bg-[#f7fafc]">
-                  <input
-                    type="file"
-                    accept="video/mp4,video/quicktime,video/webm,image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handleProductVideoUpload}
-                    disabled={!selectedClientId || isUploadingProductVideo}
-                    multiple
-                  />
-                  {isUploadingProductVideo ? "Загружаю ассеты..." : "Загрузить видео и фото"}
-                </label>
-                <div className="text-xs text-muted-foreground">
-                  Сейчас в пуле: {(draftSettings.product_media_assets || []).length}
-                </div>
-              </div>
-
-              {(draftSettings.product_media_assets || []).length ? (
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  {(draftSettings.product_media_assets || []).map((asset) => (
-                    <div key={asset.id} className="space-y-2 rounded-2xl border border-[#e5ebf0] bg-white p-3">
-                      <video
-                        src={asset.url}
-                        controls
-                        className="aspect-[9/16] w-full rounded-xl border border-[#e5ebf0] bg-black object-cover"
-                      />
-                      <div className="space-y-1">
-                        <div className="truncate text-sm font-medium text-foreground">{asset.name}</div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {asset.source_type === "image" ? "Фото -> видео 4s" : "Видео файл"}
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDraftSettings((prev) => ({
-                              ...prev,
-                              product_video_url: asset.url,
-                            }))
-                          }
-                          className="rounded-xl border border-[#d6e0e8] px-3 py-2 text-xs font-medium text-foreground transition hover:bg-[#f7fafc]"
-                        >
-                          Сделать основным
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveProductAsset(asset.id)}
-                          className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
-                        >
-                          Удалить
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-[#d6e0e8] bg-white px-4 py-6 text-center text-xs text-muted-foreground">
-                  Пул product assets пока пуст.
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  Fallback product URL
-                </label>
-                <input
-                  value={draftSettings.product_video_url}
-                  onChange={(event) => setDraftSettings((prev) => ({ ...prev, product_video_url: event.target.value }))}
-                  className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                  placeholder="/uploads/product-assets/client-1/clip.mp4"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Используется как запасной одиночный source, если пул ассетов пуст.
-                </p>
-              </div>
-            </div>
           </div>
 
           <div className="rounded-xl bg-[#f0f4f7] p-6">
