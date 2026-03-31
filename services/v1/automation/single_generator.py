@@ -240,6 +240,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
             tts_word_timestamps=tts_word_timestamps,
             video_keyword_segments=video_keyword_segments,
             video_generation_prompts=video_generation_prompts,
+            background_audio_tag="neutral",
         )
         
         logger.info(f"Successfully saved rewritten scenario to generated_scenarios with job_id={res_job_id}")

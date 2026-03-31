@@ -4,9 +4,13 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { spawn } from "child_process";
 import pool from "@/lib/db";
-import { isYandexDiskConfigured, uploadFinalVideoToYandexDisk } from "@/lib/server/yandex-disk";
+import {
+  getRandomBackgroundAudioTrack,
+  isYandexDiskConfigured,
+  uploadFinalVideoToYandexDisk,
+} from "@/lib/server/yandex-disk";
 import { materializeSubtitleTrack } from "@/lib/server/subtitles";
-import { Settings } from "@/types";
+import { BackgroundAudioTag, Settings } from "@/types";
 
 type ScenarioRow = {
   id: number;
@@ -25,6 +29,7 @@ type ScenarioRow = {
   heygen_video_url: string | null;
   heygen_avatar_id: string | null;
   heygen_avatar_name: string | null;
+  background_audio_tag: BackgroundAudioTag | null;
   subtitles_enabled: boolean | null;
   subtitle_mode: Settings["subtitle_mode"] | null;
   subtitle_style_preset: Settings["subtitle_style_preset"] | null;
@@ -79,6 +84,9 @@ async function ensureMontageColumns() {
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_status TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_error TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_updated_at TIMESTAMP",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS background_audio_tag TEXT DEFAULT 'neutral'",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_name TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_disk_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_public_url TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_yandex_status TEXT",
@@ -153,6 +161,7 @@ async function getScenario(scenarioId: number) {
         gs.heygen_video_url,
         gs.heygen_avatar_id,
         gs.heygen_avatar_name,
+        gs.background_audio_tag,
         gs.video_generation_prompts,
         c.subtitles_enabled,
         c.subtitle_mode,
@@ -305,6 +314,17 @@ async function downloadRemoteFile(url: string, targetPath: string) {
 
   const fileBuffer = Buffer.from(await response.arrayBuffer());
   await writeFile(targetPath, fileBuffer);
+}
+
+async function downloadBinaryFile(url: string, targetPath: string, fallbackContentType = "application/octet-stream") {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to download remote file: ${url}`);
+  }
+
+  const fileBuffer = Buffer.from(await response.arrayBuffer());
+  await writeFile(targetPath, fileBuffer);
+  return response.headers.get("content-type") || fallbackContentType;
 }
 
 async function materializeSource(source: string, workdir: string, key: string) {
@@ -476,6 +496,11 @@ async function buildMontage(scenarioId: number) {
   const subtitleFilter = subtitleTrack
     ? `,subtitles=${subtitleTrack.subtitlePath}${subtitleTrack.fontsDir ? `:fontsdir=${subtitleTrack.fontsDir}` : ""}`
     : "";
+  const backgroundAudioTag = (scenario.background_audio_tag || "neutral") as BackgroundAudioTag;
+  const backgroundAudioTrack = await getRandomBackgroundAudioTrack(backgroundAudioTag);
+  const backgroundAudioExt = path.extname(backgroundAudioTrack.name || "") || ".mp3";
+  const backgroundAudioPath = path.join(workdir, `background_audio${backgroundAudioExt}`);
+  await downloadBinaryFile(backgroundAudioTrack.downloadHref, backgroundAudioPath, "audio/mpeg");
 
   await runCommand("ffmpeg", [
     "-y",
@@ -487,12 +512,16 @@ async function buildMontage(scenarioId: number) {
     concatListPath,
     "-i",
     scenario.tts_audio_path,
+    "-stream_loop",
+    "-1",
+    "-i",
+    backgroundAudioPath,
     "-filter_complex",
-    `[0:v]tpad=stop_mode=clone:stop_duration=600${subtitleFilter}[v]`,
+    `[0:v]tpad=stop_mode=clone:stop_duration=600${subtitleFilter}[v];[1:a]volume=1.0[voice];[2:a]volume=0.5[bg];[voice][bg]amix=inputs=2:duration=first:dropout_transition=0[a]`,
     "-map",
     "[v]",
     "-map",
-    "1:a:0",
+    "[a]",
     "-t",
     audioDuration > 0 ? audioDuration.toFixed(3) : totalDuration.toFixed(3),
     "-c:v",
@@ -515,6 +544,8 @@ async function buildMontage(scenarioId: number) {
   return {
     outputPath,
     avatarName: scenario.heygen_avatar_name || scenario.heygen_avatar_id || `avatar-${scenarioId}`,
+    backgroundAudioName: backgroundAudioTrack.name,
+    backgroundAudioPath: backgroundAudioTrack.diskPath,
   };
 }
 
@@ -539,7 +570,7 @@ export async function POST(request: Request) {
       [resolvedScenarioId]
     );
 
-    const { outputPath, avatarName } = await buildMontage(resolvedScenarioId);
+    const { outputPath, avatarName, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
 
     let yandexDiskPath: string | null = null;
     let yandexPublicUrl: string | null = null;
@@ -578,20 +609,24 @@ export async function POST(request: Request) {
        SET montage_video_path = $1,
            montage_status = 'completed',
            montage_error = NULL,
-           montage_yandex_disk_path = $2,
-           montage_yandex_public_url = $3,
-           montage_yandex_status = $4,
-           montage_yandex_error = $5,
-           montage_yandex_uploaded_at = CASE WHEN $4 = 'completed' THEN CURRENT_TIMESTAMP ELSE montage_yandex_uploaded_at END,
+           montage_background_audio_name = $2,
+           montage_background_audio_path = $3,
+           montage_yandex_disk_path = $4,
+           montage_yandex_public_url = $5,
+           montage_yandex_status = $6,
+           montage_yandex_error = $7,
+           montage_yandex_uploaded_at = CASE WHEN $6 = 'completed' THEN CURRENT_TIMESTAMP ELSE montage_yandex_uploaded_at END,
            montage_updated_at = CURRENT_TIMESTAMP
-       WHERE id = $6`,
-      [outputPath, yandexDiskPath, yandexPublicUrl, yandexStatus, yandexError, resolvedScenarioId]
+       WHERE id = $8`,
+      [outputPath, backgroundAudioName, backgroundAudioPath, yandexDiskPath, yandexPublicUrl, yandexStatus, yandexError, resolvedScenarioId]
     );
 
     return NextResponse.json({
       ok: true,
       scenarioId: resolvedScenarioId,
       montage_video_path: outputPath,
+      montage_background_audio_name: backgroundAudioName,
+      montage_background_audio_path: backgroundAudioPath,
       montage_yandex_disk_path: yandexDiskPath,
       montage_yandex_public_url: yandexPublicUrl,
       montage_yandex_status: yandexStatus,

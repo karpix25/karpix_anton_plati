@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 const YANDEX_DISK_API_BASE = "https://cloud-api.yandex.net/v1/disk";
 const ROOT_VIDEO_FOLDER = "ВИДЕО";
 const ROOT_AUTOMATION_FOLDER = "АВТОМАТ";
+const ROOT_AVATAR_AUDIO_FOLDER = "Аудио для аватаров";
 
 type UploadHrefPayload = {
   href?: string;
@@ -14,6 +15,15 @@ type ResourceMetaPayload = {
   path?: string;
   name?: string;
   public_url?: string;
+  _embedded?: {
+    items?: Array<{
+      name?: string;
+      path?: string;
+      type?: string;
+      media_type?: string;
+      file?: string;
+    }>;
+  };
 };
 
 function getAccessToken() {
@@ -100,6 +110,24 @@ async function getUploadHref(diskPath: string) {
   return payload.href;
 }
 
+async function getDownloadHref(diskPath: string) {
+  const response = await yandexRequest(
+    `/resources/download?path=${encodeURIComponent(diskPath)}`
+  );
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Yandex Disk download URL failed for ${diskPath}: ${message}`);
+  }
+
+  const payload = (await response.json()) as UploadHrefPayload;
+  if (!payload.href) {
+    throw new Error("Yandex Disk did not return download href");
+  }
+
+  return payload.href;
+}
+
 async function publishResource(diskPath: string) {
   const response = await yandexRequest(`/resources/publish?path=${encodeURIComponent(diskPath)}`, {
     method: "PUT",
@@ -124,6 +152,41 @@ async function getResourceMeta(diskPath: string) {
   }
 
   return (await response.json()) as ResourceMetaPayload;
+}
+
+function isAudioFileName(name: string) {
+  return /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(name);
+}
+
+export async function getRandomBackgroundAudioTrack(tag: "disturbing" | "inspiring" | "neutral" | "relax") {
+  const folderPath = toDiskPath(ROOT_AVATAR_AUDIO_FOLDER, tag);
+  const response = await yandexRequest(
+    `/resources?path=${encodeURIComponent(folderPath)}&limit=200&fields=_embedded.items.name,_embedded.items.path,_embedded.items.type,_embedded.items.media_type`
+  );
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Yandex Disk audio folder read failed for ${folderPath}: ${message}`);
+  }
+
+  const payload = (await response.json()) as ResourceMetaPayload;
+  const files = (payload._embedded?.items || []).filter(
+    (item) => item.type === "file" && !!item.path && !!item.name && (item.media_type === "audio" || isAudioFileName(item.name || ""))
+  );
+
+  if (!files.length) {
+    throw new Error(`No audio files found in Yandex Disk folder ${folderPath}`);
+  }
+
+  const selected = files[Math.floor(Math.random() * files.length)];
+  const downloadHref = await getDownloadHref(selected.path!);
+
+  return {
+    tag,
+    name: selected.name!,
+    diskPath: selected.path!,
+    downloadHref,
+  };
 }
 
 export async function uploadFinalVideoToYandexDisk(params: {

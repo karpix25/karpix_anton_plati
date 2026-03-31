@@ -42,6 +42,7 @@ export interface Client {
 export type SubtitleMode = "word_by_word" | "phrase_block";
 export type SubtitleStylePreset = "classic" | "impact" | "soft_box";
 export type SubtitleFontFamily = "pt_sans" | "rubik" | "montserrat" | "oswald" | "noto_sans";
+export type BackgroundAudioTag = "disturbing" | "inspiring" | "neutral" | "relax";
 
 export interface PatternFramework {
   pattern_type?: string;
@@ -319,6 +320,9 @@ export interface Scenario {
   montage_status?: string | null;
   montage_error?: string | null;
   montage_updated_at?: string | null;
+  background_audio_tag?: BackgroundAudioTag | null;
+  montage_background_audio_name?: string | null;
+  montage_background_audio_path?: string | null;
   montage_yandex_disk_path?: string | null;
   montage_yandex_public_url?: string | null;
   montage_yandex_status?: string | null;

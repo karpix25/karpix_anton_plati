@@ -49,6 +49,9 @@ async function probeDurationSeconds(filePath: string) {
 
 async function ensureScenarioDurationColumn() {
   await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_audio_duration_seconds NUMERIC(10,3)');
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS background_audio_tag TEXT DEFAULT 'neutral'");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_name TEXT");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_path TEXT");
 }
 
 export async function GET(request: Request) {
@@ -112,5 +115,39 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error('Database error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    await ensureScenarioDurationColumn();
+    const { scenarioId, backgroundAudioTag } = await request.json();
+    const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
+    const allowedTags = new Set(["disturbing", "inspiring", "neutral", "relax"]);
+
+    if (!Number.isFinite(resolvedScenarioId) || resolvedScenarioId <= 0) {
+      return NextResponse.json({ error: "scenarioId is required" }, { status: 400 });
+    }
+
+    if (!allowedTags.has(String(backgroundAudioTag || ""))) {
+      return NextResponse.json({ error: "backgroundAudioTag is invalid" }, { status: 400 });
+    }
+
+    const { rows } = await pool.query(
+      `UPDATE generated_scenarios
+       SET background_audio_tag = $1
+       WHERE id = $2
+       RETURNING *`,
+      [backgroundAudioTag, resolvedScenarioId]
+    );
+
+    if (!rows[0]) {
+      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+    }
+
+    return NextResponse.json(rows[0]);
+  } catch (error) {
+    console.error("Scenario update error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

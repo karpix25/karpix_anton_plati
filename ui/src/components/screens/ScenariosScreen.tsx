@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Scenario, ScenarioKeywordSegment, ScenarioVideoPromptItem, WordTimestamp } from "@/types";
 import { formatUsd, getBrollGenerationUnitCostUsd, getGeneratedPromptCount, getScenarioActualDurationSeconds, getScenarioBrollGeneratorModel, getScenarioDurationSeconds, getScenarioGenerationCosts, HEYGEN_COST_PER_MINUTE_USD } from "@/lib/generation-costs";
+import { BACKGROUND_AUDIO_TAG_LABELS } from "@/lib/background-audio";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const TRANSLATIONS: Record<string, string> = {
   'how_to_list': 'Как сделать (Список)',
@@ -99,6 +101,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [isStartingHeygen, setIsStartingHeygen] = useState(false);
   const [isSubmittingVideoPrompts, setIsSubmittingVideoPrompts] = useState(false);
   const [isAssemblingMontage, setIsAssemblingMontage] = useState(false);
+  const [isSavingBackgroundAudioTag, setIsSavingBackgroundAudioTag] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [generatedAudioScenarioId, setGeneratedAudioScenarioId] = useState<number | null>(null);
   const [generatedWordTimestamps, setGeneratedWordTimestamps] = useState<WordTimestamp[]>([]);
@@ -395,6 +398,32 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       alert(error instanceof Error ? error.message : "Не удалось собрать монтаж.");
     } finally {
       setIsAssemblingMontage(false);
+    }
+  };
+
+  const handleUpdateBackgroundAudioTag = async (backgroundAudioTag: Scenario["background_audio_tag"]) => {
+    if (!selectedScenario?.id || !backgroundAudioTag) return;
+
+    setIsSavingBackgroundAudioTag(true);
+    try {
+      const response = await fetch("/api/scenarios", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenarioId: selectedScenario.id, backgroundAudioTag }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || "Failed to update background audio tag");
+      }
+
+      setSelectedScenario((prev) => (prev ? { ...prev, background_audio_tag: backgroundAudioTag } : prev));
+      await Promise.resolve(onRefresh());
+    } catch (error) {
+      console.error("Background audio tag update error:", error);
+      alert(error instanceof Error ? error.message : "Не удалось сохранить тег фонового аудио.");
+    } finally {
+      setIsSavingBackgroundAudioTag(false);
     }
   };
 
@@ -782,8 +811,36 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       )}
                     </Button>
                   </div>
+                  <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        Фоновое аудио
+                      </div>
+                      <Select
+                        value={selectedScenario?.background_audio_tag || "neutral"}
+                        onValueChange={(value) => handleUpdateBackgroundAudioTag(value as Scenario["background_audio_tag"])}
+                        disabled={isSavingBackgroundAudioTag}
+                      >
+                        <SelectTrigger className="h-11 rounded-xl border border-slate-200 bg-white text-sm text-slate-900">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Object.entries(BACKGROUND_AUDIO_TAG_LABELS).map(([tag, meta]) => (
+                            <SelectItem key={tag} value={tag}>
+                              {meta.title}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="rounded-xl border border-white/80 bg-white p-4 text-xs text-slate-600">
+                      {selectedScenario?.background_audio_tag
+                        ? BACKGROUND_AUDIO_TAG_LABELS[selectedScenario.background_audio_tag].description
+                        : "Выберите mood-tag. При сборке монтаж возьмёт случайный трек из соответствующей папки Яндекс Диска и подмешает его на 50% громкости."}
+                    </div>
+                  </div>
                   <div className="rounded-xl border border-white/80 bg-white p-4 text-xs text-slate-600">
-                    Таймлайн строится по `slot_start/slot_end` из video prompts: в окнах перебивок используется b-roll, в остальных участках остаётся avatar-видео, а финальный звук берётся из TTS.
+                    Таймлайн строится по `slot_start/slot_end` из video prompts: в окнах перебивок используется b-roll, в остальных участках остаётся avatar-видео. Финальный звук теперь собирается из TTS и случайного фонового трека по выбранному тегу.
                   </div>
                   {selectedScenario?.montage_status ? (
                     <div className="flex flex-wrap gap-2">
@@ -793,6 +850,11 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       {selectedScenario?.montage_yandex_status ? (
                         <Badge variant="outline" className="border-sky-300 bg-sky-50 text-sky-700">
                           Yandex Disk: {selectedScenario.montage_yandex_status}
+                        </Badge>
+                      ) : null}
+                      {selectedScenario?.background_audio_tag ? (
+                        <Badge variant="outline" className="border-indigo-300 bg-indigo-50 text-indigo-700">
+                          Audio: {BACKGROUND_AUDIO_TAG_LABELS[selectedScenario.background_audio_tag].title}
                         </Badge>
                       ) : null}
                     </div>
@@ -813,6 +875,11 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       <div className="text-xs text-slate-500">
                         Готовый ролик собран по таймингам озвучки и слотам перебивок.
                       </div>
+                      {selectedScenario?.montage_background_audio_name ? (
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-xs text-indigo-900">
+                          Фоновый трек: {selectedScenario.montage_background_audio_name}
+                        </div>
+                      ) : null}
                       {selectedScenario?.montage_yandex_disk_path || selectedScenario?.montage_yandex_public_url ? (
                         <div className="space-y-2 rounded-xl border border-sky-100 bg-sky-50/60 p-3 text-xs text-sky-900">
                           <div className="font-semibold uppercase tracking-widest text-sky-700">

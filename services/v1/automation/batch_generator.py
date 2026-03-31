@@ -331,6 +331,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 tts_word_timestamps=tts_word_timestamps,
                 video_keyword_segments=video_keyword_segments,
                 video_generation_prompts=video_generation_prompts,
+                background_audio_tag="neutral",
             )
             logger.info(f"Successfully saved generated scenario {i+1} to scenarios table with job_id={res_job_id}")
         except Exception as e:
@@ -353,6 +354,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
             "tts_word_timestamps": tts_word_timestamps,
             "video_keyword_segments": video_keyword_segments,
             "video_generation_prompts": video_generation_prompts,
+            "background_audio_tag": "neutral",
         })
         
     return generated_scenarios
