@@ -545,6 +545,27 @@ def _normalize_match_text(value: str) -> str:
     )
 
 
+def _tokenize_match_text(value: str) -> List[str]:
+    normalized = _normalize_match_text(value)
+    return [token for token in re.split(r"[^\w]+", normalized, flags=re.UNICODE) if token]
+
+
+def _contains_exact_keyword_sequence(text: str, keyword: str) -> bool:
+    keyword_tokens = _tokenize_match_text(keyword)
+    if not keyword_tokens:
+        return False
+
+    text_tokens = _tokenize_match_text(text)
+    if len(text_tokens) < len(keyword_tokens):
+        return False
+
+    target_length = len(keyword_tokens)
+    return any(
+        text_tokens[index : index + target_length] == keyword_tokens
+        for index in range(len(text_tokens) - target_length + 1)
+    )
+
+
 def _compact_spaces(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip())
 
@@ -725,7 +746,8 @@ def _apply_fixed_enumeration_priority(
     filtered_anchors = [
         anchor
         for anchor in anchors
-        if not normalized_product_keyword or normalized_product_keyword not in _normalize_match_text(f"{anchor['keyword']} {anchor['phrase']}")
+        if not normalized_product_keyword
+        or not _contains_exact_keyword_sequence(f"{anchor['keyword']} {anchor['phrase']}", normalized_product_keyword)
     ]
     if len(filtered_anchors) < 2:
         return segments
@@ -819,8 +841,8 @@ def _find_product_segment(
 
     for slot in slots:
         slot_words = _extract_slot_words(words, slot["slot_start"], slot["slot_end"])
-        combined = _normalize_match_text(" ".join((w.get("word") or "") for w in slot_words))
-        if normalized_keyword not in combined:
+        combined = " ".join((w.get("word") or "") for w in slot_words)
+        if not _contains_exact_keyword_sequence(combined, normalized_keyword):
             continue
 
         start_candidates = [_safe_float(w.get("start")) for w in slot_words if isinstance(w, dict)]
@@ -894,7 +916,7 @@ def _apply_product_asset(
         keyword_text = _normalize_match_text(segment.get("keyword", ""))
         phrase_text = _normalize_match_text(segment.get("phrase", ""))
         combined = f"{keyword_text} {phrase_text}"
-        if normalized_keyword in combined:
+        if _contains_exact_keyword_sequence(combined, normalized_keyword):
             selected_asset = _pick_product_asset(product_media_assets, product_video_url)
             result.append({
                 **segment,

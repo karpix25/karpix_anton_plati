@@ -1,6 +1,5 @@
 import { 
-  BarChart3, 
-  Sparkles
+  BarChart3
 } from "lucide-react";
 import { 
   Select, 
@@ -9,7 +8,6 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 import { navItems } from "@/lib/constants";
 import { Client, Screen } from "@/types";
 
@@ -64,12 +62,6 @@ export function Sidebar({
           </SelectContent>
         </Select>
       </div>
-
-      <Button className="primary-gradient mb-6 h-12 w-full justify-center rounded-xl text-xs font-bold uppercase tracking-wider text-white shadow-md">
-        <Sparkles className="mr-2 h-4 w-4" />
-        Новый проект
-      </Button>
-
       <nav className="flex-1 space-y-1">
         {navItems.map((item) => (
           <button
