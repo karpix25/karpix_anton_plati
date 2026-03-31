@@ -6,6 +6,32 @@ import json
 
 logger = logging.getLogger(__name__)
 
+
+def _raise_human_readable_download_error(error: Exception) -> None:
+    message = str(error)
+    lowered = message.lower()
+
+    if (
+        "nameresolutionerror" in lowered
+        or "temporary failure in name resolution" in lowered
+        or "failed to resolve" in lowered
+        or "max retries exceeded" in lowered
+    ):
+        raise RuntimeError(
+            "Не удалось связаться с Instagram API через RapidAPI. "
+            "Похоже, на сервере сейчас проблема с DNS или исходящим доступом. "
+            "Попробуйте позже."
+        ) from error
+
+    if "timeout" in lowered or "timed out" in lowered:
+        raise RuntimeError(
+            "Instagram API через RapidAPI не ответил вовремя. Попробуйте повторить позже."
+        ) from error
+
+    raise RuntimeError(
+        "Не удалось скачать Reel через Instagram API. Попробуйте позже."
+    ) from error
+
 def download_instagram_reel(url):
     """
     Downloads a Reel using RapidAPI Social Lens.
@@ -26,8 +52,12 @@ def download_instagram_reel(url):
     }
     
     logger.info(f"Fetching Reel info for: {url}")
-    response = requests.get(api_url, headers=headers, params=querystring)
-    response.raise_for_status()
+    try:
+        response = requests.get(api_url, headers=headers, params=querystring, timeout=(20, 60))
+        response.raise_for_status()
+    except requests.RequestException as error:
+        logger.error("RapidAPI metadata request failed for %s: %s", url, error)
+        _raise_human_readable_download_error(error)
     
     data = response.json()
     logger.debug(f"API Response: {json.dumps(data)[:500]}...") # Log first 500 chars
@@ -62,8 +92,12 @@ def download_instagram_reel(url):
 
     # Phase 2: Download the binary
     logger.info(f"Downloading video binary from: {video_url[:50]}...")
-    video_response = requests.get(video_url, stream=True)
-    video_response.raise_for_status()
+    try:
+        video_response = requests.get(video_url, stream=True, timeout=(20, 120))
+        video_response.raise_for_status()
+    except requests.RequestException as error:
+        logger.error("Video binary download failed for %s: %s", video_url, error)
+        _raise_human_readable_download_error(error)
     
     # Generate unique filename
     file_path = f"/tmp/reel_{uuid.uuid4().hex}.mp4"
