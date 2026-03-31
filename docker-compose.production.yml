@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16
@@ -42,6 +40,9 @@ services:
       AUTOMATION_INTERNAL_TOKEN: ${AUTOMATION_INTERNAL_TOKEN:-change-me-in-production}
       INTERNAL_API_BASE_URL: http://web:3000
       NEXT_TELEMETRY_DISABLED: 1
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     expose:
       - "3000"
 
@@ -78,6 +79,9 @@ services:
       FINAL_VIDEO_WORKER_IDLE_SECONDS: ${FINAL_VIDEO_WORKER_IDLE_SECONDS:-10}
       FINAL_VIDEO_RETRY_BASE_SECONDS: ${FINAL_VIDEO_RETRY_BASE_SECONDS:-30}
       FINAL_VIDEO_RETRY_MAX_SECONDS: ${FINAL_VIDEO_RETRY_MAX_SECONDS:-1800}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
   final-video-poller:
     build:
@@ -105,6 +109,9 @@ services:
       FINAL_VIDEO_HEYGEN_POLL_INTERVAL_SECONDS: ${FINAL_VIDEO_HEYGEN_POLL_INTERVAL_SECONDS:-30}
       FINAL_VIDEO_RETRY_BASE_SECONDS: ${FINAL_VIDEO_RETRY_BASE_SECONDS:-30}
       FINAL_VIDEO_RETRY_MAX_SECONDS: ${FINAL_VIDEO_RETRY_MAX_SECONDS:-1800}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
   final-video-scheduler:
     build:
@@ -123,6 +130,9 @@ services:
       FINAL_VIDEO_SCHEDULER_INTERVAL_SECONDS: ${FINAL_VIDEO_SCHEDULER_INTERVAL_SECONDS:-60}
       FINAL_VIDEO_SCHEDULER_BATCH_PER_CLIENT: ${FINAL_VIDEO_SCHEDULER_BATCH_PER_CLIENT:-1}
       FINAL_VIDEO_QUEUE_BACKLOG_PER_CLIENT: ${FINAL_VIDEO_QUEUE_BACKLOG_PER_CLIENT:-3}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
   telegram-bot:
     build:
@@ -148,6 +158,9 @@ services:
       HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
       KIE_API_KEY: ${KIE_API_KEY:-}
       RAPIDAPI_KEY: ${RAPIDAPI_KEY:-}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
 
 volumes:
   postgres_data:
