@@ -125,6 +125,20 @@ export function useWorkspaceData(selectedClientId: string) {
     },
   });
 
+  const deleteClientMutation = useMutation({
+    mutationFn: async (clientId: number) => {
+      await axios.delete(`${API_BASE}/clients?id=${clientId}`);
+    },
+    onSuccess: (_, clientId) => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.removeQueries({ queryKey: ["references", String(clientId)] });
+      queryClient.removeQueries({ queryKey: ["scenarios", String(clientId)] });
+      queryClient.removeQueries({ queryKey: ["topic-cards", String(clientId)] });
+      queryClient.removeQueries({ queryKey: ["structure-cards", String(clientId)] });
+      queryClient.removeQueries({ queryKey: ["heygen-avatars", String(clientId)] });
+    },
+  });
+
   const saveHeygenAvatarsMutation = useMutation({
     mutationFn: async (avatars: HeygenAvatarConfig[]) => {
       await axios.put(`${API_BASE}/heygen/avatars`, {
@@ -196,6 +210,7 @@ export function useWorkspaceData(selectedClientId: string) {
       queryClient.invalidateQueries({ queryKey: ["heygen-avatars", selectedClientId] });
     },
     saveSettingsMutation,
+    deleteClientMutation,
     saveHeygenAvatarsMutation,
     batchRewriteMutation,
     batchMixMutation,

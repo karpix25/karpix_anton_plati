@@ -7,7 +7,9 @@ import { ElevenLabsVoiceOption, HeygenAvatarConfig, MinimaxVoiceOption, ProductM
 interface SettingsScreenProps {
   settings: Settings;
   onSave: (settings: Settings) => void;
+  onDeleteProject: () => void;
   isSaving: boolean;
+  isDeletingProject: boolean;
   selectedClientId: string;
   heygenAvatars: HeygenAvatarConfig[];
   heygenCatalog: HeygenAvatarConfig[];
@@ -221,7 +223,9 @@ const mergeCatalogIntoAvatarConfigs = (current: HeygenAvatarConfig[], catalog: H
 export function SettingsScreen({
   settings,
   onSave,
+  onDeleteProject,
   isSaving,
+  isDeletingProject,
   selectedClientId,
   heygenAvatars,
   heygenCatalog,
@@ -755,6 +759,15 @@ export function SettingsScreen({
         product_video_url: nextPrimaryUrl,
       };
     });
+  };
+
+  const handleDeleteProject = () => {
+    if (!selectedClientId || isDeletingProject) return;
+    const confirmed = window.confirm(
+      "Удалить проект целиком? Это удалит сценарии, темы, паттерны, настройки, HeyGen avatars и связанные очереди этого проекта."
+    );
+    if (!confirmed) return;
+    onDeleteProject();
   };
 
   return (
@@ -1401,6 +1414,21 @@ export function SettingsScreen({
                 </>
               ) : (
                 "Сохранить настройки"
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="mt-3 h-12 w-full rounded-xl border-rose-200 bg-white font-bold text-rose-600 hover:bg-rose-50"
+              onClick={handleDeleteProject}
+              disabled={!selectedClientId || isDeletingProject || isSaving}
+            >
+              {isDeletingProject ? (
+                <>
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  Удаляю проект...
+                </>
+              ) : (
+                "Удалить проект"
               )}
             </Button>
           </div>

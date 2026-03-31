@@ -177,3 +177,30 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    await ensureClientVoiceColumn();
+    const { searchParams } = new URL(request.url);
+    const rawId = searchParams.get("id");
+    const clientId = Number(rawId);
+
+    if (!Number.isFinite(clientId) || clientId <= 0) {
+      return NextResponse.json({ error: "Valid client id is required" }, { status: 400 });
+    }
+
+    const { rowCount, rows } = await pool.query(
+      "DELETE FROM clients WHERE id = $1 RETURNING id, name",
+      [clientId]
+    );
+
+    if (!rowCount) {
+      return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ deleted: rows[0] });
+  } catch (error) {
+    console.error("Database error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+  }
+}

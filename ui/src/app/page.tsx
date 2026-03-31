@@ -42,6 +42,7 @@ export default function CuratorDashboard() {
     elevenlabsVoices,
     refreshWorkspace,
     saveSettingsMutation,
+    deleteClientMutation,
     saveHeygenAvatarsMutation,
     batchRewriteMutation,
     batchMixMutation,
@@ -148,6 +149,18 @@ export default function CuratorDashboard() {
     singleRewriteMutation.mutate(id);
   };
 
+  const handleDeleteProject = () => {
+    if (!activeClientId) return;
+    const currentId = Number(activeClientId);
+    deleteClientMutation.mutate(currentId, {
+      onSuccess: () => {
+        const remainingClients = clients.filter((client) => client.id !== currentId);
+        setSelectedClientId(remainingClients[0]?.id?.toString() || "");
+        setScreen("dashboard");
+      },
+    });
+  };
+
   const handleReferenceClick = (ref: Reference) => {
     setSelectedReferenceId(ref.id);
     setIsReferenceModalOpen(true);
@@ -230,7 +243,9 @@ export default function CuratorDashboard() {
               key={`${activeClientId}-${heygenAvatars.length}-${heygenCatalog.length}`}
               settings={clientSettings}
               onSave={handleSaveSettings}
+              onDeleteProject={handleDeleteProject}
               isSaving={saveSettingsMutation.isPending}
+              isDeletingProject={deleteClientMutation.isPending}
               selectedClientId={activeClientId}
               heygenAvatars={heygenAvatars}
               heygenCatalog={heygenCatalog}
