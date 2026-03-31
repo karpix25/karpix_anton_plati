@@ -46,7 +46,17 @@ def _reply_in_same_thread(message, text: str):
     }
     if getattr(message, "message_thread_id", None):
         kwargs["message_thread_id"] = message.message_thread_id
-    return bot.send_message(**kwargs)
+    try:
+        return bot.send_message(**kwargs)
+    except Exception as error:
+        logger.error(
+            "Failed to send Telegram reply to chat_id=%s thread_id=%s message_id=%s: %s",
+            message.chat.id,
+            getattr(message, "message_thread_id", None),
+            message.message_id,
+            error,
+        )
+        return None
 
 
 def _detect_topic_name(message):
