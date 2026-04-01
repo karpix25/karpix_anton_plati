@@ -180,8 +180,14 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
     : clamp(Number(settings.subtitle_outline_width || 3), 0, 8);
   const presetMargin = SUBTITLE_PRESET_DEFAULT_MARGIN_V[settings.subtitle_style_preset] || 140;
   const presetMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[settings.subtitle_style_preset] || 11;
+  const explicitPercent = Number(settings.subtitle_margin_percent);
+  const derivedPercent = (Number(settings.subtitle_margin_v ?? presetMargin) / 1280) * 100;
   const resolvedPercent = clamp(
-    Number(settings.subtitle_margin_percent ?? (Number(settings.subtitle_margin_v ?? presetMargin) / 1280) * 100 || presetMarginPercent),
+    Number.isFinite(explicitPercent)
+      ? explicitPercent
+      : Number.isFinite(derivedPercent)
+        ? derivedPercent
+        : presetMarginPercent,
     0,
     100
   );
