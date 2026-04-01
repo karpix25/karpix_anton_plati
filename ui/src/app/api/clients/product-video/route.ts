@@ -10,13 +10,27 @@ const PRODUCT_ASSET_HEIGHT = 1280;
 const PRODUCT_ASSET_DURATION_SECONDS = 4;
 const PRODUCT_ASSET_FPS = 30;
 
-const S3_ENDPOINT = process.env.S3_ENDPOINT || "";
-const S3_REGION = process.env.S3_REGION || "us-east-1";
-const S3_BUCKET = process.env.S3_BUCKET || process.env.S3_BUCKET_NAME || "";
-const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
-const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
-const S3_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL || "";
-const S3_FORCE_PATH_STYLE = String(process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() === "true";
+type S3Config = {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  publicBaseUrl: string;
+  forcePathStyle: boolean;
+};
+
+function getS3Config(): S3Config {
+  return {
+    endpoint: process.env.S3_ENDPOINT || "",
+    region: process.env.S3_REGION || "us-east-1",
+    bucket: process.env.S3_BUCKET || process.env.S3_BUCKET_NAME || "",
+    accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
+    publicBaseUrl: process.env.S3_PUBLIC_BASE_URL || "",
+    forcePathStyle: String(process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() === "true",
+  };
+}
 
 type UploadedProductAsset = {
   id: string;
@@ -57,19 +71,19 @@ async function ensureProductAssetColumns() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_video_url TEXT");
 }
 
-function isS3Configured() {
-  return Boolean(S3_ENDPOINT && S3_BUCKET && S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY);
+function isS3Configured(config: S3Config) {
+  return Boolean(config.endpoint && config.bucket && config.accessKeyId && config.secretAccessKey);
 }
 
-function buildS3ObjectUrl(key: string) {
-  if (S3_PUBLIC_BASE_URL) {
-    return `${S3_PUBLIC_BASE_URL.replace(/\/$/, "")}/${key}`;
+function buildS3ObjectUrl(config: S3Config, key: string) {
+  if (config.publicBaseUrl) {
+    return `${config.publicBaseUrl.replace(/\/$/, "")}/${key}`;
   }
 
-  const endpoint = new URL(S3_ENDPOINT);
-  const base = S3_FORCE_PATH_STYLE
-    ? `${endpoint.origin}/${S3_BUCKET}`
-    : `${endpoint.protocol}//${S3_BUCKET}.${endpoint.host}`;
+  const endpoint = new URL(config.endpoint);
+  const base = config.forcePathStyle
+    ? `${endpoint.origin}/${config.bucket}`
+    : `${endpoint.protocol}//${config.bucket}.${endpoint.host}`;
   return `${base}/${key}`;
 }
 
@@ -89,14 +103,14 @@ function getAmzDates(now = new Date()) {
   };
 }
 
-async function putObjectToS3(key: string, body: Buffer, contentType: string) {
-  if (!isS3Configured()) {
+async function putObjectToS3(config: S3Config, key: string, body: Buffer, contentType: string) {
+  if (!isS3Configured(config)) {
     throw new Error("S3 is not configured.");
   }
-  const endpoint = new URL(S3_ENDPOINT);
+  const endpoint = new URL(config.endpoint);
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-  const host = S3_FORCE_PATH_STYLE ? endpoint.host : `${S3_BUCKET}.${endpoint.host}`;
-  const canonicalUri = S3_FORCE_PATH_STYLE ? `/${S3_BUCKET}/${encodedKey}` : `/${encodedKey}`;
+  const host = config.forcePathStyle ? endpoint.host : `${config.bucket}.${endpoint.host}`;
+  const canonicalUri = config.forcePathStyle ? `/${config.bucket}/${encodedKey}` : `/${encodedKey}`;
   const payloadHash = sha256Hex(body);
   const requestBody = new Uint8Array(body);
   const { amzDate, dateStamp } = getAmzDates();
@@ -110,21 +124,21 @@ async function putObjectToS3(key: string, body: Buffer, contentType: string) {
     signedHeaders,
     payloadHash,
   ].join("\n");
-  const credentialScope = `${dateStamp}/${S3_REGION}/s3/aws4_request`;
+  const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
   const stringToSign = [
     "AWS4-HMAC-SHA256",
     amzDate,
     credentialScope,
     sha256Hex(canonicalRequest),
   ].join("\n");
-  const kDate = hmac(`AWS4${S3_SECRET_ACCESS_KEY}`, dateStamp);
-  const kRegion = hmac(kDate, S3_REGION);
+  const kDate = hmac(`AWS4${config.secretAccessKey}`, dateStamp);
+  const kRegion = hmac(kDate, config.region);
   const kService = hmac(kRegion, "s3");
   const kSigning = hmac(kService, "aws4_request");
   const signature = crypto.createHmac("sha256", kSigning).update(stringToSign).digest("hex");
-  const authorization = `AWS4-HMAC-SHA256 Credential=${S3_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const authorization = `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-  const uploadUrl = S3_FORCE_PATH_STYLE
+  const uploadUrl = config.forcePathStyle
     ? `${endpoint.origin}${canonicalUri}`
     : `${endpoint.protocol}//${host}${canonicalUri}`;
   const response = await fetch(uploadUrl, {
@@ -143,7 +157,7 @@ async function putObjectToS3(key: string, body: Buffer, contentType: string) {
     throw new Error(`S3 upload failed: ${response.status} ${message}`);
   }
 
-  return buildS3ObjectUrl(encodedKey);
+  return buildS3ObjectUrl(config, encodedKey);
 }
 
 function runCommand(command: string, args: string[]) {
@@ -210,7 +224,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "At least one media file is required" }, { status: 400 });
     }
 
-    const useS3 = isS3Configured();
+    const s3Config = getS3Config();
+    const useS3 = isS3Configured(s3Config);
     if (!useS3) {
       console.warn("S3 is not configured. Falling back to local storage for product assets.");
     }
@@ -236,6 +251,7 @@ export async function POST(request: Request) {
         if (useS3) {
           const outputBuffer = await readFile(outputPath);
           assetUrl = await putObjectToS3(
+            s3Config,
             `product-assets/client-${clientId}/${outputName}`,
             outputBuffer,
             "video/mp4"
@@ -257,6 +273,7 @@ export async function POST(request: Request) {
         let assetUrl = `/uploads/product-assets/client-${clientId}/${path.basename(sourcePath)}`;
         if (useS3) {
           assetUrl = await putObjectToS3(
+            s3Config,
             `product-assets/client-${clientId}/${path.basename(sourcePath)}`,
             fileBuffer,
             file.type || "video/mp4"
