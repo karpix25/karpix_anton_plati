@@ -56,10 +56,8 @@ async function ensureProductAssetColumns() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_video_url TEXT");
 }
 
-function requireS3Config() {
-  if (!S3_ENDPOINT || !S3_BUCKET || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY) {
-    throw new Error("S3 is not configured. Please set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY.");
-  }
+function isS3Configured() {
+  return Boolean(S3_ENDPOINT && S3_BUCKET && S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY);
 }
 
 function buildS3ObjectUrl(key: string) {
@@ -86,7 +84,9 @@ function getAmzDates(now = new Date()) {
 }
 
 async function putObjectToS3(key: string, body: Buffer, contentType: string) {
-  requireS3Config();
+  if (!isS3Configured()) {
+    throw new Error("S3 is not configured.");
+  }
   const endpoint = new URL(S3_ENDPOINT);
   const host = endpoint.host;
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
@@ -202,7 +202,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "At least one media file is required" }, { status: 400 });
     }
 
-    const uploadDir = path.join("/tmp", "product-assets", `client-${clientId}`);
+    const useS3 = isS3Configured();
+    if (!useS3) {
+      console.warn("S3 is not configured. Falling back to local storage for product assets.");
+    }
+    const uploadDir = useS3
+      ? path.join("/tmp", "product-assets", `client-${clientId}`)
+      : path.join(process.cwd(), "public", "uploads", "product-assets", `client-${clientId}`);
     await mkdir(uploadDir, { recursive: true });
 
     const uploadedAssets: UploadedProductAsset[] = [];
@@ -218,12 +224,15 @@ export async function POST(request: Request) {
         const outputName = `${stamp}_${safeName.replace(/\.[^.]+$/, "")}.mp4`;
         const outputPath = path.join(uploadDir, outputName);
         await convertImageToVerticalVideo(sourcePath, outputPath);
-        const outputBuffer = await readFile(outputPath);
-        const assetUrl = await putObjectToS3(
-          `product-assets/client-${clientId}/${outputName}`,
-          outputBuffer,
-          "video/mp4"
-        );
+        let assetUrl = `/uploads/product-assets/client-${clientId}/${outputName}`;
+        if (useS3) {
+          const outputBuffer = await readFile(outputPath);
+          assetUrl = await putObjectToS3(
+            `product-assets/client-${clientId}/${outputName}`,
+            outputBuffer,
+            "video/mp4"
+          );
+        }
         uploadedAssets.push({
           id: outputName,
           url: assetUrl,
@@ -232,14 +241,19 @@ export async function POST(request: Request) {
           duration_seconds: PRODUCT_ASSET_DURATION_SECONDS,
           created_at: new Date().toISOString(),
         });
-        await rm(sourcePath, { force: true });
-        await rm(outputPath, { force: true });
+        if (useS3) {
+          await rm(sourcePath, { force: true });
+          await rm(outputPath, { force: true });
+        }
       } else {
-        const assetUrl = await putObjectToS3(
-          `product-assets/client-${clientId}/${path.basename(sourcePath)}`,
-          fileBuffer,
-          file.type || "video/mp4"
-        );
+        let assetUrl = `/uploads/product-assets/client-${clientId}/${path.basename(sourcePath)}`;
+        if (useS3) {
+          assetUrl = await putObjectToS3(
+            `product-assets/client-${clientId}/${path.basename(sourcePath)}`,
+            fileBuffer,
+            file.type || "video/mp4"
+          );
+        }
         uploadedAssets.push({
           id: path.basename(sourcePath),
           url: assetUrl,
@@ -248,7 +262,9 @@ export async function POST(request: Request) {
           duration_seconds: 0,
           created_at: new Date().toISOString(),
         });
-        await rm(sourcePath, { force: true });
+        if (useS3) {
+          await rm(sourcePath, { force: true });
+        }
       }
     }
 
