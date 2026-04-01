@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile, rm } from "fs/promises";
 import path from "path";
 import { spawn } from "child_process";
+import crypto from "crypto";
 import pool from "@/lib/db";
 
 const PRODUCT_ASSET_WIDTH = 720;
 const PRODUCT_ASSET_HEIGHT = 1280;
 const PRODUCT_ASSET_DURATION_SECONDS = 4;
 const PRODUCT_ASSET_FPS = 30;
+
+const S3_ENDPOINT = process.env.S3_ENDPOINT || "";
+const S3_REGION = process.env.S3_REGION || "us-east-1";
+const S3_BUCKET = process.env.S3_BUCKET || "";
+const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
+const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
+const S3_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL || "";
 
 type UploadedProductAsset = {
   id: string;
@@ -46,6 +54,87 @@ function normalizeProductMediaAssets(value: unknown): UploadedProductAsset[] {
 async function ensureProductAssetColumns() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_video_url TEXT");
+}
+
+function requireS3Config() {
+  if (!S3_ENDPOINT || !S3_BUCKET || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY) {
+    throw new Error("S3 is not configured. Please set S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY.");
+  }
+}
+
+function buildS3ObjectUrl(key: string) {
+  const base = S3_PUBLIC_BASE_URL
+    ? S3_PUBLIC_BASE_URL.replace(/\/$/, "")
+    : `${S3_ENDPOINT.replace(/\/$/, "")}/${S3_BUCKET}`;
+  return `${base}/${key}`;
+}
+
+function sha256Hex(data: Buffer | string) {
+  return crypto.createHash("sha256").update(data).digest("hex");
+}
+
+function hmac(key: Buffer | string, data: string) {
+  return crypto.createHmac("sha256", key).update(data).digest();
+}
+
+function getAmzDates(now = new Date()) {
+  const iso = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  return {
+    amzDate: iso,
+    dateStamp: iso.slice(0, 8),
+  };
+}
+
+async function putObjectToS3(key: string, body: Buffer, contentType: string) {
+  requireS3Config();
+  const endpoint = new URL(S3_ENDPOINT);
+  const host = endpoint.host;
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  const canonicalUri = `/${S3_BUCKET}/${encodedKey}`;
+  const payloadHash = sha256Hex(body);
+  const { amzDate, dateStamp } = getAmzDates();
+  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
+  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
+  const canonicalRequest = [
+    "PUT",
+    canonicalUri,
+    "",
+    canonicalHeaders,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+  const credentialScope = `${dateStamp}/${S3_REGION}/s3/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256Hex(canonicalRequest),
+  ].join("\n");
+  const kDate = hmac(`AWS4${S3_SECRET_ACCESS_KEY}`, dateStamp);
+  const kRegion = hmac(kDate, S3_REGION);
+  const kService = hmac(kRegion, "s3");
+  const kSigning = hmac(kService, "aws4_request");
+  const signature = crypto.createHmac("sha256", kSigning).update(stringToSign).digest("hex");
+  const authorization = `AWS4-HMAC-SHA256 Credential=${S3_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  const uploadUrl = `${S3_ENDPOINT.replace(/\/$/, "")}${canonicalUri}`;
+  const response = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentType,
+      "x-amz-content-sha256": payloadHash,
+      "x-amz-date": amzDate,
+      Authorization: authorization,
+    },
+    body,
+  });
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => "");
+    throw new Error(`S3 upload failed: ${response.status} ${message}`);
+  }
+
+  return buildS3ObjectUrl(encodedKey);
 }
 
 function runCommand(command: string, args: string[]) {
@@ -112,7 +201,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "At least one media file is required" }, { status: 400 });
     }
 
-    const uploadDir = path.join(process.cwd(), "public", "uploads", "product-assets", `client-${clientId}`);
+    const uploadDir = path.join("/tmp", "product-assets", `client-${clientId}`);
     await mkdir(uploadDir, { recursive: true });
 
     const uploadedAssets: UploadedProductAsset[] = [];
@@ -128,23 +217,37 @@ export async function POST(request: Request) {
         const outputName = `${stamp}_${safeName.replace(/\.[^.]+$/, "")}.mp4`;
         const outputPath = path.join(uploadDir, outputName);
         await convertImageToVerticalVideo(sourcePath, outputPath);
+        const outputBuffer = await readFile(outputPath);
+        const assetUrl = await putObjectToS3(
+          `product-assets/client-${clientId}/${outputName}`,
+          outputBuffer,
+          "video/mp4"
+        );
         uploadedAssets.push({
           id: outputName,
-          url: `/uploads/product-assets/client-${clientId}/${outputName}`,
+          url: assetUrl,
           name: file.name,
           source_type: "image",
           duration_seconds: PRODUCT_ASSET_DURATION_SECONDS,
           created_at: new Date().toISOString(),
         });
+        await rm(sourcePath, { force: true });
+        await rm(outputPath, { force: true });
       } else {
+        const assetUrl = await putObjectToS3(
+          `product-assets/client-${clientId}/${path.basename(sourcePath)}`,
+          fileBuffer,
+          file.type || "video/mp4"
+        );
         uploadedAssets.push({
           id: path.basename(sourcePath),
-          url: `/uploads/product-assets/client-${clientId}/${path.basename(sourcePath)}`,
+          url: assetUrl,
           name: file.name,
           source_type: "video",
           duration_seconds: 0,
           created_at: new Date().toISOString(),
         });
+        await rm(sourcePath, { force: true });
       }
     }
 
