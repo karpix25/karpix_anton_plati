@@ -12,7 +12,7 @@ import { SettingsScreen } from "@/components/screens/SettingsScreen";
 import { GraphScreen } from "@/components/screens/GraphScreen";
 
 import { ReferenceModal } from "@/components/ReferenceModal";
-import { Screen, Reference, TopicCard, StructureCard, Settings } from "@/types";
+import { Screen, Reference, TopicCard, StructureCard, Settings, ProductMediaAsset } from "@/types";
 import { navItems } from "@/lib/constants";
 
 const normalizeProductMediaAssets = (value: unknown) => {
@@ -47,7 +47,7 @@ const normalizeProductMediaAssets = (value: unknown) => {
         }
         return normalizeItem(item);
       })
-      .filter(Boolean);
+      .filter((item): item is ProductMediaAsset => Boolean(item));
   }
 
   if (typeof value === "string") {
