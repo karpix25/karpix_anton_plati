@@ -12,10 +12,11 @@ const PRODUCT_ASSET_FPS = 30;
 
 const S3_ENDPOINT = process.env.S3_ENDPOINT || "";
 const S3_REGION = process.env.S3_REGION || "us-east-1";
-const S3_BUCKET = process.env.S3_BUCKET || "";
+const S3_BUCKET = process.env.S3_BUCKET || process.env.S3_BUCKET_NAME || "";
 const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
 const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
 const S3_PUBLIC_BASE_URL = process.env.S3_PUBLIC_BASE_URL || "";
+const S3_FORCE_PATH_STYLE = String(process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() === "true";
 
 type UploadedProductAsset = {
   id: string;
@@ -61,9 +62,14 @@ function isS3Configured() {
 }
 
 function buildS3ObjectUrl(key: string) {
-  const base = S3_PUBLIC_BASE_URL
-    ? S3_PUBLIC_BASE_URL.replace(/\/$/, "")
-    : `${S3_ENDPOINT.replace(/\/$/, "")}/${S3_BUCKET}`;
+  if (S3_PUBLIC_BASE_URL) {
+    return `${S3_PUBLIC_BASE_URL.replace(/\/$/, "")}/${key}`;
+  }
+
+  const endpoint = new URL(S3_ENDPOINT);
+  const base = S3_FORCE_PATH_STYLE
+    ? `${endpoint.origin}/${S3_BUCKET}`
+    : `${endpoint.protocol}//${S3_BUCKET}.${endpoint.host}`;
   return `${base}/${key}`;
 }
 
@@ -88,9 +94,9 @@ async function putObjectToS3(key: string, body: Buffer, contentType: string) {
     throw new Error("S3 is not configured.");
   }
   const endpoint = new URL(S3_ENDPOINT);
-  const host = endpoint.host;
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-  const canonicalUri = `/${S3_BUCKET}/${encodedKey}`;
+  const host = S3_FORCE_PATH_STYLE ? endpoint.host : `${S3_BUCKET}.${endpoint.host}`;
+  const canonicalUri = S3_FORCE_PATH_STYLE ? `/${S3_BUCKET}/${encodedKey}` : `/${encodedKey}`;
   const payloadHash = sha256Hex(body);
   const requestBody = new Uint8Array(body);
   const { amzDate, dateStamp } = getAmzDates();
@@ -118,7 +124,9 @@ async function putObjectToS3(key: string, body: Buffer, contentType: string) {
   const signature = crypto.createHmac("sha256", kSigning).update(stringToSign).digest("hex");
   const authorization = `AWS4-HMAC-SHA256 Credential=${S3_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
 
-  const uploadUrl = `${S3_ENDPOINT.replace(/\/$/, "")}${canonicalUri}`;
+  const uploadUrl = S3_FORCE_PATH_STYLE
+    ? `${endpoint.origin}${canonicalUri}`
+    : `${endpoint.protocol}//${host}${canonicalUri}`;
   const response = await fetch(uploadUrl, {
     method: "PUT",
     headers: {
