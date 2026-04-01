@@ -92,6 +92,7 @@ async function putObjectToS3(key: string, body: Buffer, contentType: string) {
   const encodedKey = key.split("/").map(encodeURIComponent).join("/");
   const canonicalUri = `/${S3_BUCKET}/${encodedKey}`;
   const payloadHash = sha256Hex(body);
+  const requestBody = new Uint8Array(body);
   const { amzDate, dateStamp } = getAmzDates();
   const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
   const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
@@ -126,7 +127,7 @@ async function putObjectToS3(key: string, body: Buffer, contentType: string) {
       "x-amz-date": amzDate,
       Authorization: authorization,
     },
-    body,
+    body: requestBody,
   });
 
   if (!response.ok) {
