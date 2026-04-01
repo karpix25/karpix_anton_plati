@@ -32,6 +32,7 @@ export interface Client {
   subtitle_outline_color?: string;
   subtitle_outline_width?: number;
   subtitle_margin_v?: number;
+  subtitle_margin_percent?: number;
   auto_generate_final_videos?: boolean;
   daily_final_video_limit?: number;
   daily_final_video_count?: number;
@@ -146,6 +147,7 @@ export interface Settings {
   subtitle_outline_color: string;
   subtitle_outline_width: number;
   subtitle_margin_v: number;
+  subtitle_margin_percent: number;
   auto_generate_final_videos: boolean;
   daily_final_video_limit: number;
   daily_final_video_count: number;

@@ -38,6 +38,12 @@ export const SUBTITLE_PRESET_DEFAULT_MARGIN_V: Record<SubtitleStylePreset, numbe
   soft_box: 155,
 };
 
+export const SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT: Record<SubtitleStylePreset, number> = {
+  classic: 11,
+  impact: 14,
+  soft_box: 12,
+};
+
 export const SUBTITLE_FONT_OPTIONS: Record<
   SubtitleFontFamily,
   {

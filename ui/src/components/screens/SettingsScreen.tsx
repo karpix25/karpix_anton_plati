@@ -6,6 +6,7 @@ import { ElevenLabsVoiceOption, HeygenAvatarConfig, MinimaxVoiceOption, ProductM
 import {
   SUBTITLE_FONT_OPTIONS,
   SUBTITLE_MODE_OPTIONS,
+  SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT,
   SUBTITLE_PRESET_DEFAULT_MARGIN_V,
   SUBTITLE_STYLE_PRESET_OPTIONS,
 } from "@/lib/subtitles";
@@ -131,14 +132,22 @@ const normalizeProductMediaAssets = (value: unknown): ProductMediaAsset[] => {
   return [];
 };
 
-const normalizeSettings = (settings: Settings): Settings => ({
-  ...settings,
-  product_media_assets: normalizeProductMediaAssets(settings.product_media_assets),
-  subtitle_margin_v:
-    Number.isFinite(Number(settings.subtitle_margin_v)) && Number(settings.subtitle_margin_v) > 0
-      ? Number(settings.subtitle_margin_v)
-      : SUBTITLE_PRESET_DEFAULT_MARGIN_V[settings.subtitle_style_preset || "classic"],
-});
+const normalizeSettings = (settings: Settings): Settings => {
+  const fallbackPreset = settings.subtitle_style_preset || "classic";
+  const fallbackMarginV = SUBTITLE_PRESET_DEFAULT_MARGIN_V[fallbackPreset];
+  const fallbackMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[fallbackPreset];
+  const marginV = Number(settings.subtitle_margin_v);
+  const marginPercent = Number(settings.subtitle_margin_percent);
+
+  return {
+    ...settings,
+    product_media_assets: normalizeProductMediaAssets(settings.product_media_assets),
+    subtitle_margin_v:
+      Number.isFinite(marginV) && marginV > 0 ? marginV : fallbackMarginV,
+    subtitle_margin_percent:
+      Number.isFinite(marginPercent) && marginPercent >= 0 ? marginPercent : fallbackMarginPercent,
+  };
+};
 
 const normalizeLook = (look: Partial<HeygenAvatarConfig["looks"][number]> | null | undefined, lookIndex: number) => {
   const lookId = safeTrim(look?.look_id);
@@ -326,10 +335,12 @@ export function SettingsScreen({
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
   const subtitleOutlineWidth = Number(draftSettings.subtitle_outline_width || 3);
   const subtitleMarginDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_V[subtitleStylePreset] || 140;
-  const subtitleMarginV = Math.min(
-    320,
-    Math.max(40, Number(draftSettings.subtitle_margin_v ?? subtitleMarginDefault))
+  const subtitleMarginPercentDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
+  const subtitleMarginPercent = Math.min(
+    100,
+    Math.max(0, Number(draftSettings.subtitle_margin_percent ?? subtitleMarginPercentDefault))
   );
+  const subtitleMarginV = Math.round((subtitleMarginPercent / 100) * 1280);
   const subtitlePreviewRef = useRef<HTMLDivElement | null>(null);
   const [subtitlePreviewScale, setSubtitlePreviewScale] = useState(0.24);
   const selectedVoice = minimaxVoices.find((voice) => voice.voice_id === draftSettings.tts_voice_id);
@@ -1162,7 +1173,7 @@ export function SettingsScreen({
                 <div><span className="font-semibold text-foreground">Шрифт:</span> {subtitleFontPreview.title}</div>
                 <div><span className="font-semibold text-foreground">Вес:</span> {subtitleFontWeight === 700 ? "жирный" : "обычный"}</div>
                 <div><span className="font-semibold text-foreground">Обводка:</span> {subtitleOutlineWidth.toFixed(1)} px</div>
-                <div><span className="font-semibold text-foreground">Высота:</span> {subtitleMarginV}px</div>
+                <div><span className="font-semibold text-foreground">Высота:</span> {subtitleMarginPercent}% от низа</div>
               </div>
 
               <div className="grid gap-4 xl:grid-cols-3">
@@ -1343,20 +1354,29 @@ export function SettingsScreen({
                         Высота субтитров
                       </div>
                       <div className="rounded-full bg-[#f0f4f7] px-3 py-1 text-xs font-bold text-foreground">
-                        {subtitleMarginV}px
+                        {subtitleMarginPercent}%
                       </div>
                     </div>
                     <input
                       type="range"
-                      min={40}
-                      max={320}
-                      step={5}
-                      value={subtitleMarginV}
-                      onChange={(event) =>
-                        setDraftSettings((prev) => ({ ...prev, subtitle_margin_v: Number(event.target.value) }))
-                      }
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={subtitleMarginPercent}
+                      onChange={(event) => {
+                        const nextPercent = Number(event.target.value);
+                        setDraftSettings((prev) => ({
+                          ...prev,
+                          subtitle_margin_percent: nextPercent,
+                          subtitle_margin_v: Math.round((nextPercent / 100) * 1280),
+                        }));
+                      }}
                       className="w-full accent-primary"
                     />
+                    <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      <span>Низ</span>
+                      <span>Верх</span>
+                    </div>
                   </label>
 
                   <div className="rounded-2xl bg-[#f0f4f7] p-4">

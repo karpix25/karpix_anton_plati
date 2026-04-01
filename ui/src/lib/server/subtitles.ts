@@ -4,6 +4,7 @@ import path from "path";
 import { Settings, WordTimestamp } from "@/types";
 import {
   SUBTITLE_FONT_OPTIONS,
+  SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT,
   SUBTITLE_PRESET_DEFAULT_MARGIN_V,
   SYSTEM_SUBTITLE_FALLBACK_FAMILY,
 } from "@/lib/subtitles";
@@ -19,6 +20,7 @@ type SubtitleRenderSettings = Pick<
   | "subtitle_outline_color"
   | "subtitle_outline_width"
   | "subtitle_margin_v"
+  | "subtitle_margin_percent"
 >;
 
 type SubtitleEvent = {
@@ -37,6 +39,7 @@ const DEFAULT_SUBTITLE_SETTINGS: SubtitleRenderSettings = {
   subtitle_outline_color: "#111111",
   subtitle_outline_width: 3,
   subtitle_margin_v: SUBTITLE_PRESET_DEFAULT_MARGIN_V.classic,
+  subtitle_margin_percent: SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT.classic,
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -176,11 +179,13 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
     ? clamp(Number(settings.subtitle_outline_width || 3) + 1, 0, 8)
     : clamp(Number(settings.subtitle_outline_width || 3), 0, 8);
   const presetMargin = SUBTITLE_PRESET_DEFAULT_MARGIN_V[settings.subtitle_style_preset] || 140;
-  const marginV = clamp(
-    Number(settings.subtitle_margin_v ?? presetMargin),
-    40,
-    320
+  const presetMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[settings.subtitle_style_preset] || 11;
+  const resolvedPercent = clamp(
+    Number(settings.subtitle_margin_percent ?? (Number(settings.subtitle_margin_v ?? presetMargin) / 1280) * 100 || presetMarginPercent),
+    0,
+    100
   );
+  const marginV = clamp(Math.round((resolvedPercent / 100) * 1280), 0, 1180);
   const spacing = settings.subtitle_style_preset === "impact" ? 0.4 : 0;
   const bold = Number(settings.subtitle_font_weight) === 400 ? 0 : -1;
 
@@ -290,6 +295,7 @@ export async function materializeSubtitleTrack(options: {
     subtitle_font_weight: Number(options.settings?.subtitle_font_weight) === 400 ? 400 : 700,
     subtitle_outline_width: clamp(Number(options.settings?.subtitle_outline_width || DEFAULT_SUBTITLE_SETTINGS.subtitle_outline_width), 0, 8),
     subtitle_margin_v: Number(options.settings?.subtitle_margin_v ?? DEFAULT_SUBTITLE_SETTINGS.subtitle_margin_v),
+    subtitle_margin_percent: Number(options.settings?.subtitle_margin_percent ?? DEFAULT_SUBTITLE_SETTINGS.subtitle_margin_percent),
   };
 
   if (!settings.subtitles_enabled) {
