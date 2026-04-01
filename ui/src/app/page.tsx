@@ -16,14 +16,44 @@ import { Screen, Reference, TopicCard, StructureCard, Settings } from "@/types";
 import { navItems } from "@/lib/constants";
 
 const normalizeProductMediaAssets = (value: unknown) => {
+  const normalizeItem = (item: unknown) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return null;
+    }
+    const asset = item as Record<string, unknown>;
+    const url = typeof asset.url === "string" ? asset.url.trim() : "";
+    if (!url) {
+      return null;
+    }
+    return {
+      id: typeof asset.id === "string" && asset.id.trim() ? asset.id.trim() : url,
+      url,
+      name: typeof asset.name === "string" && asset.name.trim() ? asset.name.trim() : "Product Asset",
+      source_type: asset.source_type === "image" ? "image" : "video",
+      duration_seconds: Number(asset.duration_seconds || 0) || 0,
+      created_at: typeof asset.created_at === "string" ? asset.created_at : undefined,
+    };
+  };
+
   if (Array.isArray(value)) {
-    return value;
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          try {
+            return normalizeItem(JSON.parse(item));
+          } catch {
+            return null;
+          }
+        }
+        return normalizeItem(item);
+      })
+      .filter(Boolean);
   }
 
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
+      return normalizeProductMediaAssets(parsed);
     } catch {
       return [];
     }
