@@ -16,7 +16,7 @@ import { Screen, Reference, TopicCard, StructureCard, Settings, ProductMediaAsse
 import { navItems } from "@/lib/constants";
 
 const normalizeProductMediaAssets = (value: unknown) => {
-  const normalizeItem = (item: unknown) => {
+  const normalizeItem = (item: unknown): ProductMediaAsset | null => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return null;
     }
