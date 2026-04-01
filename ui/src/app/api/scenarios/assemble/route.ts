@@ -38,6 +38,8 @@ type ScenarioRow = {
   subtitle_font_weight: Settings["subtitle_font_weight"] | null;
   subtitle_outline_color: string | null;
   subtitle_outline_width: number | null;
+  subtitle_margin_v: number | null;
+  subtitle_margin_percent: number | null;
   video_generation_prompts:
     | {
         prompts?: Array<{
@@ -80,6 +82,8 @@ async function ensureMontageColumns() {
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_weight INTEGER DEFAULT 700",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_color TEXT DEFAULT '#111111'",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_width NUMERIC(4,1) DEFAULT 3.0",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_v INTEGER DEFAULT 140",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_percent INTEGER DEFAULT 11",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_video_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_status TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_error TEXT",
@@ -170,7 +174,9 @@ async function getScenario(scenarioId: number) {
         c.subtitle_font_color,
         c.subtitle_font_weight,
         c.subtitle_outline_color,
-        c.subtitle_outline_width
+        c.subtitle_outline_width,
+        c.subtitle_margin_v,
+        c.subtitle_margin_percent
      FROM generated_scenarios gs
      LEFT JOIN clients c ON c.id = gs.client_id
      WHERE gs.id = $1`,
@@ -488,6 +494,8 @@ async function buildMontage(scenarioId: number) {
       subtitle_font_weight: scenario.subtitle_font_weight || 700,
       subtitle_outline_color: scenario.subtitle_outline_color || "#111111",
       subtitle_outline_width: Number(scenario.subtitle_outline_width || 3),
+      subtitle_margin_v: Number(scenario.subtitle_margin_v || 140),
+      subtitle_margin_percent: Number(scenario.subtitle_margin_percent ?? Math.round((Number(scenario.subtitle_margin_v || 140) / 1280) * 100)),
     },
     words: scenario.tts_word_timestamps?.words || [],
     totalDuration: audioDuration > 0 ? audioDuration : totalDuration,
