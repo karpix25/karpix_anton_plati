@@ -240,7 +240,7 @@ function buildAvatarFilter(options: {
   return [
     "setpts=PTS-STARTPTS",
     `scale=iw*(${zoomExpr}):ih*(${zoomExpr}):eval=frame`,
-    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}:eval=frame`,
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}`,
     `fps=${OUTPUT_FPS}`,
     "format=yuv420p",
     "setsar=1",
