@@ -247,35 +247,6 @@ function buildAvatarFilter(options: {
   ].join(",");
 }
 
-function runCommandCapture(command: string, args: string[]) {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(stderr || `${command} failed with code ${code}`));
-      }
-    });
-
-    child.on("error", reject);
-  });
-}
-
 async function getScenario(scenarioId: number) {
   const { rows } = await pool.query<ScenarioRow>(
     `SELECT
@@ -319,7 +290,7 @@ function getTotalDurationSeconds(scenario: ScenarioRow) {
 }
 
 async function probeDurationSeconds(filePath: string) {
-  const raw = await runCommandCapture("ffprobe", [
+  const { stdout } = await runCommandCapture("ffprobe", [
     "-v",
     "error",
     "-show_entries",
@@ -328,6 +299,7 @@ async function probeDurationSeconds(filePath: string) {
     "default=noprint_wrappers=1:nokey=1",
     filePath,
   ]);
+  const raw = stdout.trim();
 
   const duration = Number(raw);
   return Number.isFinite(duration) && duration > 0 ? duration : 0;
