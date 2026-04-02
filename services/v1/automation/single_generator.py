@@ -47,7 +47,7 @@ def _load_json_if_needed(value):
             return {}
     return value or {}
 
-def generate_for_content(content_id, client_id=None, generate_video=False):
+def generate_for_content(content_id, client_id=None, generate_video=False, generation_source="manual"):
     """
     Triggers generation of a rewritten scenario for a specific content record.
     Saves the result to the generated_scenarios table to avoid duplicating references.
@@ -234,6 +234,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False):
             mode="rewrite",
             topic=scenario_json.get("topic_cluster"),
             angle=scenario_json.get("topic_angle"),
+            generation_source=generation_source,
             scenario_json=scenario_json,
             tts_script=tts_script,
             tts_request_text=tts_request_text,
@@ -261,10 +262,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Single Scenario Generator")
     parser.add_argument("--content_id", type=int, required=True, help="ID of the content to process")
     parser.add_argument("--client_id", type=int, help="Optional client ID for context")
+    parser.add_argument("--generation_source", type=str, default="manual", choices=["manual", "auto"], help="Generation source tag")
     
     args = parser.parse_args()
     
     init_db()
-    res = generate_for_content(args.content_id, args.client_id)
+    res = generate_for_content(args.content_id, args.client_id, generation_source=args.generation_source)
     if res:
         print(json.dumps(res, ensure_ascii=False))

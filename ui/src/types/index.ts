@@ -292,6 +292,7 @@ export interface Scenario {
   job_id?: string;
   client_id?: number;
   mode?: string;
+  generation_source?: "manual" | "auto";
   topic?: string;
   angle?: string;
   scenario_json?: {

@@ -128,7 +128,7 @@ def _scenario_has_pending_kie_tasks(scenario: Dict[str, Any]) -> bool:
 
 
 def process_scenario_stage(job: Dict[str, Any]) -> None:
-    results = run_batch_generation(count=1, client_id=int(job["client_id"]), mode="mix")
+    results = run_batch_generation(count=1, client_id=int(job["client_id"]), mode="mix", generation_source="auto")
     if not results:
         raise RuntimeError("Scenario generation returned no results")
 

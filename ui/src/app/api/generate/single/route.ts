@@ -23,7 +23,9 @@ export async function POST(request: Request) {
       scriptPath,
       '--content_id', contentId.toString(),
       clientId ? '--client_id' : '',
-      clientId ? clientId.toString() : ''
+      clientId ? clientId.toString() : '',
+      '--generation_source',
+      'manual'
     ].filter(Boolean), {
       env: { ...process.env, PYTHONPATH: '..' }
     });

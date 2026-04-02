@@ -79,7 +79,7 @@ def get_reference_pool(niche="General", client_id=None, topic=None, angle=None):
         return get_references_by_angle(angle, client_id)
     return get_references_by_niche(niche, client_id)
 
-def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angle=None, mode="rewrite", topic_id=None, structure_id=None):
+def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angle=None, mode="rewrite", topic_id=None, structure_id=None, generation_source="manual"):
     """
     Main entry point for batch generation.
     """
@@ -325,6 +325,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 mode=mode,
                 topic=topic or scenario.get("topic_cluster") or scenario.get("topic_short"),
                 angle=angle or scenario.get("topic_angle") or scenario.get("pattern_type"),
+                generation_source=generation_source,
                 scenario_json=scenario,
                 tts_script=tts_script,
                 tts_request_text=tts_request_text,
@@ -343,6 +344,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
             "index": i + 1,
             "job_id": res_job_id,
             "mode": mode,
+            "generation_source": generation_source,
             "topic": topic or scenario.get("topic_cluster") or scenario.get("topic_short"),
             "angle": angle or scenario.get("topic_angle") or scenario.get("pattern_type"),
             "source_reference": source_reference,
@@ -371,6 +373,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, default="rewrite", choices=["rewrite", "single", "cluster", "mix"], help="Generation mode.")
     parser.add_argument("--topic_id", type=int, help="Topic card ID (for mix mode).")
     parser.add_argument("--structure_id", type=int, help="Structure card ID (for mix mode).")
+    parser.add_argument("--generation_source", type=str, default="manual", choices=["manual", "auto"], help="Generation source tag.")
     
     args = parser.parse_args()
     
@@ -384,7 +387,8 @@ if __name__ == "__main__":
             angle=args.angle,
             mode=args.mode,
             topic_id=args.topic_id,
-            structure_id=args.structure_id
+            structure_id=args.structure_id,
+            generation_source=args.generation_source
         )
         
         # Save results to a file for the caller to read

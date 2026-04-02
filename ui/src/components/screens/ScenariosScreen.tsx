@@ -536,6 +536,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
               <TableRow>
                 <TableHead>Название / Скрипт</TableHead>
                 <TableHead>Режим</TableHead>
+                <TableHead>Источник</TableHead>
                 <TableHead>Тема</TableHead>
                 <TableHead>Паттерн</TableHead>
                 <TableHead className="text-center">TTS</TableHead>
@@ -554,6 +555,18 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                   <TableCell>
                     <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
                       {sc.mode === "rewrite" ? "Рерайт" : "Микс"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant="outline"
+                      className={
+                        sc.generation_source === "auto"
+                          ? "border-amber-200 bg-amber-50 text-amber-700"
+                          : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      }
+                    >
+                      {sc.generation_source === "auto" ? "Авто" : "Ручн"}
                     </Badge>
                   </TableCell>
                   <TableCell>

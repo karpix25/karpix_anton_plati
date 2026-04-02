@@ -26,7 +26,8 @@ export async function POST(request: Request) {
       ...(angle ? ['--angle', angle] : []),
       ...(mode ? ['--mode', mode] : []),
       ...(topicId ? ['--topic_id', topicId.toString()] : []),
-      ...(structureId ? ['--structure_id', structureId.toString()] : [])
+      ...(structureId ? ['--structure_id', structureId.toString()] : []),
+      '--generation_source', 'manual'
     ], {
       cwd: path.resolve(process.cwd(), '..'),
       env: { ...process.env, PYTHONPATH: '.' }
