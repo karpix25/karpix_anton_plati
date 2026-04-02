@@ -509,24 +509,8 @@ async function buildMontage(scenarioId: number) {
     throw new Error("Scenario not found");
   }
 
-  if (!scenario.tts_audio_path || !existsSync(scenario.tts_audio_path)) {
-    throw new Error("TTS audio file is missing");
-  }
-
   if (!scenario.heygen_video_url) {
     throw new Error("HeyGen avatar video is missing");
-  }
-
-  const audioDuration = await probeDurationSeconds(scenario.tts_audio_path);
-  const timelineDuration = getTotalDurationSeconds(scenario);
-  const totalDuration = Math.max(audioDuration, timelineDuration);
-  if (totalDuration <= 0) {
-    throw new Error("Timeline data is missing");
-  }
-
-  const timeline = buildTimeline(scenario, totalDuration);
-  if (!timeline.length) {
-    throw new Error("No video segments available for montage");
   }
 
   const workdir = path.join("/tmp", "platipo-miru-montage", `scenario-${scenarioId}`);
@@ -541,6 +525,47 @@ async function buildMontage(scenarioId: number) {
     sourceCache.get(scenario.heygen_video_url) ||
     (await materializeSource(scenario.heygen_video_url, workdir, "avatar_master"));
   sourceCache.set(scenario.heygen_video_url, avatarSourcePath);
+
+  let ttsAudioPath =
+    scenario.tts_audio_path && existsSync(scenario.tts_audio_path)
+      ? scenario.tts_audio_path
+      : null;
+  if (!ttsAudioPath && avatarSourcePath) {
+    const extractedAudioPath = path.join(workdir, "avatar_audio.m4a");
+    try {
+      await runCommand("ffmpeg", [
+        "-y",
+        "-i",
+        avatarSourcePath,
+        "-vn",
+        "-acodec",
+        "aac",
+        "-b:a",
+        "192k",
+        extractedAudioPath,
+      ]);
+      if (existsSync(extractedAudioPath)) {
+        ttsAudioPath = extractedAudioPath;
+      }
+    } catch (error) {
+      console.warn("Failed to extract audio from avatar video:", error);
+    }
+  }
+  if (!ttsAudioPath) {
+    throw new Error("TTS audio file is missing");
+  }
+
+  const audioDuration = await probeDurationSeconds(ttsAudioPath);
+  const timelineDuration = getTotalDurationSeconds(scenario);
+  const totalDuration = Math.max(audioDuration, timelineDuration);
+  if (totalDuration <= 0) {
+    throw new Error("Timeline data is missing");
+  }
+
+  const timeline = buildTimeline(scenario, totalDuration);
+  if (!timeline.length) {
+    throw new Error("No video segments available for montage");
+  }
 
   for (let index = 0; index < timeline.length; index += 1) {
     const segment = timeline[index];
@@ -649,7 +674,7 @@ async function buildMontage(scenarioId: number) {
     "-i",
     concatListPath,
     "-i",
-    scenario.tts_audio_path,
+    ttsAudioPath,
     "-stream_loop",
     "-1",
     "-i",
