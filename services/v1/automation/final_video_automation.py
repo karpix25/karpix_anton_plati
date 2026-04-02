@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from datetime import datetime
@@ -14,6 +15,7 @@ from services.v1.automation.submit_kie_tasks import submit_saved_kie_tasks
 from services.v1.database.db_service import (
     complete_final_video_job,
     get_final_video_job,
+    get_generated_scenario_by_id,
     get_generated_scenario_by_job_id,
     requeue_final_video_job,
     update_final_video_job,
@@ -70,6 +72,47 @@ def _internal_request(method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
         raise RuntimeError(str(payload.get("error") or f"Internal API {path} failed with status {response.status_code}"))
 
     return payload
+
+
+def _extract_scenario_script(scenario: Dict[str, Any]) -> str:
+    tts_script = str(scenario.get("tts_script") or "").strip()
+    if tts_script:
+        return tts_script
+
+    scenario_json = scenario.get("scenario_json")
+    if isinstance(scenario_json, str):
+        try:
+            scenario_json = json.loads(scenario_json)
+        except Exception:
+            scenario_json = None
+
+    if isinstance(scenario_json, dict):
+        return str(scenario_json.get("script") or "").strip()
+
+    return ""
+
+
+def _ensure_tts_audio(scenario_id: int) -> None:
+    scenario = get_generated_scenario_by_id(int(scenario_id))
+    if not scenario:
+        raise RuntimeError(f"Scenario id={scenario_id} not found for TTS regeneration")
+
+    script = _extract_scenario_script(scenario)
+    if not script:
+        raise RuntimeError("Scenario script is empty; cannot generate TTS")
+
+    response = requests.post(
+        f"{get_internal_api_base_url()}/api/tts",
+        headers=_build_internal_headers(),
+        json={"text": script, "scenarioId": int(scenario_id)},
+        timeout=600,
+    )
+    if not response.ok:
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"error": response.text}
+        raise RuntimeError(str(payload.get("error") or f"TTS regeneration failed with status {response.status_code}"))
 
 
 def _scenario_has_pending_kie_tasks(scenario: Dict[str, Any]) -> bool:
@@ -147,7 +190,15 @@ def process_avatar_submit_stage(job: Dict[str, Any]) -> None:
     if not scenario_id:
         raise RuntimeError("Final video job has no scenario_id")
 
-    payload = _internal_request("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
+    try:
+        payload = _internal_request("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
+    except RuntimeError as error:
+        if "TTS audio file is missing" in str(error):
+            logger.warning("Missing TTS audio for scenario_id=%s. Regenerating TTS in web container.", scenario_id)
+            _ensure_tts_audio(int(scenario_id))
+            payload = _internal_request("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
+        else:
+            raise
     stage = "montage" if str(payload.get("status") or "").lower() in {"completed", "success"} else "waiting_heygen"
     delay_seconds = 0 if stage == "montage" else get_heygen_poll_interval_seconds()
 

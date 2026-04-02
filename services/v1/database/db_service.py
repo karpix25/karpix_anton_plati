@@ -1097,7 +1097,9 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                 c.monthly_final_video_limit,
                 COALESCE(completed.daily_completed_count, 0) AS daily_final_video_count,
                 COALESCE(completed.completed_count, 0) AS monthly_final_video_count,
-                COALESCE(open_jobs.open_count, 0) AS open_final_video_jobs
+                COALESCE(open_jobs.open_count, 0) AS open_final_video_jobs,
+                COALESCE(job_stats.daily_job_count, 0) AS daily_final_video_jobs,
+                COALESCE(job_stats.monthly_job_count, 0) AS monthly_final_video_jobs
             FROM clients c
             LEFT JOIN (
                 SELECT
@@ -1117,6 +1119,18 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                 WHERE status IN ('queued', 'processing')
                 GROUP BY client_id
             ) open_jobs ON open_jobs.client_id = c.id
+            LEFT JOIN (
+                SELECT
+                    client_id,
+                    COUNT(*) FILTER (
+                        WHERE DATE_TRUNC('day', created_at) = DATE_TRUNC('day', CURRENT_TIMESTAMP)
+                    )::int AS daily_job_count,
+                    COUNT(*) FILTER (
+                        WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_TIMESTAMP)
+                    )::int AS monthly_job_count
+                FROM final_video_jobs
+                GROUP BY client_id
+            ) job_stats ON job_stats.client_id = c.id
             WHERE c.auto_generate_final_videos = TRUE
             ORDER BY c.id ASC
             """
