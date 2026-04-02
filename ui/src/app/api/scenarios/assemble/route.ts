@@ -71,6 +71,12 @@ const OUTPUT_HEIGHT = 1280;
 const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
+const AVATAR_ZOOM_WIDE = 1.02;
+const AVATAR_ZOOM_CLOSE = 1.18;
+const AVATAR_ZOOM_MIN_SECONDS = 2.6;
+const AVATAR_FACE_FALLBACK_Y = 0.38;
+
+type FaceBox = { x: number; y: number; w: number; h: number };
 
 async function ensureMontageColumns() {
   const statements = [
@@ -125,6 +131,120 @@ function runCommand(command: string, args: string[]) {
 
     child.on("error", reject);
   });
+}
+
+function runCommandCapture(command: string, args: string[]) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(stderr || stdout || `Command failed: ${command}`));
+      }
+    });
+  });
+}
+
+function escapeFilterExpr(value: string) {
+  return value.replace(/,/g, "\\,");
+}
+
+async function probeVideoDimensions(filePath: string) {
+  const { stdout } = await runCommandCapture("ffprobe", [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=width,height",
+    "-of",
+    "csv=p=0",
+    filePath,
+  ]);
+  const raw = stdout.trim();
+  const parts = raw.split(",");
+  if (parts.length < 2) return null;
+  const width = Number(parts[0]);
+  const height = Number(parts[1]);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+  return { width, height };
+}
+
+function parseFaceMetadata(raw: string): FaceBox | null {
+  const xMatch = raw.match(/lavfi\.facedetect\.x=([0-9.]+)/);
+  const yMatch = raw.match(/lavfi\.facedetect\.y=([0-9.]+)/);
+  const wMatch = raw.match(/lavfi\.facedetect\.w=([0-9.]+)/);
+  const hMatch = raw.match(/lavfi\.facedetect\.h=([0-9.]+)/);
+  if (!xMatch || !yMatch || !wMatch || !hMatch) return null;
+  const x = Number(xMatch[1]);
+  const y = Number(yMatch[1]);
+  const w = Number(wMatch[1]);
+  const h = Number(hMatch[1]);
+  if (![x, y, w, h].every(Number.isFinite)) return null;
+  return { x, y, w, h };
+}
+
+async function detectFaceAtTime(filePath: string, timeSeconds: number): Promise<FaceBox | null> {
+  try {
+    const { stdout, stderr } = await runCommandCapture("ffmpeg", [
+      "-y",
+      "-ss",
+      timeSeconds.toFixed(3),
+      "-i",
+      filePath,
+      "-frames:v",
+      "1",
+      "-vf",
+      "facedetect=mode=fast,metadata=print:file=-",
+      "-f",
+      "null",
+      "-",
+    ]);
+    return parseFaceMetadata(`${stdout}\n${stderr}`);
+  } catch {
+    return null;
+  }
+}
+
+function buildAvatarFilter(options: {
+  duration: number;
+  faceCenterX: number;
+  faceCenterY: number;
+  pushIn: boolean;
+}) {
+  const duration = Math.max(0.1, options.duration);
+  const zoomStart = options.pushIn ? AVATAR_ZOOM_WIDE : AVATAR_ZOOM_CLOSE;
+  const zoomEnd = options.pushIn ? AVATAR_ZOOM_CLOSE : AVATAR_ZOOM_WIDE;
+  const zoomExprRaw =
+    duration >= AVATAR_ZOOM_MIN_SECONDS
+      ? `${zoomStart}+(${zoomEnd}-${zoomStart})*min(t,${duration})/${duration}`
+      : `${zoomStart}`;
+  const zoomExpr = escapeFilterExpr(zoomExprRaw);
+  const xExpr = escapeFilterExpr(
+    `max(0,min(iw-ow,${options.faceCenterX}*(${zoomExprRaw})-ow/2))`
+  );
+  const yExpr = escapeFilterExpr(
+    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh/2))`
+  );
+  return [
+    "setpts=PTS-STARTPTS",
+    `scale=iw*(${zoomExpr}):ih*(${zoomExpr}):eval=frame`,
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}:eval=frame`,
+    `fps=${OUTPUT_FPS}`,
+    "format=yuv420p",
+    "setsar=1",
+  ].join(",");
 }
 
 function runCommandCapture(command: string, args: string[]) {
@@ -358,10 +478,12 @@ async function materializeSource(source: string, workdir: string, key: string) {
 async function renderSegment(
   segment: TimelineSegment,
   sourcePath: string,
-  outputPath: string
+  outputPath: string,
+  avatarFilter?: string
 ) {
   const duration = (segment.end - segment.start).toFixed(3);
   const commonFilters = `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},format=yuv420p,setsar=1`;
+  const avatarFilters = avatarFilter || commonFilters;
 
   const args =
     segment.kind === "avatar"
@@ -375,7 +497,7 @@ async function renderSegment(
           sourcePath,
           "-an",
           "-vf",
-          commonFilters,
+          avatarFilters,
           "-c:v",
           "libx264",
           "-preset",
@@ -439,6 +561,9 @@ async function buildMontage(scenarioId: number) {
   await mkdir(workdir, { recursive: true });
 
   const sourceCache = new Map<string, string>();
+  const dimensionCache = new Map<string, { width: number; height: number }>();
+  const faceCache = new Map<string, FaceBox | null>();
+  let avatarPlanIndex = 0;
   const segmentPaths: string[] = [];
   const avatarSourcePath =
     sourceCache.get(scenario.heygen_video_url) ||
@@ -472,7 +597,40 @@ async function buildMontage(scenarioId: number) {
     }
 
     const outputPath = path.join(workdir, `segment_${String(index).padStart(3, "0")}.mp4`);
-    await renderSegment(renderSegmentData, sourcePath, outputPath);
+    let avatarFilter: string | undefined;
+    if (renderSegmentData.kind === "avatar" && sourcePath) {
+      const durationSeconds = Math.max(0.1, renderSegmentData.end - renderSegmentData.start);
+      let dims = dimensionCache.get(sourcePath);
+      if (!dims) {
+        try {
+          const probed = await probeVideoDimensions(sourcePath);
+          if (probed) {
+            dims = probed;
+            dimensionCache.set(sourcePath, probed);
+          }
+        } catch {
+          dims = undefined;
+        }
+      }
+      const key = `${sourcePath}|${renderSegmentData.start.toFixed(2)}-${renderSegmentData.end.toFixed(2)}`;
+      let faceBox = faceCache.get(key) ?? null;
+      if (!faceCache.has(key)) {
+        const sampleTime = renderSegmentData.start + Math.min(durationSeconds * 0.45, 1.2);
+        faceBox = await detectFaceAtTime(sourcePath, sampleTime);
+        faceCache.set(key, faceBox);
+      }
+      const faceCenterX = faceBox ? faceBox.x + faceBox.w / 2 : (dims ? dims.width / 2 : OUTPUT_WIDTH / 2);
+      const faceCenterY = faceBox ? faceBox.y + faceBox.h / 2 : (dims ? dims.height * AVATAR_FACE_FALLBACK_Y : OUTPUT_HEIGHT * 0.4);
+      const pushIn = avatarPlanIndex % 2 === 0;
+      avatarPlanIndex += 1;
+      avatarFilter = buildAvatarFilter({
+        duration: durationSeconds,
+        faceCenterX,
+        faceCenterY,
+        pushIn,
+      });
+    }
+    await renderSegment(renderSegmentData, sourcePath, outputPath, avatarFilter);
     segmentPaths.push(outputPath);
   }
 
