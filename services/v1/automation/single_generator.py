@@ -16,6 +16,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger("SingleGenerator")
 
 
+SILENCE_TRIM_ENABLED = os.getenv("TTS_SILENCE_TRIM_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
+DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS = float(os.getenv("TTS_SILENCE_TRIM_MIN_DURATION_SECONDS", "0.35"))
+SILENCE_TRIM_THRESHOLD_DB = float(os.getenv("TTS_SILENCE_TRIM_THRESHOLD_DB", "-35"))
+
+
 def _probe_audio_duration_seconds(file_path):
     if not file_path or not os.path.exists(file_path):
         return None
@@ -38,6 +43,55 @@ def _probe_audio_duration_seconds(file_path):
         return duration if duration > 0 else None
     except Exception:
         return None
+
+def _trim_tts_silence(file_path: str | None, min_duration_seconds: float | None = None) -> str | None:
+    if not file_path or not os.path.exists(file_path) or not SILENCE_TRIM_ENABLED:
+        return file_path
+
+    resolved_min_duration = min_duration_seconds if min_duration_seconds is not None else DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS
+    try:
+        resolved_min_duration = float(resolved_min_duration)
+    except (TypeError, ValueError):
+        resolved_min_duration = DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS
+    resolved_min_duration = max(0.1, min(1.0, resolved_min_duration))
+
+    root, ext = os.path.splitext(file_path)
+    trimmed_path = f"{root}_trimmed{ext}" if ext else f"{file_path}_trimmed"
+    filter_expr = (
+        "silenceremove="
+        f"start_periods=1:start_duration={resolved_min_duration}:start_threshold={SILENCE_TRIM_THRESHOLD_DB}dB:"
+        f"stop_periods=-1:stop_duration={resolved_min_duration}:stop_threshold={SILENCE_TRIM_THRESHOLD_DB}dB"
+    )
+
+    try:
+        subprocess.check_output(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                file_path,
+                "-af",
+                filter_expr,
+                "-c:a",
+                "libmp3lame",
+                "-q:a",
+                "4",
+                trimmed_path,
+            ],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if os.path.exists(trimmed_path) and os.path.getsize(trimmed_path) > 0:
+            original_duration = _probe_audio_duration_seconds(file_path)
+            trimmed_duration = _probe_audio_duration_seconds(trimmed_path)
+            if trimmed_duration and original_duration and trimmed_duration <= original_duration - 0.05:
+                return trimmed_path
+            if trimmed_duration and not original_duration:
+                return trimmed_path
+    except Exception as error:
+        logger.warning("Silence trim failed for %s: %s", file_path, error)
+
+    return file_path
 
 def _load_json_if_needed(value):
     if isinstance(value, str):
@@ -94,6 +148,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         tts_provider = "minimax"
         tts_voice_id = None
         elevenlabs_voice_id = None
+        tts_silence_trim_min_duration_seconds = None
         
         if resolved_client_id:
             client_data = get_client(client_id=resolved_client_id)
@@ -118,6 +173,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 tts_provider = client_data.get("tts_provider") or "minimax"
                 tts_voice_id = client_data.get("tts_voice_id")
                 elevenlabs_voice_id = client_data.get("elevenlabs_voice_id")
+                tts_silence_trim_min_duration_seconds = client_data.get("tts_silence_trim_min_duration_seconds")
                 
         # Only rewrite the scenario, bypassing the ingestion and transcription phases
         from services.v1.automation.scenario_service import rewrite_reference_script, find_unshowable_asset_reference_issues
@@ -185,6 +241,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 else:
                     tts_request_text = prepare_text_for_minimax_tts(tts_script)
                     tts_audio_path = text_to_speech_minimax(tts_script, voice_id=tts_voice_id or None)
+                tts_audio_path = _trim_tts_silence(tts_audio_path, tts_silence_trim_min_duration_seconds)
                 tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
                 try:
                     deepgram_result = transcribe_media_deepgram(tts_audio_path)

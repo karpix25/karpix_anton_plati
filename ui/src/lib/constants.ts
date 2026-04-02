@@ -29,6 +29,7 @@ export const defaultSettings: ClientSettings = {
   tts_provider: "minimax",
   tts_voice_id: "Russian_Engaging_Podcaster_v1",
   elevenlabs_voice_id: "0ArNnoIAWKlT4WweaVMY",
+  tts_silence_trim_min_duration_seconds: 0.35,
   subtitles_enabled: false,
   subtitle_mode: "word_by_word",
   subtitle_style_preset: "classic",

@@ -133,6 +133,7 @@ export default function CuratorDashboard() {
       tts_provider: selectedClient?.tts_provider || "minimax",
       tts_voice_id: selectedClient?.tts_voice_id || "Russian_Engaging_Podcaster_v1",
       elevenlabs_voice_id: selectedClient?.elevenlabs_voice_id || "0ArNnoIAWKlT4WweaVMY",
+      tts_silence_trim_min_duration_seconds: Number(selectedClient?.tts_silence_trim_min_duration_seconds ?? 0.35),
       subtitles_enabled: selectedClient?.subtitles_enabled || false,
       subtitle_mode: selectedClient?.subtitle_mode || "word_by_word",
       subtitle_style_preset: selectedClient?.subtitle_style_preset || "classic",

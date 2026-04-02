@@ -143,7 +143,8 @@ RULES:
 - Write the creative as a {max_clip_duration:.1f}-second storyboard for {profile["model_label"]}, but the camera language should stay user-shot and intimate.
 - timing inside prompt_json must start at 0.0s and cover at most {max_clip_duration:.1f} seconds total.
 - Do not include top-level keys like "task" or "model" inside prompt_json.
-- If the source slot is short, prefer a single continuous shot. In general, use 1 shot for short inserts and at most 2 shots total.
+- Use exactly ONE continuous shot. No cuts, no scene switches, no multi-shot sequencing.
+- "scene_sequencing" must contain exactly one item, covering the full duration.
 - Prefer concrete real-world shots over abstract metaphors when possible.
 - If asset_type is "product_video", keep:
   - "prompt_json": null
@@ -154,6 +155,7 @@ SELF-CHECK BEFORE OUTPUT:
 - Does the frame visibly contain the exact `visual_intent` anchor?
 - Would a human reading only `visual_anchor` guess the same scene as the script intended?
 - Is this still a personal iPhone capture, not travel stock?
+- Is it a single continuous shot with no cuts or scene switches?
 - If any answer is no, rewrite the prompt before returning JSON.
 
 JSON FORMAT:
@@ -168,7 +170,7 @@ JSON FORMAT:
       "asset_url": null,
       "use_ready_asset": false,
         "prompt_json": {{
-        "global_logic": "Authentic vertical iPhone travel footage, user-shot feel, portrait-safe framing, natural light, realistic handheld motion, full storyboard duration {max_clip_duration:.1f} seconds maximum.",
+        "global_logic": "Authentic vertical iPhone travel footage, user-shot feel, portrait-safe framing, natural light, realistic handheld motion, single-take continuous shot, full storyboard duration {max_clip_duration:.1f} seconds maximum.",
         "scene_sequencing": [
           {{
             "shot_id": 1,
@@ -181,7 +183,7 @@ JSON FORMAT:
         "technical_directives": {{
           "camera_movement": "handheld smartphone movement, subtle natural micro-jitter, human reframing",
           "style": "authentic iPhone UGC, realistic travel footage",
-          "continuity": "believable single-take or lightly cut smartphone capture",
+          "continuity": "single-take continuous capture, no cuts or scene switches",
           "aspect_ratio": "{profile["aspect_ratio"]}",
           "resolution": "{profile["resolution"]}",
           "mode": "{profile["mode"] or "default"}",
@@ -248,24 +250,6 @@ KEYWORD SEGMENTS:
                         "visual_anchor": must_show,
                     }
                 ]
-            if duration > 3.2:
-                first_cut = min(duration, 2.0)
-                scene_sequencing = [
-                    {
-                        "shot_id": 1,
-                        "timing": f"0.0s - {first_cut:.1f}s",
-                        "location": f"Specific real-world place directly tied to: {must_show}",
-                        "action": f"Authentic iPhone-style user-shot moment clearly showing this subject in an unbranded, realistic way: {must_show}",
-                        "visual_anchor": must_show,
-                    },
-                    {
-                        "shot_id": 2,
-                        "timing": f"{first_cut:.1f}s - {duration:.1f}s",
-                        "location": f"Same location, natural continuation from a phone camera perspective around: {must_show}",
-                        "action": f"Continue the same real-life moment without drifting away from this exact anchor, keeping the item generic and unbranded: {must_show}",
-                        "visual_anchor": must_show,
-                    }
-                ]
             fallback.append({
                 "slot_start": segment.get("slot_start"),
                 "slot_end": segment.get("slot_end"),
@@ -275,12 +259,12 @@ KEYWORD SEGMENTS:
                 "asset_url": segment.get("asset_url"),
                 "use_ready_asset": use_ready_asset,
                 "prompt_json": None if use_ready_asset else {
-                    "global_logic": f"Authentic vertical iPhone travel footage, user-shot feel, natural light, portrait-safe framing, full storyboard duration {max_clip_duration:.1f} seconds maximum.",
+                    "global_logic": f"Authentic vertical iPhone travel footage, user-shot feel, natural light, portrait-safe framing, single-take continuous shot, full storyboard duration {max_clip_duration:.1f} seconds maximum.",
                     "scene_sequencing": scene_sequencing,
                     "technical_directives": {
                         "camera_movement": "handheld smartphone movement with subtle natural micro-jitter",
                         "style": "authentic iPhone UGC, realistic travel footage",
-                        "continuity": "believable phone-shot continuity, not a polished ad",
+                        "continuity": "single-take continuous capture, no cuts or scene switches",
                         "aspect_ratio": profile["aspect_ratio"],
                         "resolution": profile["resolution"],
                         "mode": profile["mode"] or "default",

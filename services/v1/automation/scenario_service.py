@@ -112,6 +112,19 @@ HOOK_BAN_PHRASES = [
     "прикол в том",
 ]
 
+FILLER_WORDS_BAN = [
+    "короче",
+    "типа",
+    "ну",
+    "как бы",
+    "в общем",
+    "в целом",
+    "значит",
+    "понимаешь",
+    "знаешь",
+    "по сути",
+]
+
 UNSHOWABLE_REFERENCE_NOUNS_PATTERN = (
     r"(?:"
     r"сайт(?:а|ы|ов)?|"
@@ -332,6 +345,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - The product mention must feel like a lived recommendation, not an ad insert.
     - Avoid loud promo language like "забудьте о трудностях", "лучший сервис", "революция", "подписывайтесь и я открою".
     - Prefer natural first-person phrasing such as: "я там платил через...", "у меня всё прошло без проблем", "этим сервисом удобно оплачивать..." when appropriate.
+    - Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
     - The CTA must sound organic and low-pressure, like friendly advice or a personal tip.
     - Ignore ad integrations, affiliate inserts, Telegram channels, promo placements, and brand mentions from the source script unless they refer to the target product itself.
     - Do NOT carry over source creators, source channels, source calls to subscribe, or third-party promo lines into the rewrite.
@@ -568,6 +582,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
        - Если стадия "Осознает продукт" — делайте упор на экспертные детали и сравнение.
     6. **Human Touch**: Используйте маркеры живой речи из Linguistic Fingerprint оригинала (связки, обращения, темп).
     7. Не используйте указательные формулировки для внешних сайтов, приложений и товаров, которые зритель не увидит в кадре: нельзя "вот эти сайты", "первый сайт", "вот этот крем". Говорите только обобщенно: "есть сервис", "одна платформа", "несколько сайтов", "средство от комаров".
+    8. Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
 
     ВЕРНИТЕ JSON:
     {{
@@ -678,6 +693,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     6. Если референсы открываются утверждением-наблюдением, открывайтесь утверждением-наблюдением. Если они открываются списком, открывайтесь списком. Если они открываются прямым советом/командой, сохраняйте эту механику.
     6a. Внутренне определи доминирующий hook shape кластера и сохрани его в первом предложении нового сценария.
     7. Не использовать штампы "Думаешь...", "Думаете...", "А вот и нет!", "Забудьте!", "Прикол в том, что..." если таких открытий нет среди исходных референсов.
+    7a. Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
     8. Вариация №{variation_index} из {total_variations}.
     9. Не используйте указательные формулировки для неподготовленных внешних сайтов, приложений и товаров: нельзя "вот эти сайты", "первый сайт", "второй сайт", "вот этот спрей". Если нужно упомянуть ресурс или предмет, описывайте его обобщенно и без визуального указания.
 
@@ -754,7 +770,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     2. NO HELLOS: Start DIRECTLY with the hook. No "Привет всем", "Всем привет", "Привет, друзья", or any other introductory filler.
     3. VIRAL HOOK: The first 1-2 sentences must follow the proven opening architecture of the reference behind these cards, not a generic LLM hook.
     4. FACTUAL DENSITY: Avoid vague adjectives like "удобно", "быстро", "выгодно". Replace them with concrete numbers, names, or proof points.
-    5. NATURAL VOICE: Write for a human "Talking Head". Use conversational связки (так вот, прикол в том, короче).
+    5. NATURAL VOICE: Write for a human "Talking Head". Use natural connectors without filler words. Do NOT use слова-паразиты: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
     6. PRODUCT INTEGRATION: Woven the product naturally as the "Enabler". It shouldn't feel like a mid-roll ad, it should be the logical solution to the pain point mentioned.
     7. Avoid repetitive stock openers if they were not present in the source hook. Forbidden phrases unless present in the source opening: {json.dumps(banned_hook_phrases, ensure_ascii=False)}
     8. Do NOT use demonstrative references to third-party sites, apps, or consumer products that the viewer cannot literally see on screen. Forbidden examples: "вот эти сайты", "первый сайт", "вот этот крем". Use generic wording instead: "есть сервис", "одна платформа", "несколько сайтов", "крем с высоким SPF".

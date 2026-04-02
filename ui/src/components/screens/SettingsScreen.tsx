@@ -166,6 +166,7 @@ const normalizeSettings = (settings: Settings): Settings => {
   const fallbackMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[fallbackPreset];
   const marginV = Number(settings.subtitle_margin_v);
   const marginPercent = Number(settings.subtitle_margin_percent);
+  const silenceTrimMinSeconds = Number(settings.tts_silence_trim_min_duration_seconds);
 
   return {
     ...settings,
@@ -174,6 +175,8 @@ const normalizeSettings = (settings: Settings): Settings => {
       Number.isFinite(marginV) && marginV > 0 ? marginV : fallbackMarginV,
     subtitle_margin_percent:
       Number.isFinite(marginPercent) && marginPercent >= 0 ? marginPercent : fallbackMarginPercent,
+    tts_silence_trim_min_duration_seconds:
+      Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds > 0 ? silenceTrimMinSeconds : 0.35,
   };
 };
 
@@ -364,6 +367,7 @@ export function SettingsScreen({
   const subtitleOutlineWidth = Number(draftSettings.subtitle_outline_width || 3);
   const subtitleMarginDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_V[subtitleStylePreset] || 140;
   const subtitleMarginPercentDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
+  const ttsSilenceTrimMinSeconds = Number(draftSettings.tts_silence_trim_min_duration_seconds || 0.35);
   const subtitleMarginPercent = Math.min(
     100,
     Math.max(0, Number(draftSettings.subtitle_margin_percent ?? subtitleMarginPercentDefault))
@@ -1138,6 +1142,38 @@ export function SettingsScreen({
                   </Select>
                 </div>
               )}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Вырезание тишины (минимальная пауза)
+                  </label>
+                  <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
+                    {ttsSilenceTrimMinSeconds.toFixed(2)} сек
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={0.2}
+                  max={0.8}
+                  step={0.05}
+                  value={ttsSilenceTrimMinSeconds}
+                  onChange={(event) =>
+                    setDraftSettings((prev) => ({
+                      ...prev,
+                      tts_silence_trim_min_duration_seconds: Number(event.target.value),
+                    }))
+                  }
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                  <span>0.20 сек</span>
+                  <span>0.40 сек</span>
+                  <span>0.80 сек</span>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Удаляет тишину из TTS до расчёта word timestamps. Меньше значение = более агрессивная склейка, больше значение = мягче и естественнее.
+                </p>
+              </div>
               <div className="rounded-xl border border-white/70 bg-white px-4 py-3 text-xs leading-5 text-muted-foreground">
                 <div><span className="font-semibold text-foreground">Провайдер:</span> {ttsProvider === "elevenlabs" ? "ElevenLabs v3" : "MiniMax"}</div>
                 {ttsProvider === "elevenlabs" ? (

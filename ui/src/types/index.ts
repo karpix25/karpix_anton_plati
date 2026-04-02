@@ -23,6 +23,7 @@ export interface Client {
   tts_provider?: "minimax" | "elevenlabs";
   tts_voice_id?: string;
   elevenlabs_voice_id?: string;
+  tts_silence_trim_min_duration_seconds?: number;
   subtitles_enabled?: boolean;
   subtitle_mode?: "word_by_word" | "phrase_block";
   subtitle_style_preset?: "classic" | "impact" | "soft_box";
@@ -149,6 +150,7 @@ export interface Settings {
   tts_provider: "minimax" | "elevenlabs";
   tts_voice_id: string;
   elevenlabs_voice_id: string;
+  tts_silence_trim_min_duration_seconds: number;
   subtitles_enabled: boolean;
   subtitle_mode: SubtitleMode;
   subtitle_style_preset: SubtitleStylePreset;
