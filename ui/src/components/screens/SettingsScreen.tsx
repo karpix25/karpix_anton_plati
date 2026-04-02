@@ -168,6 +168,7 @@ const normalizeSettings = (settings: Settings): Settings => {
   const marginPercent = Number(settings.subtitle_margin_percent);
   const silenceTrimMinSeconds = Number(settings.tts_silence_trim_min_duration_seconds);
   const silenceTrimThresholdDb = Number(settings.tts_silence_trim_threshold_db);
+  const sentenceTrimMinGapSeconds = Number(settings.tts_sentence_trim_min_gap_seconds);
 
   return {
     ...settings,
@@ -180,6 +181,10 @@ const normalizeSettings = (settings: Settings): Settings => {
       Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds > 0 ? silenceTrimMinSeconds : 0.35,
     tts_silence_trim_threshold_db:
       Number.isFinite(silenceTrimThresholdDb) ? silenceTrimThresholdDb : -45,
+    tts_silence_trim_enabled: settings.tts_silence_trim_enabled ?? true,
+    tts_sentence_trim_enabled: settings.tts_sentence_trim_enabled ?? false,
+    tts_sentence_trim_min_gap_seconds:
+      Number.isFinite(sentenceTrimMinGapSeconds) && sentenceTrimMinGapSeconds > 0 ? sentenceTrimMinGapSeconds : 0.3,
   };
 };
 
@@ -372,6 +377,9 @@ export function SettingsScreen({
   const subtitleMarginPercentDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
   const ttsSilenceTrimMinSeconds = Number(draftSettings.tts_silence_trim_min_duration_seconds || 0.35);
   const ttsSilenceTrimThresholdDb = Number(draftSettings.tts_silence_trim_threshold_db ?? -45);
+  const ttsSilenceTrimEnabled = draftSettings.tts_silence_trim_enabled ?? true;
+  const ttsSentenceTrimEnabled = draftSettings.tts_sentence_trim_enabled ?? false;
+  const ttsSentenceTrimMinGapSeconds = Number(draftSettings.tts_sentence_trim_min_gap_seconds ?? 0.3);
   const subtitleMarginPercent = Math.min(
     100,
     Math.max(0, Number(draftSettings.subtitle_margin_percent ?? subtitleMarginPercentDefault))
@@ -1146,6 +1154,20 @@ export function SettingsScreen({
                   </Select>
                 </div>
               )}
+              <div className="flex items-center justify-between rounded-xl border border-white/70 bg-white px-4 py-2 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">Вырезание тишины (dB)</span>
+                <label className="flex items-center gap-2 text-xs text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={ttsSilenceTrimEnabled}
+                    onChange={(event) =>
+                      setDraftSettings((prev) => ({ ...prev, tts_silence_trim_enabled: event.target.checked }))
+                    }
+                    className="h-4 w-4 rounded border-[#d6e0e8]"
+                  />
+                  Включено
+                </label>
+              </div>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -1208,6 +1230,52 @@ export function SettingsScreen({
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">
                   Чем ближе к нулю, тем агрессивнее срезаются тихие участки. Если «съедает» слова — опустите порог до -45…-55 dB.
+                </p>
+              </div>
+              <div className="flex items-center justify-between rounded-xl border border-white/70 bg-white px-4 py-2 text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">Паузы между предложениями</span>
+                <label className="flex items-center gap-2 text-xs text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={ttsSentenceTrimEnabled}
+                    onChange={(event) =>
+                      setDraftSettings((prev) => ({ ...prev, tts_sentence_trim_enabled: event.target.checked }))
+                    }
+                    className="h-4 w-4 rounded border-[#d6e0e8]"
+                  />
+                  Включено
+                </label>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Минимальная пауза для обрезки между предложениями
+                  </label>
+                  <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
+                    {ttsSentenceTrimMinGapSeconds.toFixed(2)} сек
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={0.2}
+                  max={1.0}
+                  step={0.05}
+                  value={ttsSentenceTrimMinGapSeconds}
+                  onChange={(event) =>
+                    setDraftSettings((prev) => ({
+                      ...prev,
+                      tts_sentence_trim_min_gap_seconds: Number(event.target.value),
+                    }))
+                  }
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                  <span>0.20 сек</span>
+                  <span>0.50 сек</span>
+                  <span>1.00 сек</span>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Режет только паузы между предложениями, не трогая слова. Работает после word timestamps и пересчитывает тайминг.
                 </p>
               </div>
               <div className="rounded-xl border border-white/70 bg-white px-4 py-3 text-xs leading-5 text-muted-foreground">

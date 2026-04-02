@@ -7,6 +7,7 @@ import logging
 import json
 import os
 import subprocess
+import re
 from services.v1.automation.pipeline_orchestrator import run_content_gen_pipeline
 from services.v1.database.db_service import get_db_connection, init_db
 from datetime import datetime, timezone
@@ -19,6 +20,9 @@ logger = logging.getLogger("SingleGenerator")
 SILENCE_TRIM_ENABLED = os.getenv("TTS_SILENCE_TRIM_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
 DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS = float(os.getenv("TTS_SILENCE_TRIM_MIN_DURATION_SECONDS", "0.35"))
 DEFAULT_SILENCE_TRIM_THRESHOLD_DB = float(os.getenv("TTS_SILENCE_TRIM_THRESHOLD_DB", "-45"))
+DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_GAP_SECONDS", "0.3"))
+DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.1"))
+SENTENCE_END_RE = re.compile(r'[.!?…]+["»”)]*$')
 
 
 def _probe_audio_duration_seconds(file_path):
@@ -104,6 +108,165 @@ def _trim_tts_silence(
 
     return file_path
 
+def _is_sentence_end(punctuated_word: str | None) -> bool:
+    if not punctuated_word:
+        return False
+    return bool(SENTENCE_END_RE.search(str(punctuated_word).strip()))
+
+def _build_sentence_removal_intervals(
+    words: list[dict],
+    min_gap_seconds: float,
+    keep_gap_seconds: float,
+) -> list[tuple[float, float]]:
+    intervals: list[tuple[float, float]] = []
+    if not words:
+        return intervals
+
+    resolved_min_gap = max(0.1, min(2.0, float(min_gap_seconds)))
+    resolved_keep_gap = max(0.0, min(0.5, float(keep_gap_seconds)))
+
+    for idx in range(len(words) - 1):
+        current = words[idx]
+        nxt = words[idx + 1]
+        if not _is_sentence_end(current.get("punctuated_word") or current.get("word")):
+            continue
+        try:
+            end_time = float(current.get("end", 0))
+            next_start = float(nxt.get("start", 0))
+        except (TypeError, ValueError):
+            continue
+        gap = next_start - end_time
+        if gap < resolved_min_gap:
+            continue
+        if gap <= resolved_keep_gap + 0.02:
+            continue
+        keep_tail = min(resolved_keep_gap * 0.5, gap)
+        keep_head = max(0.0, resolved_keep_gap - keep_tail)
+        remove_start = end_time + keep_tail
+        remove_end = next_start - keep_head
+        if remove_end - remove_start >= 0.04:
+            intervals.append((remove_start, remove_end))
+    return intervals
+
+def _trim_sentence_gaps(
+    file_path: str | None,
+    words: list[dict],
+    min_gap_seconds: float | None,
+    keep_gap_seconds: float | None,
+    enabled: bool,
+) -> tuple[str | None, list[dict]]:
+    if not enabled or not file_path or not os.path.exists(file_path) or not words:
+        return file_path, words
+
+    resolved_min_gap = min_gap_seconds if min_gap_seconds is not None else DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS
+    resolved_keep_gap = keep_gap_seconds if keep_gap_seconds is not None else DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS
+    try:
+        resolved_min_gap = float(resolved_min_gap)
+    except (TypeError, ValueError):
+        resolved_min_gap = DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS
+    try:
+        resolved_keep_gap = float(resolved_keep_gap)
+    except (TypeError, ValueError):
+        resolved_keep_gap = DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS
+
+    removal_intervals = _build_sentence_removal_intervals(words, resolved_min_gap, resolved_keep_gap)
+    if not removal_intervals:
+        return file_path, words
+
+    for word in words:
+        try:
+            w_start = float(word.get("start", 0))
+            w_end = float(word.get("end", 0))
+        except (TypeError, ValueError):
+            continue
+        for r_start, r_end in removal_intervals:
+            if w_start < r_end and w_end > r_start:
+                return file_path, words
+
+    audio_duration = _probe_audio_duration_seconds(file_path)
+    if audio_duration is None:
+        try:
+            audio_duration = max(float(w.get("end", 0)) for w in words)
+        except Exception:
+            audio_duration = None
+    if not audio_duration or audio_duration <= 0:
+        return file_path, words
+
+    segments: list[tuple[float, float]] = []
+    cursor = 0.0
+    for r_start, r_end in removal_intervals:
+        keep_end = max(cursor, min(r_start, audio_duration))
+        if keep_end - cursor >= 0.02:
+            segments.append((cursor, keep_end))
+        cursor = max(cursor, min(r_end, audio_duration))
+    if audio_duration - cursor >= 0.02:
+        segments.append((cursor, audio_duration))
+
+    if len(segments) <= 1:
+        return file_path, words
+
+    root, ext = os.path.splitext(file_path)
+    trimmed_path = f"{root}_senttrim{ext}" if ext else f"{file_path}_senttrim"
+    filter_parts = []
+    concat_inputs = []
+    for idx, (start, end) in enumerate(segments):
+        filter_parts.append(
+            f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]"
+        )
+        concat_inputs.append(f"[a{idx}]")
+    filter_parts.append(f"{''.join(concat_inputs)}concat=n={len(segments)}:v=0:a=1[out]")
+    filter_complex = ";".join(filter_parts)
+
+    try:
+        subprocess.check_output(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                file_path,
+                "-filter_complex",
+                filter_complex,
+                "-map",
+                "[out]",
+                "-c:a",
+                "libmp3lame",
+                "-q:a",
+                "4",
+                trimmed_path,
+            ],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if not os.path.exists(trimmed_path) or os.path.getsize(trimmed_path) == 0:
+            return file_path, words
+    except Exception as error:
+        logger.warning("Sentence gap trim failed for %s: %s", file_path, error)
+        return file_path, words
+
+    adjusted_words = []
+    removal_intervals_sorted = sorted(removal_intervals, key=lambda item: item[0])
+    interval_idx = 0
+    removed_cumulative = 0.0
+    for word in words:
+        try:
+            w_start = float(word.get("start", 0))
+            w_end = float(word.get("end", 0))
+        except (TypeError, ValueError):
+            adjusted_words.append(word)
+            continue
+        while interval_idx < len(removal_intervals_sorted) and w_start >= removal_intervals_sorted[interval_idx][1] - 1e-6:
+            r_start, r_end = removal_intervals_sorted[interval_idx]
+            removed_cumulative += max(0.0, r_end - r_start)
+            interval_idx += 1
+        new_start = max(0.0, w_start - removed_cumulative)
+        new_end = max(new_start, w_end - removed_cumulative)
+        updated = dict(word)
+        updated["start"] = round(new_start, 2)
+        updated["end"] = round(new_end, 2)
+        adjusted_words.append(updated)
+
+    return trimmed_path, adjusted_words
+
 def _load_json_if_needed(value):
     if isinstance(value, str):
         try:
@@ -161,6 +324,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         elevenlabs_voice_id = None
         tts_silence_trim_min_duration_seconds = None
         tts_silence_trim_threshold_db = None
+        tts_silence_trim_enabled = None
+        tts_sentence_trim_enabled = None
+        tts_sentence_trim_min_gap_seconds = None
         
         if resolved_client_id:
             client_data = get_client(client_id=resolved_client_id)
@@ -187,6 +353,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 elevenlabs_voice_id = client_data.get("elevenlabs_voice_id")
                 tts_silence_trim_min_duration_seconds = client_data.get("tts_silence_trim_min_duration_seconds")
                 tts_silence_trim_threshold_db = client_data.get("tts_silence_trim_threshold_db")
+                tts_silence_trim_enabled = client_data.get("tts_silence_trim_enabled")
+                tts_sentence_trim_enabled = client_data.get("tts_sentence_trim_enabled")
+                tts_sentence_trim_min_gap_seconds = client_data.get("tts_sentence_trim_min_gap_seconds")
                 
         # Only rewrite the scenario, bypassing the ingestion and transcription phases
         from services.v1.automation.scenario_service import rewrite_reference_script, find_unshowable_asset_reference_issues
@@ -254,11 +423,14 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 else:
                     tts_request_text = prepare_text_for_minimax_tts(tts_script)
                     tts_audio_path = text_to_speech_minimax(tts_script, voice_id=tts_voice_id or None)
-                tts_audio_path = _trim_tts_silence(
-                    tts_audio_path,
-                    tts_silence_trim_min_duration_seconds,
-                    tts_silence_trim_threshold_db,
-                )
+                if tts_silence_trim_enabled is None:
+                    tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
+                if tts_silence_trim_enabled:
+                    tts_audio_path = _trim_tts_silence(
+                        tts_audio_path,
+                        tts_silence_trim_min_duration_seconds,
+                        tts_silence_trim_threshold_db,
+                    )
                 tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
                 try:
                     deepgram_result = transcribe_media_deepgram(tts_audio_path)
@@ -274,6 +446,16 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                     "words": deepgram_result.get("words", []),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
+                if tts_sentence_trim_enabled and not deepgram_result.get("is_fallback"):
+                    tts_audio_path, adjusted_words = _trim_sentence_gaps(
+                        tts_audio_path,
+                        deepgram_result.get("words", []),
+                        tts_sentence_trim_min_gap_seconds,
+                        DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS,
+                        True,
+                    )
+                    tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
+                    tts_word_timestamps["words"] = adjusted_words
                 video_keyword_segments = extract_visual_keyword_segments(
                     scenario_text=script_text,
                     tts_text=tts_script,

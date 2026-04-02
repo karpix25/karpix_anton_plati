@@ -25,6 +25,9 @@ export interface Client {
   elevenlabs_voice_id?: string;
   tts_silence_trim_min_duration_seconds?: number;
   tts_silence_trim_threshold_db?: number;
+  tts_silence_trim_enabled?: boolean;
+  tts_sentence_trim_enabled?: boolean;
+  tts_sentence_trim_min_gap_seconds?: number;
   subtitles_enabled?: boolean;
   subtitle_mode?: "word_by_word" | "phrase_block";
   subtitle_style_preset?: "classic" | "impact" | "soft_box";
@@ -153,6 +156,9 @@ export interface Settings {
   elevenlabs_voice_id: string;
   tts_silence_trim_min_duration_seconds: number;
   tts_silence_trim_threshold_db: number;
+  tts_silence_trim_enabled: boolean;
+  tts_sentence_trim_enabled: boolean;
+  tts_sentence_trim_min_gap_seconds: number;
   subtitles_enabled: boolean;
   subtitle_mode: SubtitleMode;
   subtitle_style_preset: SubtitleStylePreset;
