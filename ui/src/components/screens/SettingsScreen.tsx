@@ -167,6 +167,7 @@ const normalizeSettings = (settings: Settings): Settings => {
   const marginV = Number(settings.subtitle_margin_v);
   const marginPercent = Number(settings.subtitle_margin_percent);
   const silenceTrimMinSeconds = Number(settings.tts_silence_trim_min_duration_seconds);
+  const silenceTrimThresholdDb = Number(settings.tts_silence_trim_threshold_db);
 
   return {
     ...settings,
@@ -177,6 +178,8 @@ const normalizeSettings = (settings: Settings): Settings => {
       Number.isFinite(marginPercent) && marginPercent >= 0 ? marginPercent : fallbackMarginPercent,
     tts_silence_trim_min_duration_seconds:
       Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds > 0 ? silenceTrimMinSeconds : 0.35,
+    tts_silence_trim_threshold_db:
+      Number.isFinite(silenceTrimThresholdDb) ? silenceTrimThresholdDb : -45,
   };
 };
 
@@ -368,6 +371,7 @@ export function SettingsScreen({
   const subtitleMarginDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_V[subtitleStylePreset] || 140;
   const subtitleMarginPercentDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
   const ttsSilenceTrimMinSeconds = Number(draftSettings.tts_silence_trim_min_duration_seconds || 0.35);
+  const ttsSilenceTrimThresholdDb = Number(draftSettings.tts_silence_trim_threshold_db ?? -45);
   const subtitleMarginPercent = Math.min(
     100,
     Math.max(0, Number(draftSettings.subtitle_margin_percent ?? subtitleMarginPercentDefault))
@@ -1172,6 +1176,38 @@ export function SettingsScreen({
                 </div>
                 <p className="text-xs leading-5 text-muted-foreground">
                   Удаляет тишину из TTS до расчёта word timestamps. Меньше значение = более агрессивная склейка, больше значение = мягче и естественнее.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                    Порог тишины (dB)
+                  </label>
+                  <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
+                    {ttsSilenceTrimThresholdDb.toFixed(0)} dB
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  min={-60}
+                  max={-25}
+                  step={1}
+                  value={ttsSilenceTrimThresholdDb}
+                  onChange={(event) =>
+                    setDraftSettings((prev) => ({
+                      ...prev,
+                      tts_silence_trim_threshold_db: Number(event.target.value),
+                    }))
+                  }
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+                  <span>-60 dB</span>
+                  <span>-45 dB</span>
+                  <span>-25 dB</span>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Чем ближе к нулю, тем агрессивнее срезаются тихие участки. Если «съедает» слова — опустите порог до -45…-55 dB.
                 </p>
               </div>
               <div className="rounded-xl border border-white/70 bg-white px-4 py-3 text-xs leading-5 text-muted-foreground">
