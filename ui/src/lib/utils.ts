@@ -42,3 +42,30 @@ export function huntStageTagStyle(stage?: string) {
 
   return "bg-zinc-50 text-zinc-600 border border-zinc-100";
 }
+
+const PLACEHOLDER_PREFIXES = [
+  "не определ",
+  "не указан",
+  "не указана",
+  "не указано",
+  "undefined",
+  "none",
+  "null",
+  "нет данных",
+  "без данных",
+];
+
+export function normalizePlaceholderText(value?: string | null) {
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+  const normalized = String(value).trim();
+  if (!normalized) {
+    return undefined;
+  }
+  const lowered = normalized.toLowerCase();
+  if (PLACEHOLDER_PREFIXES.some((prefix) => lowered.startsWith(prefix))) {
+    return undefined;
+  }
+  return normalized;
+}

@@ -2,7 +2,7 @@ import { X, ExternalLink, FolderOpen, Palette, Grid3X3, Sparkles, LoaderCircle }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Reference, Client } from "@/types";
-import { huntStageTagStyle } from "@/lib/utils";
+import { huntStageTagStyle, normalizePlaceholderText } from "@/lib/utils";
 
 const TRANSLATIONS: Record<string, string> = {
   // Pattern Types
@@ -23,6 +23,7 @@ const TRANSLATIONS: Record<string, string> = {
 };
 
 const t = (text: string) => TRANSLATIONS[text] || text;
+const HUNT_STAGE_FALLBACK = "Осознает проблему";
 
 interface ReferenceModalProps {
   isOpen: boolean;
@@ -42,6 +43,17 @@ export function ReferenceModal({
   isRewriting
 }: ReferenceModalProps) {
   if (!isOpen || !reference) return null;
+  const coreThesis =
+    normalizePlaceholderText(reference.audit_json?.pattern_framework?.core_thesis) ||
+    normalizePlaceholderText(reference.audit_json?.reference_strategy?.topic_cluster);
+  const patternType =
+    normalizePlaceholderText(reference.audit_json?.pattern_framework?.pattern_type) || "other";
+  const huntStage =
+    normalizePlaceholderText(reference.audit_json?.hunt_ladder?.stage) || HUNT_STAGE_FALLBACK;
+  const formatType =
+    normalizePlaceholderText(reference.audit_json?.pattern_framework?.content_shape?.format_type) ||
+    patternType;
+  const narratorRole = normalizePlaceholderText(reference.audit_json?.pattern_framework?.narrator_role);
 
   return (
     <div
@@ -58,14 +70,14 @@ export function ReferenceModal({
               <Badge variant="outline" className="border-border bg-muted text-muted-foreground uppercase tracking-widest text-[9px]">
                 {t(reference.niche || "General")}
               </Badge>
-              {reference.audit_json?.pattern_framework?.pattern_type && (
+              {patternType && (
                 <Badge className="border-none bg-primary/10 text-primary uppercase tracking-widest text-[9px]">
-                  {t(reference.audit_json.pattern_framework.pattern_type)}
+                  {t(patternType)}
                 </Badge>
               )}
-              {reference.audit_json?.hunt_ladder?.stage && (
-                <div className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${huntStageTagStyle(reference.audit_json.hunt_ladder.stage)}`}>
-                  {t(reference.audit_json.hunt_ladder.stage)}
+              {huntStage && (
+                <div className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ${huntStageTagStyle(huntStage)}`}>
+                  {t(huntStage)}
                 </div>
               )}
               {reference.scenario_json?.script && (
@@ -147,10 +159,10 @@ export function ReferenceModal({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold">
-                    {reference.audit_json?.pattern_framework?.core_thesis || "Тема не выделена"}
+                    {coreThesis || "Тема не выделена"}
                   </h4>
                   <p className="text-xs text-muted-foreground">
-                    {reference.audit_json?.pattern_framework?.content_shape?.format_type || "Формат не определён"}
+                    {formatType || "Формат не определён"}
                   </p>
                 </div>
               </div>
@@ -167,10 +179,10 @@ export function ReferenceModal({
                 </div>
                 <div>
                   <h4 className="text-sm font-bold">
-                    {t(reference.audit_json?.pattern_framework?.pattern_type || "Паттерн не выделен")}
+                    {t(patternType || "Паттерн не выделен")}
                   </h4>
                   <p className="text-xs text-muted-foreground">
-                    {reference.audit_json?.pattern_framework?.narrator_role || "Роль автора не определена"}
+                    {narratorRole || "Роль автора не определена"}
                   </p>
                 </div>
               </div>

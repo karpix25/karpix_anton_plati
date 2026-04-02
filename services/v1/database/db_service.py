@@ -42,6 +42,17 @@ def get_pool() -> ThreadedConnectionPool:
 
 class ContentNormalizer:
     """Handles canonicalization and normalization of content patterns and topics."""
+    PLACEHOLDER_PREFIXES = (
+        "не определ",
+        "не указан",
+        "не указана",
+        "не указано",
+        "undefined",
+        "none",
+        "null",
+        "нет данных",
+        "без данных",
+    )
     
     PATTERN_TYPE_ALIASES = {
         "top_list": "top_list", "list": "top_list", "список": "top_list", "топ": "top_list", "top": "top_list",
@@ -91,6 +102,19 @@ class ContentNormalizer:
         text = str(value).strip().lower().replace("ё", "е")
         return re.sub(r"\s+", " ", text)
 
+    @classmethod
+    def is_placeholder(cls, value: Any) -> bool:
+        text = cls.normalize_text(value)
+        if not text:
+            return True
+        return any(text.startswith(prefix) for prefix in cls.PLACEHOLDER_PREFIXES)
+
+    @classmethod
+    def clean_text_field(cls, value: Any) -> Optional[str]:
+        if cls.is_placeholder(value):
+            return None
+        return str(value).strip()
+
     @staticmethod
     def slugify(value: Any) -> str:
         text = ContentNormalizer.normalize_text(value)
@@ -99,18 +123,20 @@ class ContentNormalizer:
 
     @classmethod
     def canonical_pattern_type(cls, value: Optional[str]) -> str:
-        if value is None: return "other"
+        if cls.is_placeholder(value): return "other"
         key = cls.slugify(value)
         return cls.PATTERN_TYPE_ALIASES.get(key, key or "other")
 
     @classmethod
     def canonical_format_type(cls, value: Optional[str]) -> str:
-        if value is None: return "other"
+        if cls.is_placeholder(value): return "other"
         key = cls.slugify(value)
         return cls.FORMAT_TYPE_ALIASES.get(key, key or "other")
 
     @classmethod
     def canonical_topic_family(cls, value: str, topic_angle: Optional[str] = None, hook_type: Optional[str] = None) -> str:
+        if cls.is_placeholder(value):
+            return "general_travel_topic"
         key = cls.slugify(value)
         if key in cls.TOPIC_FAMILY_ALIASES:
             return cls.TOPIC_FAMILY_ALIASES[key]
@@ -149,23 +175,29 @@ class ContentNormalizer:
     def normalize_structure_data(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         data = data or {}
         shape = data.get("content_shape") or {}
-        pattern = cls.canonical_pattern_type(data.get("pattern_type"))
-        fmt = cls.canonical_format_type(shape.get("format_type") or pattern)
+        clean_pattern = cls.clean_text_field(data.get("pattern_type"))
+        pattern = cls.canonical_pattern_type(clean_pattern)
+        clean_format = cls.clean_text_field(shape.get("format_type")) or pattern
+        fmt = cls.canonical_format_type(clean_format)
         sig = cls.sequence_signature(shape.get("sequence_logic", []))
+        narrator_role = cls.clean_text_field(data.get("narrator_role"))
+        hook_style = cls.clean_text_field(data.get("hook_style"))
+        core_thesis = cls.clean_text_field(data.get("core_thesis"))
         
         fingerprint = "::".join([
             pattern, 
             fmt, 
-            cls.normalize_text(data.get("narrator_role")) or "no_role",
-            cls.normalize_text(data.get("hook_style")) or "no_hook", 
+            cls.normalize_text(narrator_role) or "no_role",
+            cls.normalize_text(hook_style) or "no_hook", 
             sig
         ])
 
         return {
             **data, 
             "pattern_type": pattern, 
-            "narrator_role": data.get("narrator_role") or "Не определен",
-            "hook_style": data.get("hook_style") or "Не определен", 
+            "narrator_role": narrator_role,
+            "hook_style": hook_style,
+            "core_thesis": core_thesis,
             "content_shape": {**shape, "format_type": fmt},
             "canonical_pattern_key": pattern, 
             "structure_fingerprint": fingerprint
@@ -174,15 +206,23 @@ class ContentNormalizer:
     @classmethod
     def normalize_topic_data(cls, data: Dict[str, Any]) -> Dict[str, Any]:
         data = data or {}
+        topic_short = cls.clean_text_field(data.get("topic_short"))
+        topic_cluster = cls.clean_text_field(data.get("topic_cluster")) or topic_short
+        topic_family = cls.clean_text_field(data.get("topic_family")) or topic_cluster or topic_short
+        topic_angle = cls.clean_text_field(data.get("topic_angle"))
+        promise = cls.clean_text_field(data.get("promise"))
+        pain_point = cls.clean_text_field(data.get("pain_point"))
+        proof_type = cls.clean_text_field(data.get("proof_type"))
+        cta_type = cls.clean_text_field(data.get("cta_type"))
         family = cls.canonical_topic_family(
-            data.get("topic_family") or data.get("topic_cluster") or data.get("topic_short") or "",
-            topic_angle=data.get("topic_angle"), 
+            topic_family or "",
+            topic_angle=topic_angle, 
             hook_type=data.get("hook_type")
         )
         # Heuristics from normalize_db.py
-        country = data.get('country')
+        country = cls.clean_text_field(data.get('country'))
         if not country:
-            text = (data.get('topic_short') or "") + " " + (data.get('topic_family') or "")
+            text = (topic_short or "") + " " + (topic_family or "")
             countries = ["Россия", "Турция", "Европа", "Азия", "США", "Таиланд", "Бали"]
             for c in countries:
                 if c.lower() in text.lower():
@@ -190,9 +230,9 @@ class ContentNormalizer:
                     break
             if not country: country = "Global"
 
-        hunt_stage = data.get('hunt_stage')
+        hunt_stage = cls.clean_text_field(data.get('hunt_stage'))
         if not hunt_stage:
-            text = (data.get('topic_short') or "") + " " + (data.get('topic_angle') or "")
+            text = (topic_short or "") + " " + (topic_angle or "")
             if any(x in text.lower() for x in ["как", "зачем", "почему", "проблема"]):
                 hunt_stage = "Awareness"
             elif any(x in text.lower() for x in ["топ", "лучшие", "сравнение"]):
@@ -202,8 +242,15 @@ class ContentNormalizer:
 
         return {
             **data, 
-            "topic_family": data.get("topic_family") or family, 
+            "topic_short": topic_short,
+            "topic_cluster": topic_cluster or topic_short,
+            "topic_family": topic_family or family,
             "canonical_topic_family": family,
+            "topic_angle": topic_angle,
+            "promise": promise,
+            "pain_point": pain_point,
+            "proof_type": proof_type,
+            "cta_type": cta_type,
             "country": country,
             "hunt_stage": hunt_stage
         }

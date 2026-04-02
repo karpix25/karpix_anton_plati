@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Reference } from "@/types";
-import { patternTagStyle, huntStageTagStyle } from "@/lib/utils";
+import { patternTagStyle, huntStageTagStyle, normalizePlaceholderText } from "@/lib/utils";
 
 const TRANSLATIONS: Record<string, string> = {
   // Pattern Types
@@ -25,6 +25,7 @@ const TRANSLATIONS: Record<string, string> = {
 };
 
 const t = (text: string) => TRANSLATIONS[text] || text;
+const HUNT_STAGE_FALLBACK = "Осознает проблему";
 
 interface LibraryScreenProps {
   references: Reference[];
@@ -125,7 +126,16 @@ export function LibraryScreen({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {references.map((ref) => (
+                {references.map((ref) => {
+                  const coreThesis =
+                    normalizePlaceholderText(ref.audit_json?.pattern_framework?.core_thesis) ||
+                    normalizePlaceholderText(ref.audit_json?.reference_strategy?.topic_cluster);
+                  const patternType =
+                    normalizePlaceholderText(ref.audit_json?.pattern_framework?.pattern_type) || "other";
+                  const huntStage =
+                    normalizePlaceholderText(ref.audit_json?.hunt_ladder?.stage) || HUNT_STAGE_FALLBACK;
+
+                  return (
                   <TableRow
                     key={ref.id}
                     className="cursor-pointer"
@@ -136,18 +146,18 @@ export function LibraryScreen({
                     </TableCell>
                     <TableCell className="max-w-[220px] text-muted-foreground">
                       <div className="line-clamp-2">
-                        {ref.audit_json?.pattern_framework?.core_thesis || "Не выделена"}
+                        {coreThesis || "Не выделена"}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border border-current/10 ${patternTagStyle(ref.audit_json?.pattern_framework?.pattern_type)}`}>
-                        {t(ref.audit_json?.pattern_framework?.pattern_type || "other")}
+                      <span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border border-current/10 ${patternTagStyle(patternType)}`}>
+                        {t(patternType)}
                       </span>
                     </TableCell>
                     <TableCell>
-                      <div className={`inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold shadow-sm ${huntStageTagStyle(ref.audit_json?.hunt_ladder?.stage)}`}>
+                      <div className={`inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold shadow-sm ${huntStageTagStyle(huntStage)}`}>
                         <div className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current opacity-40" />
-                        {t(ref.audit_json?.hunt_ladder?.stage || "Не определена")}
+                        {t(huntStage)}
                       </div>
                     </TableCell>
                     <TableCell className="max-w-[260px] text-muted-foreground">
@@ -177,7 +187,8 @@ export function LibraryScreen({
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           ) : (

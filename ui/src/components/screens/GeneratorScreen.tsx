@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { TopicCard, StructureCard, Client } from "@/types";
+import { normalizePlaceholderText } from "@/lib/utils";
 
 const TRANSLATIONS: Record<string, string> = {
   'how_to_list': 'Как сделать (Список)',
@@ -50,7 +51,7 @@ export function GeneratorScreen({
   const groupedStructures = useMemo(() => {
     const groups: Record<string, StructureCard[]> = {};
     structureCards.forEach(s => {
-      const type = s.pattern_type || "No Type";
+      const type = normalizePlaceholderText(s.pattern_type) || "No Type";
       if (!groups[type]) groups[type] = [];
       groups[type].push(s);
     });
@@ -119,7 +120,9 @@ export function GeneratorScreen({
                   <div className="flex items-start justify-between">
                     <div>
                       <h4 className="mb-2 font-bold text-foreground">{variant.narrator_role || "Без роли"}</h4>
-                      <p className="text-xs leading-relaxed text-muted-foreground">{variant.core_thesis || "Тезис не определен"}</p>
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        {normalizePlaceholderText(variant.core_thesis) || "Тезис не определен"}
+                      </p>
                     </div>
                     {selectedStructure?.id === variant.id && <Check className="h-5 w-5 text-secondary" />}
                   </div>
@@ -176,10 +179,10 @@ export function GeneratorScreen({
                     <Palette className="h-4 w-4" />
                   </div>
                   <h4 className="mb-1 text-sm font-bold leading-tight text-foreground">
-                    {topic.topic_short || "Без названия"}
+                    {normalizePlaceholderText(topic.topic_short) || "Без названия"}
                   </h4>
                   <p className="line-clamp-2 text-[11px] text-muted-foreground">
-                    {topic.promise || "Обещание не выявлено"}
+                    {normalizePlaceholderText(topic.promise) || "Обещание не выявлено"}
                   </p>
                 </button>
               ))}

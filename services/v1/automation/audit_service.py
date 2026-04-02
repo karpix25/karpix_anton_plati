@@ -26,17 +26,109 @@ HUNT_STAGE_ALIASES = {
     "готов купить": "Готов к покупке",
 }
 
+PLACEHOLDER_PREFIXES = (
+    "не определ",
+    "не указан",
+    "не указана",
+    "не указано",
+    "undefined",
+    "none",
+    "null",
+    "нет данных",
+    "без данных",
+)
+
+DEFAULT_HUNT_STAGE = "Осознает проблему"
+
+HUNT_STAGE_CANONICAL = {
+    "неосведомлен": "Неосведомлен",
+    "осознает проблему": "Осознает проблему",
+    "осознает решение": "Осознает решение",
+    "осознает продукт": "Осознает продукт",
+    "готов к покупке": "Готов к покупке",
+}
+
+def _normalize_text(value):
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace("ё", "е")
+
+def _is_placeholder(value):
+    text = _normalize_text(value)
+    if not text:
+        return True
+    return any(text.startswith(prefix) for prefix in PLACEHOLDER_PREFIXES)
+
+def _clean_text(value):
+    if _is_placeholder(value):
+        return None
+    return str(value).strip()
 
 def _normalize_hunt_stage(value):
-    raw = (value or "").strip().lower().replace("ё", "е")
-    return HUNT_STAGE_ALIASES.get(raw, "Не определена")
+    raw = _normalize_text(value)
+    if not raw or _is_placeholder(raw):
+        return DEFAULT_HUNT_STAGE
+    if raw in HUNT_STAGE_ALIASES:
+        return HUNT_STAGE_ALIASES[raw]
+    if raw in HUNT_STAGE_CANONICAL:
+        return HUNT_STAGE_CANONICAL[raw]
+    return DEFAULT_HUNT_STAGE
+
+def _sanitize_reference_strategy(strategy, fallback_topic):
+    strategy = strategy or {}
+    topic_cluster = _clean_text(strategy.get("topic_cluster")) or fallback_topic
+    topic_family = _clean_text(strategy.get("topic_family")) or topic_cluster or fallback_topic
+    topic_angle = _clean_text(strategy.get("topic_angle"))
+    promise = _clean_text(strategy.get("promise"))
+    pain_point = _clean_text(strategy.get("pain_point"))
+    proof_type = _clean_text(strategy.get("proof_type"))
+    cta_type = _clean_text(strategy.get("cta_type"))
+
+    return {
+        **strategy,
+        "topic_cluster": topic_cluster,
+        "topic_family": topic_family,
+        "topic_angle": topic_angle,
+        "promise": promise,
+        "pain_point": pain_point,
+        "proof_type": proof_type,
+        "cta_type": cta_type,
+    }
+
+def _sanitize_pattern_framework(pattern, fallback_topic):
+    pattern = pattern or {}
+    pattern_type = _clean_text(pattern.get("pattern_type")) or "other"
+    core_thesis = _clean_text(pattern.get("core_thesis")) or fallback_topic
+    narrator_role = _clean_text(pattern.get("narrator_role"))
+    hook_style = _clean_text(pattern.get("hook_style"))
+    content_shape = pattern.get("content_shape") or {}
+    format_type = _clean_text(content_shape.get("format_type")) or pattern_type
+
+    return {
+        **pattern,
+        "pattern_type": pattern_type,
+        "core_thesis": core_thesis,
+        "narrator_role": narrator_role,
+        "hook_style": hook_style,
+        "content_shape": {**content_shape, "format_type": format_type},
+    }
+
+def _sanitize_audit_payload(payload, niche):
+    payload = payload or {}
+    strategy = _sanitize_reference_strategy(payload.get("reference_strategy"), fallback_topic=niche)
+    fallback_topic = strategy.get("topic_cluster") or strategy.get("topic_family") or niche
+    payload["reference_strategy"] = strategy
+    payload["pattern_framework"] = _sanitize_pattern_framework(payload.get("pattern_framework"), fallback_topic=fallback_topic)
+    payload = _normalize_hunt_ladder(payload)
+    return payload
 
 
 def _normalize_hunt_ladder(payload):
     ladder = payload.get("hunt_ladder") or {}
+    reason = ladder.get("reason")
     payload["hunt_ladder"] = {
         "stage": _normalize_hunt_stage(ladder.get("stage")),
-        "reason": ladder.get("reason") or "Модель не предоставила объяснение автоматически"
+        "reason": _clean_text(reason) or "Модель не предоставила объяснение автоматически"
     }
     return payload
 
@@ -212,10 +304,10 @@ def get_transcript_audit(transcript, niche="General", target_product_info=None, 
         # Ensure critical keys exist to guarantee UI stability and data integrity
         if "hunt_ladder" not in audit_res:
             audit_res["hunt_ladder"] = {
-                "stage": "Не определена",
+                "stage": DEFAULT_HUNT_STAGE,
                 "reason": "Модель не предоставила данные автоматически"
             }
-        audit_res = _normalize_hunt_ladder(audit_res)
+        audit_res = _sanitize_audit_payload(audit_res, niche)
         
         if "viral_score" not in audit_res:
             audit_res["viral_score"] = 70
@@ -232,31 +324,31 @@ def get_transcript_audit(transcript, niche="General", target_product_info=None, 
         # Also print for visibility in some environments
         print(error_msg)
         
-        return {
+        fallback = {
             "error": str(e),
             "trigger_core": "Error analyzing transcript",
             "reference_strategy": {
                 "topic_family": niche,
                 "topic_cluster": niche,
-                "topic_angle": "Не определен",
-                "hook_type": "Не определен",
-                "promise": "Не определено",
-                "pain_point": "Не определено",
-                "proof_type": "Не определен",
-                "cta_type": "Не определен",
+                "topic_angle": None,
+                "hook_type": None,
+                "promise": None,
+                "pain_point": None,
+                "proof_type": None,
+                "cta_type": None,
                 "content_constraints": []
             },
             "pattern_framework": {
                 "pattern_type": "other",
-                "narrator_role": "Не определен",
-                "hook_style": "Не определен",
-                "core_thesis": "Не определено",
+                "narrator_role": None,
+                "hook_style": None,
+                "core_thesis": None,
                 "content_shape": {
-                    "format_type": "Не определен",
+                    "format_type": "other",
                     "item_count": 0,
                     "sequence_logic": []
                 },
-                "argument_style": "Не определен",
+                "argument_style": None,
                 "integration_style": {
                     "product_role": "travel enabler",
                     "placement": "ближе к развязке",
@@ -270,7 +362,8 @@ def get_transcript_audit(transcript, niche="General", target_product_info=None, 
                 "forbidden_drifts": []
             },
             "hunt_ladder": {
-                "stage": "Не определена",
+                "stage": DEFAULT_HUNT_STAGE,
                 "reason": "Не удалось надежно определить стадию автоматически"
             },
         }
+        return _sanitize_audit_payload(fallback, niche)
