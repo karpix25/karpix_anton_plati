@@ -71,8 +71,10 @@ const OUTPUT_HEIGHT = 1280;
 const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
-const AVATAR_ZOOM_WIDE = 1.02;
-const AVATAR_ZOOM_CLOSE = 1.18;
+const AVATAR_ZOOM_WIDE_START = 1.02;
+const AVATAR_ZOOM_WIDE_END = 1.10;
+const AVATAR_ZOOM_CLOSE_START = 1.22;
+const AVATAR_ZOOM_CLOSE_END = 1.10;
 const AVATAR_ZOOM_MIN_SECONDS = 2.6;
 const AVATAR_FACE_FALLBACK_Y = 0.38;
 
@@ -224,8 +226,8 @@ function buildAvatarFilter(options: {
   pushIn: boolean;
 }) {
   const duration = Math.max(0.1, options.duration);
-  const zoomStart = options.pushIn ? AVATAR_ZOOM_WIDE : AVATAR_ZOOM_CLOSE;
-  const zoomEnd = options.pushIn ? AVATAR_ZOOM_CLOSE : AVATAR_ZOOM_WIDE;
+  const zoomStart = options.pushIn ? AVATAR_ZOOM_WIDE_START : AVATAR_ZOOM_CLOSE_START;
+  const zoomEnd = options.pushIn ? AVATAR_ZOOM_WIDE_END : AVATAR_ZOOM_CLOSE_END;
   const zoomExprRaw =
     duration >= AVATAR_ZOOM_MIN_SECONDS
       ? `${zoomStart}+(${zoomEnd}-${zoomStart})*min(t,${duration})/${duration}`
