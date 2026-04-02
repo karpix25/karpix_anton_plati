@@ -68,6 +68,16 @@ export interface PatternFramework {
   };
 }
 
+export interface ReferenceStrategy {
+  topic_cluster?: string;
+  topic_angle?: string;
+  topic_family?: string;
+  pain_point?: string;
+  promise?: string;
+  proof_type?: string;
+  cta_type?: string;
+}
+
 export interface Reference {
   id: number;
   reels_url: string;
@@ -85,6 +95,7 @@ export interface Reference {
       reason?: string;
     };
     pattern_framework?: PatternFramework;
+    reference_strategy?: ReferenceStrategy;
   };
   scenario_json?: {
     script?: string;
