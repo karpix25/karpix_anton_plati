@@ -29,6 +29,39 @@ def normalize_kie_model(value: str | None) -> str:
     return normalized if normalized in SUPPORTED_KIE_MODELS else DEFAULT_KIE_MODEL
 
 
+def _extract_task_id(payload: Any) -> str | None:
+    if not payload:
+        return None
+    if isinstance(payload, dict):
+        data = payload.get("data") or {}
+        for key in ("taskId", "task_id", "id"):
+            if isinstance(data, dict) and data.get(key):
+                return str(data.get(key))
+        for key in ("taskId", "task_id", "id"):
+            if payload.get(key):
+                return str(payload.get(key))
+    return None
+
+
+def _extract_error_message(payload: Any) -> str | None:
+    if not payload:
+        return None
+    if isinstance(payload, dict):
+        for key in ("error", "message", "msg", "error_msg", "errorMessage", "status_msg"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        for key in ("failMsg", "failCode", "status_msg"):
+            value = data.get(key)
+            if value:
+                return str(value)
+        code = payload.get("code")
+        if code and str(code) not in {"0", "200", "success"}:
+            return f"KIE returned code={code}"
+    return None
+
+
 def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
     resolved_model = normalize_kie_model(model)
     prompt_text = json.dumps(prompt_json, ensure_ascii=False)
@@ -101,8 +134,25 @@ def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None)
     )
     response.raise_for_status()
 
-    response_payload = response.json()
-    task_id = ((response_payload or {}).get("data") or {}).get("taskId")
+    response_payload = None
+    response_text = None
+    try:
+        response_payload = response.json()
+    except Exception:
+        response_text = response.text
+        response_payload = {"raw": response_text}
+
+    task_id = _extract_task_id(response_payload)
+    error_message = None
+    if not task_id:
+        error_message = _extract_error_message(response_payload)
+        if not error_message and response_text:
+            error_message = "Task submitted but taskId missing in response"
+        logger.warning(
+            "KIE task submission missing taskId. status=%s payload=%s",
+            response.status_code,
+            response_payload,
+        )
 
     return {
         "provider": "kie.ai",
@@ -113,7 +163,7 @@ def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None)
         "request_payload": payload,
         "response_payload": response_payload,
         "result_urls": [],
-        "error": None if task_id else "Task submitted but taskId missing in response",
+        "error": None if task_id else (error_message or "Task submitted but taskId missing in response"),
     }
 
 
