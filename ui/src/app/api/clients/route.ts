@@ -201,7 +201,7 @@ export async function POST(request: Request) {
     );
     const resolvedTtsSilenceTrimMinSeconds = Math.min(
       1.0,
-      Math.max(0.1, Number(tts_silence_trim_min_duration_seconds ?? 0.35))
+      Math.max(0.0, Number(tts_silence_trim_min_duration_seconds ?? 0.35))
     );
     const resolvedTtsSilenceTrimThresholdDb = Math.min(
       -20,
@@ -211,7 +211,7 @@ export async function POST(request: Request) {
     const resolvedTtsSentenceTrimEnabled = typeof tts_sentence_trim_enabled === "boolean" ? tts_sentence_trim_enabled : false;
     const resolvedTtsSentenceTrimMinGapSeconds = Math.min(
       2.0,
-      Math.max(0.1, Number(tts_sentence_trim_min_gap_seconds ?? 0.3))
+      Math.max(0.0, Number(tts_sentence_trim_min_gap_seconds ?? 0.3))
     );
     const { resolvedDailyLimit, resolvedMonthlyLimit } = resolveFinalVideoLimits(
       daily_final_video_limit,
@@ -331,7 +331,7 @@ export async function PUT(request: Request) {
     );
     const resolvedTtsSilenceTrimMinSeconds = Math.min(
       1.0,
-      Math.max(0.1, Number(tts_silence_trim_min_duration_seconds ?? 0.35))
+      Math.max(0.0, Number(tts_silence_trim_min_duration_seconds ?? 0.35))
     );
     const resolvedTtsSilenceTrimThresholdDb = Math.min(
       -20,
@@ -341,7 +341,7 @@ export async function PUT(request: Request) {
     const resolvedTtsSentenceTrimEnabled = typeof tts_sentence_trim_enabled === "boolean" ? tts_sentence_trim_enabled : false;
     const resolvedTtsSentenceTrimMinGapSeconds = Math.min(
       2.0,
-      Math.max(0.1, Number(tts_sentence_trim_min_gap_seconds ?? 0.3))
+      Math.max(0.0, Number(tts_sentence_trim_min_gap_seconds ?? 0.3))
     );
     const { resolvedDailyLimit, resolvedMonthlyLimit } = resolveFinalVideoLimits(
       daily_final_video_limit,

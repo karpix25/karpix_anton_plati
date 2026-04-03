@@ -184,7 +184,7 @@ const normalizeSettings = (settings: Settings): Settings => {
     tts_silence_trim_enabled: settings.tts_silence_trim_enabled ?? true,
     tts_sentence_trim_enabled: settings.tts_sentence_trim_enabled ?? false,
     tts_sentence_trim_min_gap_seconds:
-      Number.isFinite(sentenceTrimMinGapSeconds) && sentenceTrimMinGapSeconds > 0 ? sentenceTrimMinGapSeconds : 0.3,
+      Number.isFinite(sentenceTrimMinGapSeconds) && sentenceTrimMinGapSeconds >= 0 ? sentenceTrimMinGapSeconds : 0.3,
   };
 };
 
@@ -1257,7 +1257,7 @@ export function SettingsScreen({
                 </div>
                 <input
                   type="range"
-                  min={0.2}
+                  min={0.0}
                   max={1.0}
                   step={0.05}
                   value={ttsSentenceTrimMinGapSeconds}
@@ -1270,7 +1270,7 @@ export function SettingsScreen({
                   className="w-full accent-primary"
                 />
                 <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                  <span>0.20 сек</span>
+                  <span>0.00 сек</span>
                   <span>0.50 сек</span>
                   <span>1.00 сек</span>
                 </div>

@@ -91,7 +91,7 @@ def _trim_tts_silence(
         resolved_min_duration = float(resolved_min_duration)
     except (TypeError, ValueError):
         resolved_min_duration = DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS
-    resolved_min_duration = max(0.1, min(1.0, resolved_min_duration))
+    resolved_min_duration = max(0.0, min(1.0, resolved_min_duration))
 
     resolved_threshold = threshold_db if threshold_db is not None else DEFAULT_SILENCE_TRIM_THRESHOLD_DB
     try:
@@ -152,7 +152,7 @@ def _build_sentence_removal_intervals(
     if not words:
         return intervals
 
-    resolved_min_gap = max(0.1, min(2.0, float(min_gap_seconds)))
+    resolved_min_gap = max(0.0, min(2.0, float(min_gap_seconds)))
     resolved_keep_gap = max(0.0, min(0.5, float(keep_gap_seconds)))
 
     for idx in range(len(words) - 1):
