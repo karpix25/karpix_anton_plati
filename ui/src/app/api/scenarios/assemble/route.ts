@@ -79,6 +79,7 @@ const AVATAR_PLANS = [
   { start: 1.70, end: 1.90 }, // CLOSE (Крупный)
 ];
 const AVATAR_ZOOM_MIN_SECONDS = 2.6;
+const MIN_AVATAR_GAP_SECONDS = 2.0;
 const AVATAR_FACE_FALLBACK_Y = 0.40;
 
 type FaceBox = { x: number; y: number; w: number; h: number };
@@ -323,7 +324,7 @@ function resolvePromptSource(
 }
 
 function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
-  const prompts = normalizePromptWindows(
+  let prompts = normalizePromptWindows(
     (scenario.video_generation_prompts?.prompts || [])
     .map((item) => ({
       start: Number(item.slot_start || 0),
@@ -335,6 +336,8 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
     .sort((a, b) => a.start - b.start),
     totalDuration
   );
+
+  prompts = ensureMinimumAvatarGaps(prompts, totalDuration);
 
   if (scenario.heygen_video_url && prompts.length) {
     const firstPrompt = prompts[0];
@@ -432,6 +435,42 @@ function normalizePromptWindows(
   }
 
   return normalized;
+}
+
+function ensureMinimumAvatarGaps(
+  prompts: Array<{ start: number; end: number; assetType: string | null; source: string | null }>,
+  totalDuration: number
+) {
+  if (prompts.length <= 1) return prompts;
+
+  const results = prompts.map((p) => ({ ...p }));
+
+  for (let i = 0; i < results.length - 1; i++) {
+    const current = results[i];
+    const next = results[i + 1];
+
+    const gap = next.start - current.end;
+    if (gap < MIN_AVATAR_GAP_SECONDS) {
+      const deficit = MIN_AVATAR_GAP_SECONDS - gap;
+      const shift = deficit / 2;
+
+      current.end -= shift;
+      next.start += shift;
+
+      current.end = Number(current.end.toFixed(3));
+      next.start = Number(next.start.toFixed(3));
+    }
+  }
+
+  // Final filter to remove segments that became way too small to be meaningful
+  return results.filter((p) => {
+    const min =
+      p.assetType === "product_video"
+        ? MIN_PRODUCT_SEGMENT_SECONDS
+        : MIN_BROLL_SEGMENT_SECONDS;
+    // We allow shrinking up to 70% of intended minimum before dropping entirely
+    return p.end - p.start >= Math.max(1.0, min * 0.7);
+  });
 }
 
 async function downloadRemoteFile(url: string, targetPath: string) {
