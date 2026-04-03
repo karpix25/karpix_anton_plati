@@ -78,7 +78,7 @@ const AVATAR_PLANS = [
   { start: 1.70, end: 1.90 }, // CLOSE (Крупный)
 ];
 const AVATAR_ZOOM_MIN_SECONDS = 2.6;
-const AVATAR_FACE_FALLBACK_Y = 0.38;
+const AVATAR_FACE_FALLBACK_Y = 0.40;
 
 type FaceBox = { x: number; y: number; w: number; h: number };
 
@@ -240,7 +240,7 @@ function buildAvatarFilter(options: {
     `max(0,min(iw-ow,${options.faceCenterX}*(${zoomExprRaw})-ow/2))`
   );
   const yExpr = escapeFilterExpr(
-    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh/2))`
+    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.40))`
   );
   return [
     "setpts=PTS-STARTPTS",
