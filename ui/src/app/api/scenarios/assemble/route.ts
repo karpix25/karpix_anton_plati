@@ -81,6 +81,7 @@ const AVATAR_PLANS = [
 const AVATAR_ZOOM_MIN_SECONDS = 2.6;
 const MIN_AVATAR_GAP_SECONDS = 2.0;
 const AVATAR_FACE_FALLBACK_Y = 0.40;
+const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || "").trim() === "1";
 
 type FaceBox = { x: number; y: number; w: number; h: number };
 
@@ -715,7 +716,9 @@ async function buildMontage(scenarioId: number) {
         duration: durationSeconds,
         faceCenterX,
         faceCenterY,
-        zoomStart: plan.start,
+        // Default to a "pre-zoomed" static framing to avoid crop jitter during zoom-in.
+        // Set MONTAGE_AVATAR_ANIMATE_ZOOM=1 to restore animated zoom.
+        zoomStart: AVATAR_ANIMATE_ZOOM ? plan.start : plan.end,
         zoomEnd: plan.end,
       });
     }
