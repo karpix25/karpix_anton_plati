@@ -223,6 +223,20 @@ async function detectFaceAtTime(filePath: string, timeSeconds: number): Promise<
   }
 }
 
+function chooseStableFaceSampleTime(duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0) return 0;
+  const half = duration / 2;
+  const maxStart = Math.max(duration - 0.05, 0);
+  const candidate = Math.min(1, half, maxStart);
+  return candidate > 0 ? candidate : 0;
+}
+
+async function detectStableFaceCenter(filePath: string): Promise<FaceBox | null> {
+  const duration = await probeDurationSeconds(filePath);
+  const sampleTime = chooseStableFaceSampleTime(duration);
+  return detectFaceAtTime(filePath, sampleTime);
+}
+
 function buildAvatarFilter(options: {
   duration: number;
   faceCenterX: number;
@@ -594,13 +608,13 @@ async function buildMontage(scenarioId: number) {
 
   const sourceCache = new Map<string, string>();
   const dimensionCache = new Map<string, { width: number; height: number }>();
-  const faceCache = new Map<string, FaceBox | null>();
   let avatarPlanIndex = 0;
   const segmentPaths: string[] = [];
   const avatarSourcePath =
     sourceCache.get(scenario.heygen_video_url) ||
     (await materializeSource(scenario.heygen_video_url, workdir, "avatar_master"));
   sourceCache.set(scenario.heygen_video_url, avatarSourcePath);
+  const stableAvatarFaceBox = await detectStableFaceCenter(avatarSourcePath);
 
   let ttsAudioPath =
     scenario.tts_audio_path && existsSync(scenario.tts_audio_path)
@@ -685,15 +699,16 @@ async function buildMontage(scenarioId: number) {
           dims = undefined;
         }
       }
-      const key = `${sourcePath}|${renderSegmentData.start.toFixed(2)}-${renderSegmentData.end.toFixed(2)}`;
-      let faceBox = faceCache.get(key) ?? null;
-      if (!faceCache.has(key)) {
-        const sampleTime = renderSegmentData.start + Math.min(durationSeconds * 0.45, 1.2);
-        faceBox = await detectFaceAtTime(sourcePath, sampleTime);
-        faceCache.set(key, faceBox);
-      }
-      const faceCenterX = faceBox ? faceBox.x + faceBox.w / 2 : (dims ? dims.width / 2 : OUTPUT_WIDTH / 2);
-      const faceCenterY = faceBox ? faceBox.y + faceBox.h / 2 : (dims ? dims.height * AVATAR_FACE_FALLBACK_Y : OUTPUT_HEIGHT * 0.4);
+      const faceCenterX = stableAvatarFaceBox
+        ? stableAvatarFaceBox.x + stableAvatarFaceBox.w / 2
+        : dims
+          ? dims.width / 2
+          : OUTPUT_WIDTH / 2;
+      const faceCenterY = stableAvatarFaceBox
+        ? stableAvatarFaceBox.y + stableAvatarFaceBox.h / 2
+        : dims
+          ? dims.height * AVATAR_FACE_FALLBACK_Y
+          : OUTPUT_HEIGHT * 0.4;
       const plan = AVATAR_PLANS[avatarPlanIndex % AVATAR_PLANS.length];
       avatarPlanIndex += 1;
       avatarFilter = buildAvatarFilter({
