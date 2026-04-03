@@ -192,19 +192,22 @@ export async function getRandomBackgroundAudioTrack(tag: "disturbing" | "inspiri
 export async function uploadFinalVideoToYandexDisk(params: {
   localFilePath: string;
   avatarFolderName: string;
+  projectName: string;
   fileName: string;
 }) {
   const avatarFolder = sanitizeFolderName(params.avatarFolderName) || "Unknown avatar";
+  const projectFolder = sanitizeFolderName(params.projectName) || "Unknown project";
+  
   const rootPath = toDiskPath(ROOT_VIDEO_FOLDER);
   const automationPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER);
-  const avatarGroupPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarFolder);
-  const avatarFinalPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarFolder, avatarFolder);
-  const filePath = `${avatarFinalPath}/${sanitizeFileName(params.fileName)}`;
+  const projectPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, projectFolder);
+  const avatarGroupPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, projectFolder, avatarFolder);
+  const filePath = `${avatarGroupPath}/${sanitizeFileName(params.fileName)}`;
 
   await ensureFolderExists(rootPath);
   await ensureFolderExists(automationPath);
+  await ensureFolderExists(projectPath);
   await ensureFolderExists(avatarGroupPath);
-  await ensureFolderExists(avatarFinalPath);
 
   const uploadHref = await getUploadHref(filePath);
   const fileBuffer = await readFile(params.localFilePath);
@@ -226,9 +229,10 @@ export async function uploadFinalVideoToYandexDisk(params: {
   const meta = await getResourceMeta(filePath);
 
   return {
-    projectPath: rootPath,
+    rootPath,
+    automationPath,
+    projectPath,
     avatarPath: avatarGroupPath,
-    finalPath: avatarFinalPath,
     filePath: meta.path || filePath,
     publicUrl: meta.public_url || null,
   };

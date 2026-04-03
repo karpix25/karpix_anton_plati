@@ -29,6 +29,7 @@ type ScenarioRow = {
   heygen_video_url: string | null;
   heygen_avatar_id: string | null;
   heygen_avatar_name: string | null;
+  client_name: string | null;
   background_audio_tag: BackgroundAudioTag | null;
   subtitles_enabled: boolean | null;
   subtitle_mode: Settings["subtitle_mode"] | null;
@@ -261,6 +262,7 @@ async function getScenario(scenarioId: number) {
         gs.heygen_video_url,
         gs.heygen_avatar_id,
         gs.heygen_avatar_name,
+        c.name as client_name,
         gs.background_audio_tag,
         gs.video_generation_prompts,
         c.subtitles_enabled,
@@ -736,6 +738,7 @@ async function buildMontage(scenarioId: number) {
   return {
     outputPath,
     avatarName: scenario.heygen_avatar_name || scenario.heygen_avatar_id || `avatar-${scenarioId}`,
+    clientName: scenario.client_name,
     backgroundAudioName: backgroundAudioTrack.name,
     backgroundAudioPath: backgroundAudioTrack.diskPath,
   };
@@ -762,7 +765,7 @@ export async function POST(request: Request) {
       [resolvedScenarioId]
     );
 
-    const { outputPath, avatarName, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
+    const { outputPath, avatarName, clientName, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
 
     let yandexDiskPath: string | null = null;
     let yandexPublicUrl: string | null = null;
@@ -784,6 +787,7 @@ export async function POST(request: Request) {
         const upload = await uploadFinalVideoToYandexDisk({
           localFilePath: outputPath,
           avatarFolderName: avatarName,
+          projectName: clientName || "Unknown Project",
           fileName: `scenario_${resolvedScenarioId}_${timestamp}.mp4`,
         });
         yandexDiskPath = upload.filePath;
