@@ -72,10 +72,11 @@ const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
 const MIN_FIRST_AVATAR_SECONDS = 2.6;
-const AVATAR_ZOOM_WIDE_START = 1.02;
-const AVATAR_ZOOM_WIDE_END = 1.10;
-const AVATAR_ZOOM_CLOSE_START = 1.22;
-const AVATAR_ZOOM_CLOSE_END = 1.10;
+const AVATAR_PLANS = [
+  { start: 1.00, end: 1.20 }, // WIDE (Общий)
+  { start: 1.35, end: 1.55 }, // MEDIUM (Средний)
+  { start: 1.70, end: 1.90 }, // CLOSE (Крупный)
+];
 const AVATAR_ZOOM_MIN_SECONDS = 2.6;
 const AVATAR_FACE_FALLBACK_Y = 0.38;
 
@@ -224,11 +225,12 @@ function buildAvatarFilter(options: {
   duration: number;
   faceCenterX: number;
   faceCenterY: number;
-  pushIn: boolean;
+  zoomStart: number;
+  zoomEnd: number;
 }) {
   const duration = Math.max(0.1, options.duration);
-  const zoomStart = options.pushIn ? AVATAR_ZOOM_WIDE_START : AVATAR_ZOOM_CLOSE_START;
-  const zoomEnd = options.pushIn ? AVATAR_ZOOM_WIDE_END : AVATAR_ZOOM_CLOSE_END;
+  const zoomStart = options.zoomStart;
+  const zoomEnd = options.zoomEnd;
   const zoomExprRaw =
     duration >= AVATAR_ZOOM_MIN_SECONDS
       ? `${zoomStart}+(${zoomEnd}-${zoomStart})*min(t,${duration})/${duration}`
@@ -644,13 +646,14 @@ async function buildMontage(scenarioId: number) {
       }
       const faceCenterX = faceBox ? faceBox.x + faceBox.w / 2 : (dims ? dims.width / 2 : OUTPUT_WIDTH / 2);
       const faceCenterY = faceBox ? faceBox.y + faceBox.h / 2 : (dims ? dims.height * AVATAR_FACE_FALLBACK_Y : OUTPUT_HEIGHT * 0.4);
-      const pushIn = avatarPlanIndex % 2 === 0;
+      const plan = AVATAR_PLANS[avatarPlanIndex % AVATAR_PLANS.length];
       avatarPlanIndex += 1;
       avatarFilter = buildAvatarFilter({
         duration: durationSeconds,
         faceCenterX,
         faceCenterY,
-        pushIn,
+        zoomStart: plan.start,
+        zoomEnd: plan.end,
       });
     }
     await renderSegment(renderSegmentData, sourcePath, outputPath, avatarFilter);
