@@ -14,7 +14,7 @@ STRONG_BOUNDARY_RE = re.compile(r"[.!?;:]$")
 SOFT_BOUNDARY_RE = re.compile(r"[,)]$")
 MIN_BROLL_SEGMENT_SECONDS = 2.0
 MIN_PRODUCT_SEGMENT_SECONDS = 3.0
-FIRST_ATTENTION_CUT_MIN_SECONDS = 2.5
+FIRST_ATTENTION_CUT_MIN_SECONDS = 2.6
 FIRST_ATTENTION_CUT_MAX_SECONDS = 3.0
 DEMONSTRATIVE_RE = re.compile(r"\b(этот|эта|это|эти|тот|та|то|те|same|this|that|these|those)\b", re.IGNORECASE)
 CONSUMER_GOOD_GENERALIZATION_RULES = [
@@ -272,7 +272,7 @@ def _build_fixed_keyword_slots(words: List[Dict[str, Any]], broll_interval_secon
     max_end = max((_safe_float(word.get("end")) for word in words or [] if isinstance(word, dict)), default=0.0)
 
     slots: List[Dict[str, float]] = []
-    current = interval
+    current = max(interval, FIRST_ATTENTION_CUT_MIN_SECONDS)
     while current <= max_end + 0.01:
         slots.append({
             "slot_start": round(current, 1),
@@ -312,10 +312,15 @@ def _build_semantic_keyword_slots(
     timeline_cursor = 0.0
 
     while timeline_cursor + min_avatar_gap + slot_min <= max_end:
+        # Enforce first attention cut for the very first slot
+        current_min_gap = min_avatar_gap
+        if not slots:
+            current_min_gap = max(min_avatar_gap, FIRST_ATTENTION_CUT_MIN_SECONDS)
+
         start_boundary = _select_boundary(
             boundaries=boundaries,
-            min_time=timeline_cursor + min_avatar_gap,
-            target_time=timeline_cursor + target_avatar_gap,
+            min_time=timeline_cursor + current_min_gap,
+            target_time=timeline_cursor + max(current_min_gap, target_avatar_gap),
             max_time=min(timeline_cursor + max_avatar_gap, max_end - slot_min),
             fallback_extension=0.9,
         )
@@ -377,15 +382,15 @@ def _build_coverage_keyword_slots(
     if max_end <= MIN_BROLL_SEGMENT_SECONDS + 0.2:
         return []
 
-    min_avatar_gap = 0.0
-    target_avatar_gap = 0.0
-    max_avatar_gap = max(0.0, round(profile["target_avatar_gap_floor"] * 0.65, 2))
+    min_avatar_gap = FIRST_ATTENTION_CUT_MIN_SECONDS
+    target_avatar_gap = FIRST_ATTENTION_CUT_MIN_SECONDS
+    max_avatar_gap = max(FIRST_ATTENTION_CUT_MIN_SECONDS, round(profile["target_avatar_gap_floor"] * 0.65, 2))
     slot_min = profile["slot_min"]
     slot_target = profile["slot_target"]
     slot_max = min(6.0, max(profile["slot_max"], slot_target + 1.0))
 
     if coverage_percent >= 95.0:
-        return [{"slot_start": 0.0, "slot_end": round(max_end, 1)}]
+        return [{"slot_start": FIRST_ATTENTION_CUT_MIN_SECONDS, "slot_end": round(max_end, 1)}]
 
     target_total_broll = round(max_end * (coverage_percent / 100.0), 2)
     target_total_broll = max(0.0, min(target_total_broll, max_end))

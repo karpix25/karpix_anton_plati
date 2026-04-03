@@ -343,21 +343,28 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
     const firstPrompt = prompts[0];
     if (firstPrompt.start < MIN_FIRST_AVATAR_SECONDS) {
       const originalDuration = Math.max(0, firstPrompt.end - firstPrompt.start);
+      // We force the start to be exactly 2.6s
       const shiftedStart = MIN_FIRST_AVATAR_SECONDS;
-      let shiftedEnd = shiftedStart + originalDuration;
       const nextStart = prompts.length > 1 ? prompts[1].start : totalDuration;
       const minDuration = firstPrompt.assetType === "product_video" ? MIN_PRODUCT_SEGMENT_SECONDS : MIN_BROLL_SEGMENT_SECONDS;
+
+      // Try to maintain original duration, but don't overlap with the next segment
+      let shiftedEnd = shiftedStart + originalDuration;
       if (shiftedEnd > nextStart) {
         shiftedEnd = nextStart;
       }
-      if (shiftedEnd - shiftedStart < minDuration) {
-        const extra = minDuration - (shiftedEnd - shiftedStart);
-        const extendedEnd = Math.min(totalDuration, nextStart, shiftedEnd + extra);
-        shiftedEnd = Math.max(shiftedEnd, extendedEnd);
+
+      // If the result is too short, we try to "push" the end slightly if there is room
+      // or at least cap it at a reasonable minimum if it doesn't break the timeline
+      if (shiftedEnd - shiftedStart < minDuration * 0.7) {
+        // Just ensure it's not a tiny "flash"
+        const finalMin = Math.min(minDuration, nextStart - shiftedStart);
+        shiftedEnd = shiftedStart + Math.max(1.0, finalMin);
       }
-      if (shiftedEnd > shiftedStart) {
+
+      if (shiftedEnd > shiftedStart && shiftedStart < totalDuration) {
         firstPrompt.start = Number(shiftedStart.toFixed(3));
-        firstPrompt.end = Number(shiftedEnd.toFixed(3));
+        firstPrompt.end = Number(Math.min(totalDuration, shiftedEnd).toFixed(3));
       }
     }
   }
