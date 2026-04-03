@@ -71,6 +71,7 @@ const OUTPUT_HEIGHT = 1280;
 const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
+const MIN_FIRST_AVATAR_SECONDS = 2.6;
 const AVATAR_ZOOM_WIDE_START = 1.02;
 const AVATAR_ZOOM_WIDE_END = 1.10;
 const AVATAR_ZOOM_CLOSE_START = 1.22;
@@ -330,6 +331,29 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
     .sort((a, b) => a.start - b.start),
     totalDuration
   );
+
+  if (scenario.heygen_video_url && prompts.length) {
+    const firstPrompt = prompts[0];
+    if (firstPrompt.start < MIN_FIRST_AVATAR_SECONDS) {
+      const originalDuration = Math.max(0, firstPrompt.end - firstPrompt.start);
+      const shiftedStart = MIN_FIRST_AVATAR_SECONDS;
+      let shiftedEnd = shiftedStart + originalDuration;
+      const nextStart = prompts.length > 1 ? prompts[1].start : totalDuration;
+      const minDuration = firstPrompt.assetType === "product_video" ? MIN_PRODUCT_SEGMENT_SECONDS : MIN_BROLL_SEGMENT_SECONDS;
+      if (shiftedEnd > nextStart) {
+        shiftedEnd = nextStart;
+      }
+      if (shiftedEnd - shiftedStart < minDuration) {
+        const extra = minDuration - (shiftedEnd - shiftedStart);
+        const extendedEnd = Math.min(totalDuration, nextStart, shiftedEnd + extra);
+        shiftedEnd = Math.max(shiftedEnd, extendedEnd);
+      }
+      if (shiftedEnd > shiftedStart) {
+        firstPrompt.start = Number(shiftedStart.toFixed(3));
+        firstPrompt.end = Number(shiftedEnd.toFixed(3));
+      }
+    }
+  }
 
   const segments: TimelineSegment[] = [];
   let cursor = 0;
