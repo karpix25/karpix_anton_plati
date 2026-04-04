@@ -352,37 +352,34 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
     totalDuration
   );
 
-  prompts = ensureMinimumAvatarGaps(prompts, totalDuration);
-
   if (scenario.heygen_video_url && prompts.length) {
-    const firstPrompt = prompts[0];
-    if (firstPrompt.start < MIN_FIRST_AVATAR_SECONDS) {
-      const originalDuration = Math.max(0, firstPrompt.end - firstPrompt.start);
-      // We force the start to be exactly 2.6s
-      const shiftedStart = MIN_FIRST_AVATAR_SECONDS;
-      const nextStart = prompts.length > 1 ? prompts[1].start : totalDuration;
-      const minDuration = firstPrompt.assetType === "product_video" ? MIN_PRODUCT_SEGMENT_SECONDS : MIN_BROLL_SEGMENT_SECONDS;
+    const introSeconds = Math.min(MIN_FIRST_AVATAR_SECONDS, totalDuration);
+    if (introSeconds > 0) {
+      // Guarantee the montage begins with avatar by trimming any b-roll that starts before the intro window.
+      // If multiple prompts overlap the intro, we clamp them to start after it and then de-overlap sequentially.
+      prompts = prompts
+        .filter((p) => p.end > introSeconds)
+        .map((p) => ({
+          ...p,
+          start: Number(Math.max(p.start, introSeconds).toFixed(3)),
+          end: Number(Math.min(totalDuration, p.end).toFixed(3)),
+        }))
+        .sort((a, b) => a.start - b.start);
 
-      // Try to maintain original duration, but don't overlap with the next segment
-      let shiftedEnd = shiftedStart + originalDuration;
-      if (shiftedEnd > nextStart) {
-        shiftedEnd = nextStart;
+      const adjusted: typeof prompts = [];
+      for (const prompt of prompts) {
+        const previousEnd = adjusted.length ? adjusted[adjusted.length - 1].end : introSeconds;
+        const start = Math.max(prompt.start, previousEnd);
+        const end = prompt.end;
+        if (end > start) {
+          adjusted.push({ ...prompt, start: Number(start.toFixed(3)) });
+        }
       }
-
-      // If the result is too short, we try to "push" the end slightly if there is room
-      // or at least cap it at a reasonable minimum if it doesn't break the timeline
-      if (shiftedEnd - shiftedStart < minDuration * 0.7) {
-        // Just ensure it's not a tiny "flash"
-        const finalMin = Math.min(minDuration, nextStart - shiftedStart);
-        shiftedEnd = shiftedStart + Math.max(1.0, finalMin);
-      }
-
-      if (shiftedEnd > shiftedStart && shiftedStart < totalDuration) {
-        firstPrompt.start = Number(shiftedStart.toFixed(3));
-        firstPrompt.end = Number(Math.min(totalDuration, shiftedEnd).toFixed(3));
-      }
+      prompts = adjusted;
     }
   }
+
+  prompts = ensureMinimumAvatarGaps(prompts, totalDuration);
 
   const segments: TimelineSegment[] = [];
   let cursor = 0;
