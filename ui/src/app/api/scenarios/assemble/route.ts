@@ -312,6 +312,19 @@ function getTotalDurationSeconds(scenario: ScenarioRow) {
   return Math.max(...wordEnds, ...promptEnds, 0);
 }
 
+function getFirstSentenceEndSeconds(scenario: ScenarioRow) {
+  const words = scenario.tts_word_timestamps?.words || [];
+  for (const word of words) {
+    const text = String(word.punctuated_word || word.word || "").trim();
+    if (!text) continue;
+    // Detect sentence-ending punctuation, allowing trailing quotes/brackets.
+    if (!/[.!?…]["'“”’»)\]]*$/.test(text)) continue;
+    const end = Number(word.end || 0);
+    if (Number.isFinite(end) && end > 0) return end;
+  }
+  return null;
+}
+
 async function probeDurationSeconds(filePath: string) {
   const { stdout } = await runCommandCapture("ffprobe", [
     "-v",
@@ -353,7 +366,11 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
   );
 
   if (scenario.heygen_video_url && prompts.length) {
-    const introSeconds = Math.min(MIN_FIRST_AVATAR_SECONDS, totalDuration);
+    const firstSentenceEnd = getFirstSentenceEndSeconds(scenario);
+    const introSeconds = Math.min(
+      Math.max(0, firstSentenceEnd ?? MIN_FIRST_AVATAR_SECONDS),
+      totalDuration
+    );
     if (introSeconds > 0) {
       // Guarantee the montage begins with avatar by trimming any b-roll that starts before the intro window.
       // If multiple prompts overlap the intro, we clamp them to start after it and then de-overlap sequentially.
