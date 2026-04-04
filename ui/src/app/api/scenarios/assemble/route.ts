@@ -72,7 +72,8 @@ const OUTPUT_HEIGHT = 1280;
 const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
-const MIN_FIRST_AVATAR_SECONDS = 2.6;
+const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.5;
+const FIRST_AVATAR_INTRO_MAX_SECONDS = 3.0;
 const AVATAR_PLANS = [
   { start: 1.00, end: 1.20 }, // WIDE (Общий)
   { start: 1.35, end: 1.55 }, // MEDIUM (Средний)
@@ -82,6 +83,15 @@ const AVATAR_ZOOM_MIN_SECONDS = 2.6;
 const MIN_AVATAR_GAP_SECONDS = 2.0;
 const AVATAR_FACE_FALLBACK_Y = 0.40;
 const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || "").trim() === "1";
+
+function pickFirstAvatarIntroSeconds(totalDuration: number) {
+  if (!Number.isFinite(totalDuration) || totalDuration <= 0) return 0;
+  const raw =
+    FIRST_AVATAR_INTRO_MIN_SECONDS +
+    Math.random() * (FIRST_AVATAR_INTRO_MAX_SECONDS - FIRST_AVATAR_INTRO_MIN_SECONDS);
+  // Keep stable string formatting in logs/filenames while staying random per montage.
+  return Math.min(totalDuration, Number(raw.toFixed(3)));
+}
 
 type FaceBox = { x: number; y: number; w: number; h: number };
 
@@ -312,19 +322,6 @@ function getTotalDurationSeconds(scenario: ScenarioRow) {
   return Math.max(...wordEnds, ...promptEnds, 0);
 }
 
-function getFirstSentenceEndSeconds(scenario: ScenarioRow) {
-  const words = scenario.tts_word_timestamps?.words || [];
-  for (const word of words) {
-    const text = String(word.punctuated_word || word.word || "").trim();
-    if (!text) continue;
-    // Detect sentence-ending punctuation, allowing trailing quotes/brackets.
-    if (!/[.!?…]["'“”’»)\]]*$/.test(text)) continue;
-    const end = Number(word.end || 0);
-    if (Number.isFinite(end) && end > 0) return end;
-  }
-  return null;
-}
-
 async function probeDurationSeconds(filePath: string) {
   const { stdout } = await runCommandCapture("ffprobe", [
     "-v",
@@ -366,11 +363,7 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
   );
 
   if (scenario.heygen_video_url && prompts.length) {
-    const firstSentenceEnd = getFirstSentenceEndSeconds(scenario);
-    const introSeconds = Math.min(
-      Math.max(0, firstSentenceEnd ?? MIN_FIRST_AVATAR_SECONDS),
-      totalDuration
-    );
+    const introSeconds = pickFirstAvatarIntroSeconds(totalDuration);
     if (introSeconds > 0) {
       // Guarantee the montage begins with avatar by trimming any b-roll that starts before the intro window.
       // If multiple prompts overlap the intro, we clamp them to start after it and then de-overlap sequentially.
