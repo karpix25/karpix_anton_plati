@@ -77,10 +77,9 @@ def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
     string that KIE API expects.
 
     KIE API's `prompt` field must be a human-readable cinematic
-    description, NOT a raw JSON dump.  When video_prompt_service
-    produces a rich dict with keys like `global_logic`,
-    `scene_sequencing`, `technical_directives`, `negative_prompt`,
-    this function extracts meaningful text and concatenates it.
+    description.  This function extracts the visual description
+    and camera direction, prioritizing the scene action (which
+    contains the most valuable visual information for the model).
 
     If prompt_json is already a plain string, it is returned as-is.
     """
@@ -92,44 +91,47 @@ def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
 
     parts: list[str] = []
 
-    # 1. Global logic / style directive
-    global_logic = prompt_json.get("global_logic")
-    if global_logic:
-        parts.append(str(global_logic).strip())
-
-    # 2. Scene sequencing – the core visual description
+    # 1. Scene description — this is the CORE of the prompt
+    #    The action field should contain the rich cinematic description
     scenes = prompt_json.get("scene_sequencing")
     if isinstance(scenes, list):
         for scene in scenes:
             if not isinstance(scene, dict):
                 continue
-            scene_parts: list[str] = []
-            for key in ("location", "action", "visual_anchor"):
-                val = scene.get(key)
-                if val:
-                    scene_parts.append(str(val).strip())
-            if scene_parts:
-                parts.append(". ".join(scene_parts))
+            # Action is the primary visual description
+            action = scene.get("action")
+            if action:
+                # Prepend location if it adds specificity
+                location = scene.get("location")
+                if location and location.lower() not in str(action).lower():
+                    parts.append(f"{str(location).strip()}. {str(action).strip()}")
+                else:
+                    parts.append(str(action).strip())
 
-    # 3. Technical directives – camera, style, framing
+    # 2. Camera movement — only if it describes a specific physical action
     tech = prompt_json.get("technical_directives")
     if isinstance(tech, dict):
-        tech_parts: list[str] = []
-        for key in ("camera_movement", "style", "framing", "shot_preference", "capture_device"):
-            val = tech.get(key)
-            if val:
-                tech_parts.append(str(val).strip())
-        if tech_parts:
-            parts.append(". ".join(tech_parts))
+        cam = tech.get("camera_movement")
+        if cam and not any(skip in str(cam).lower() for skip in ("handheld smartphone", "subtle natural micro-jitter")):
+            parts.append(str(cam).strip())
+        # Framing only if it's specific (not generic labels)
+        framing = tech.get("framing")
+        if framing and not any(skip in str(framing).lower() for skip in ("portrait-safe", "central subject dominance")):
+            parts.append(str(framing).strip())
 
-    # 4. Negative prompt
-    neg = prompt_json.get("negative_prompt")
-    if neg:
-        parts.append(f"Negative prompt: {str(neg).strip()}")
+    # 3. Global logic — only if scene description is missing or very short
+    if not parts or sum(len(p) for p in parts) < 50:
+        global_logic = prompt_json.get("global_logic")
+        if global_logic:
+            parts.insert(0, str(global_logic).strip())
 
-    result = "\n".join(parts).strip()
+    # NOTE: Negative prompt is intentionally excluded from the main text.
+    # KIE models don't have a separate negative prompt field, and including
+    # "Negative prompt: stock footage..." in the main prompt can confuse
+    # the model into PRODUCING stock-looking footage.
+
+    result = " ".join(parts).strip()
     if not result:
-        # Last resort – dump as JSON but this should not happen
         logger.warning("_flatten_prompt_json_to_text: could not extract text, falling back to json.dumps")
         result = json.dumps(prompt_json, ensure_ascii=False)
 

@@ -137,102 +137,143 @@ def generate_seedance_prompts(
     prompt_inputs = _build_prompt_segment_inputs(keyword_segments)
 
     prompt = f"""
-SYSTEM:
-You create JSON-only video prompts for short KIE video generation.
+ROLE:
+You are a cinematic micro-video director who shoots personal travel content on an iPhone.
+You create prompts that produce footage indistinguishable from real phone videos posted on Instagram stories and TikTok by travelers.
 
-CONTEXT:
-- These prompts are for short vertical b-roll inserts on top of a talking-head video.
-- The generator model is {profile["model_label"]}.
-- Each generated clip must be maximum {max_clip_duration:.1f} seconds.
-- Output prompts must match this exact generation profile:
-  - aspect_ratio: {profile["aspect_ratio"]}
-  - resolution: {profile["resolution"]}
-  - duration: {int(max_clip_duration)}
-  - mode: {profile["mode"] or "n/a"}
-  - generate_audio: {"false" if not profile["generate_audio"] else "true"}
-- Return one prompt object per keyword segment.
-- If a segment already uses a ready-made product clip, do not generate a creative prompt for it. Return prompt_json as null and preserve the asset metadata.
+YOUR CREATIVE MANDATE:
+Every clip must feel like someone pulled out their phone and filmed a moment from their trip — NOT like a stock library clip or an ad.
+The viewer should think: "this person was actually there and filmed this with their own phone."
 
 TASK:
-For each keyword segment, create a structured JSON prompt suitable for this exact generator profile.
+For each keyword segment below, write a structured JSON prompt that will generate a {max_clip_duration:.1f}-second vertical video clip.
+These clips are b-roll inserts that play over a talking-head narration.
 
-RULES:
-- Keep prompts tightly tied to the scenario topic and the segment phrase.
-- Build visually specific prompts, not generic abstractions or stock categories.
-- Treat `visual_intent` as a cinematic context anchor. Composition should be built around it, but the anchor itself doesn't need to be dead center.
-- Always vary the shot scale between segments. Never use the same scale (e.g., Close-up to Close-up) twice in a row.
-- If `visual_intent` implies a consumer good, show it in a lively, premium environment with natural human presence (e.g., a hand nearby, lighting from a window), not as a standalone studio product.
-- Avoid readable labels, logos, or exact packaging claims. Focus on the FEEL of the product.
-- Locations, landmarks, and subjects from `visual_intent` must be visible, but they should be part of a larger, deep scene with foreground and background layers.
-- Composition Rule: Use the Rule of Thirds. Avoid centering the subject unless for a specific POV effect. Leave negative space for potential text overlays.
-- Action Directive: Every shot must contain movement. No static frames. Use steam, light shifts, wind, or natural human micro-actions.
-- Every generated clip should feel like authentic vertical footage captured by a real person on an iPhone while traveling, not by a stock crew.
-- Default visual language: handheld smartphone capture, natural available light, small human imperfections, believable micro-jitter, quick reframing, realistic phone auto-exposure.
-- Avoid ad-style beauty shots, sterile commercial aesthetics, or drone stock. Prefer high-end "Traveler UGC" look—shot with an iPhone but by someone with professional eye for light and composition.
-- If the segment is about a specific place, season, timing, price spike, weather pattern, or travel decision, the visual must show that exact context.
-- Example: if the script is about Hainan, do not return a generic "beautiful resort beach"; prefer "tourist checking rainy-season weather on Hainan beachfront", "crowded breakfast line at a Hainan resort in January", "calm sea on Hainan promenade in October".
-- Example: if the segment is about Paris winter sales and `visual_intent` says "Eiffel Tower in the background", the frame still has to include the Eiffel Tower; a random shop window alone is wrong.
-- Use {profile["aspect_ratio"]} vertical composition.
-- Force portrait-safe framing: the main subject must be composed for a vertical mobile screen, not a landscape scene squeezed into a tall canvas.
-- Avoid wide office/table/room compositions that naturally want horizontal framing unless the action is explicitly reframed as a vertical close-up or vertical medium shot.
-- Keep each prompt self-contained.
-- Write the creative as a {max_clip_duration:.1f}-second storyboard for {profile["model_label"]}, but the camera language should stay user-shot and intimate.
-- timing inside prompt_json must start at 0.0s and cover at most {max_clip_duration:.1f} seconds total.
-- Do not include top-level keys like "task" or "model" inside prompt_json.
-- Use exactly ONE continuous shot. No cuts, no scene switches, no multi-shot sequencing.
-- "scene_sequencing" must contain exactly one item, covering the full duration.
-- Prefer concrete real-world shots over abstract metaphors when possible.
-- If asset_type is "product_video", keep:
-  - "prompt_json": null
-  - "use_ready_asset": true
-- If asset_type is "generated_video", create a prompt_json object in the style below.
+═══════════════════════════════════════════
+VISUAL STORYTELLING RULES (CRITICAL):
+═══════════════════════════════════════════
 
-SELF-CHECK BEFORE OUTPUT:
-- Is the shot scale different from the previous segment?
-- Does the composition follow the Rule of Thirds or use creative negative space?
-- Is there a dynamic element or signs of life in the frame?
-- Does it feel like a professional iPhone capture, not a stale product catalog?
-- If any answer is no, rewrite the prompt before returning JSON.
+1. DESCRIBE WHAT THE CAMERA SEES, NOT WHAT YOU WANT THE STYLE TO BE
+   ❌ BAD: "authentic iPhone UGC, realistic travel footage"
+   ✅ GOOD: "A woman's hand trails along a sun-warmed stone wall as she walks down a narrow cobblestone alley in Barcelona, laundry lines with colorful clothes strung between balconies above, dappled afternoon sunlight filtering through"
 
-JSON FORMAT:
+2. EVERY FRAME NEEDS SENSORY TEXTURE
+   Include at least 2-3 of these in every prompt:
+   - Specific lighting (golden hour glow, overcast diffused light, neon reflections on wet pavement, harsh midday shadows)
+   - Physical textures (condensation on glass, weathered wood grain, sand on skin, fabric folds)
+   - Environmental movement (wind in hair/leaves/curtains, steam rising, water rippling, traffic passing)
+   - Temperature cues (breath vapor, sweat on skin, sunburn glow, warm drink steam)
+
+3. HUMAN PRESENCE WITHOUT FACES
+   Show people through:
+   - Hands (holding coffee, scrolling phone, pointing at something, resting on railing)
+   - Over-shoulder perspective (viewer sees what the person sees)
+   - Silhouettes and partial figures (legs walking, shadow on wall, arm reaching)
+   - Personal objects in frame (phone screen, sunglasses on table, open passport, packed suitcase)
+   NEVER describe a full face close-up or a person posing for camera.
+
+4. CAMERA BEHAVIOR THROUGH ACTIONS, NOT LABELS
+   ❌ BAD: "handheld smartphone movement with natural micro-jitter"
+   ✅ GOOD: "Camera slowly pans right following a street vendor, slight drift as the filmer shifts weight"
+   ✅ GOOD: "POV looking down at feet walking on wet tiles, camera bounces gently with each step"
+   ✅ GOOD: "Camera tilts up from a plate of food to reveal a panoramic ocean view through the restaurant window"
+
+5. DEPTH AND LAYERS
+   Every shot must have foreground AND background:
+   ❌ BAD: "a beach at sunset" (flat, generic)
+   ✅ GOOD: "Close-up of wet sand with foam receding in foreground, footprints leading to a distant figure at the water's edge, orange sun low on horizon casting long shadows"
+
+6. ANTI-STOCK CHECKLIST (apply to every prompt):
+   - Is there something imperfect? (slightly messy table, uneven lighting, a random passerby)
+   - Is there visible human activity? (not staged, not posed)
+   - Can you tell the SPECIFIC location from the visual? (not "a beach" but "a Thai beach with longtail boats")
+   - Is there a micro-story? (someone doing something, not just a pretty vista)
+
+═══════════════════════════════════════════
+SHOT VARIETY (MANDATORY):
+═══════════════════════════════════════════
+Rotate through these shot types across segments — NEVER repeat the same type consecutively:
+- POV walking shot (camera IS the person's eyes)
+- Over-shoulder reveal (we see what they see over their shoulder)
+- Detail close-up (hands, objects, food, textures — shot from 10-20cm)
+- Low angle looking up (from table level, floor level, water level)
+- Slow pan discovery (camera moves to reveal something unexpected)
+- Reflection shot (in window, puddle, mirror, phone screen)
+
+═══════════════════════════════════════════
+TECHNICAL SPECS:
+═══════════════════════════════════════════
+- Generator model: {profile["model_label"]}
+- Max duration per clip: {max_clip_duration:.1f} seconds
+- Aspect ratio: {profile["aspect_ratio"]} (vertical)
+- Resolution: {profile["resolution"]}
+- Mode: {profile["mode"] or "n/a"}
+- ONE continuous shot per clip. No cuts or scene switches.
+- Framing: always composed for vertical mobile screen.
+
+═══════════════════════════════════════════
+JSON OUTPUT FORMAT:
+═══════════════════════════════════════════
+Return ONLY this JSON structure, no other text:
+
 {{
   "prompts": [
     {{
-      "slot_start": 0,
-      "slot_end": 3,
-      "keyword": "эмиграция",
-      "phrase": "переезд за границу",
+      "slot_start": <number>,
+      "slot_end": <number>,
+      "keyword": "<keyword>",
+      "phrase": "<phrase>",
       "asset_type": "generated_video",
       "asset_url": null,
       "use_ready_asset": false,
-        "prompt_json": {{
-        "global_logic": "Authentic vertical iPhone travel footage, user-shot feel, portrait-safe framing, natural light, realistic handheld motion, single-take continuous shot, full storyboard duration {max_clip_duration:.1f} seconds maximum.",
+      "prompt_json": {{
+        "global_logic": "<1-2 sentence overall mood and filming approach>",
         "scene_sequencing": [
           {{
             "shot_id": 1,
             "timing": "0.0s - {max_clip_duration:.1f}s",
-            "location": "specific place tied to the script topic",
-            "action": "clear real-life action that looks self-shot on an iPhone",
-            "visual_anchor": "specific scenario-related subject"
+            "location": "<specific real place with identifying visual details>",
+            "action": "<detailed cinematic description: what exactly the camera sees, the movement, the light, the textures, the human element — written as one flowing paragraph of 2-4 sentences>",
+            "visual_anchor": "<the key visual element that connects to the keyword>"
           }}
         ],
         "technical_directives": {{
-          "camera_movement": "handheld smartphone movement, subtle natural micro-jitter, human reframing",
-          "style": "authentic iPhone UGC, realistic travel footage",
-          "continuity": "single-take continuous capture, no cuts or scene switches",
-          "aspect_ratio": "{profile["aspect_ratio"]}",
-          "resolution": "{profile["resolution"]}",
-          "mode": "{profile["mode"] or "default"}",
-          "generate_audio": false,
-          "framing": "portrait-safe vertical framing, central subject dominance, no sideways composition, no landscape-style staging inside the vertical canvas",
-          "shot_preference": "prefer close-up, over-shoulder, POV, or medium vertical shots that feel personally filmed",
-          "capture_device": "modern iPhone camera look"
+          "camera_movement": "<specific camera action described as physical movement, not a style label>",
+          "style": "personal phone footage, natural imperfections, real-life moment",
+          "continuity": "single-take continuous capture, no cuts",
+          "framing": "<specific framing for this shot — e.g. 'low angle from table looking up' or 'tight over-shoulder'>",
+          "capture_device": "phone camera, shallow depth at close range, auto-exposure shifts"
         }},
         "negative_prompt": "{IPHONE_NEGATIVE_PROMPT}"
       }}
     }}
   ]
 }}
+
+RULES FOR SPECIAL CASES:
+- If asset_type is "product_video": set "prompt_json": null, "use_ready_asset": true
+- "scene_sequencing" must contain exactly ONE item
+- Timing always starts at 0.0s
+
+═══════════════════════════════════════════
+EXAMPLES OF GREAT vs TERRIBLE PROMPTS:
+═══════════════════════════════════════════
+
+KEYWORD: "отели на Бали"
+❌ TERRIBLE: location="Bali hotel", action="person at a hotel pool in Bali, authentic iPhone footage"
+✅ GREAT: location="Infinity pool edge at a Bali cliff-side villa, Uluwatu area", action="Close-up of a woman's feet dangling over an infinity pool edge, turquoise water stretching to the horizon below. Her toes skim the surface sending tiny ripples. A tropical drink with a paper umbrella sits on the wet stone beside her. Camera slowly tilts up from feet to reveal the vast Indian Ocean panorama, lens catches a sun flare. Late afternoon golden light paints everything warm amber."
+
+KEYWORD: "еда в Таиланде"
+❌ TERRIBLE: location="Thai street", action="Thai street food being prepared, authentic UGC style"
+✅ GREAT: location="Smoky night market stall on Yaowarat Road, Bangkok Chinatown", action="POV shot: the viewer's hand reaches toward a sizzling wok where a vendor tosses pad thai with flames leaping up. The camera drifts to the right revealing a row of glowing food stalls stretching down the narrow street, motorcycles weaving between pedestrians, neon signs reflecting on the wet asphalt. Dense steam catches the warm orange light from bare overhead bulbs."
+
+KEYWORD: "перелёт"
+❌ TERRIBLE: location="airplane", action="person looking out airplane window, handheld camera feel"
+✅ GREAT: location="Economy class window seat during golden hour descent", action="Camera peers past a sleeping passenger's shoulder through the oval airplane window. Cloud layer below glows pink and orange. The wing cuts through frame at a diagonal. A phone notification lights up on the tray table in the foreground, slightly out of focus. The plane banks gently and the light shifts across the cabin wall."
+
+═══════════════════════════════════════════
+INPUT DATA:
+═══════════════════════════════════════════
 
 SCENARIO:
 {scenario_text}
@@ -281,8 +322,13 @@ KEYWORD SEGMENTS:
                     {
                         "shot_id": 1,
                         "timing": f"0.0s - {duration:.1f}s",
-                        "location": f"Specific real-world place directly tied to: {must_show}",
-                        "action": f"Authentic iPhone-style user-shot moment clearly showing this subject in an unbranded, realistic way: {must_show}",
+                        "location": f"A recognizable real-world setting that immediately evokes: {must_show}",
+                        "action": (
+                            f"A candid, handheld-style shot capturing {must_show}. The camera is positioned at eye-level or slightly low, "
+                            f"capturing natural movement like a person walking, a hand interacting with an object, or a busy street scene. "
+                            f"The lighting is natural and atmospheric, with visible textures like reflections on glass, steam, or fabric. "
+                            f"The shot feels like a spontaneous moment captured on a phone, with subtle, organic camera drift."
+                        ),
                         "visual_anchor": must_show,
                     }
                 ]
@@ -295,19 +341,14 @@ KEYWORD SEGMENTS:
                 "asset_url": segment.get("asset_url"),
                 "use_ready_asset": use_ready_asset,
                 "prompt_json": None if use_ready_asset else {
-                    "global_logic": f"Authentic vertical iPhone travel footage, user-shot feel, natural light, portrait-safe framing, single-take continuous shot, full storyboard duration {max_clip_duration:.1f} seconds maximum.",
+                    "global_logic": f"Personal phone footage from a real trip. Natural imperfections, shifting auto-exposure, intimate framing. Single continuous shot, {duration:.1f} seconds.",
                     "scene_sequencing": scene_sequencing,
                     "technical_directives": {
-                        "camera_movement": "handheld smartphone movement with subtle natural micro-jitter",
-                        "style": "authentic iPhone UGC, realistic travel footage",
-                        "continuity": "single-take continuous capture, no cuts or scene switches",
-                        "aspect_ratio": profile["aspect_ratio"],
-                        "resolution": profile["resolution"],
-                        "mode": profile["mode"] or "default",
-                        "generate_audio": profile["generate_audio"],
-                        "framing": "portrait-safe vertical framing, central subject dominance, no sideways composition, no landscape-style staging inside the vertical canvas",
-                        "shot_preference": "prefer close-up, POV, over-shoulder, or medium vertical shots that feel personally filmed",
-                        "capture_device": "modern iPhone camera look",
+                        "camera_movement": "camera drifts slowly as the filmer shifts their stance, slight natural unsteadiness",
+                        "style": "personal phone footage, natural imperfections, real-life moment",
+                        "continuity": "single-take continuous capture, no cuts",
+                        "framing": "vertical close-up or over-shoulder, subject positioned off-center using rule of thirds",
+                        "capture_device": "phone camera, shallow depth at close range, auto-exposure shifts",
                     },
                     "negative_prompt": IPHONE_NEGATIVE_PROMPT,
                 },
