@@ -120,11 +120,55 @@ def _scenario_has_pending_kie_tasks(scenario: Dict[str, Any]) -> bool:
     for item in prompts:
         if item.get("use_ready_asset"):
             continue
+        # Task submitted and still running — genuinely pending
         if item.get("task_id") and item.get("task_state") not in {"success", "fail"}:
             return True
-        if item.get("prompt_json") and not item.get("task_id") and not item.get("video_url") and not item.get("use_ready_asset"):
+        # Has prompt but no task_id (never submitted or needs retry) — only pending
+        # if it has NOT already been marked as failed
+        if (
+            item.get("prompt_json")
+            and not item.get("task_id")
+            and not item.get("video_url")
+            and not item.get("use_ready_asset")
+            and item.get("submission_status") not in {"failed", "not_applicable"}
+        ):
             return True
     return False
+
+
+def _scenario_has_unsubmitted_kie_tasks(scenario: Dict[str, Any]) -> bool:
+    """Check if there are prompts that need (re-)submission to KIE."""
+    prompts = ((scenario.get("video_generation_prompts") or {}).get("prompts") or [])
+    for item in prompts:
+        if item.get("use_ready_asset"):
+            continue
+        if (
+            item.get("prompt_json")
+            and not item.get("task_id")
+            and not item.get("video_url")
+            and item.get("submission_status") in {None, "failed", "unknown"}
+        ):
+            return True
+    return False
+
+
+def _count_kie_status(scenario: Dict[str, Any]) -> Dict[str, int]:
+    """Return counts of KIE tasks by state for logging."""
+    prompts = ((scenario.get("video_generation_prompts") or {}).get("prompts") or [])
+    counts: Dict[str, int] = {"total": 0, "ready_asset": 0, "pending": 0, "success": 0, "fail": 0, "unsubmitted": 0}
+    for item in prompts:
+        counts["total"] += 1
+        if item.get("use_ready_asset"):
+            counts["ready_asset"] += 1
+        elif item.get("task_state") == "success":
+            counts["success"] += 1
+        elif item.get("task_state") == "fail":
+            counts["fail"] += 1
+        elif item.get("task_id") and item.get("task_state") not in {"success", "fail"}:
+            counts["pending"] += 1
+        elif item.get("prompt_json") and not item.get("task_id"):
+            counts["unsubmitted"] += 1
+    return counts
 
 
 def process_scenario_stage(job: Dict[str, Any]) -> None:
@@ -159,10 +203,27 @@ def poll_waiting_kie_stage(job: Dict[str, Any]) -> None:
     if not scenario_job_id:
         raise RuntimeError("Final video job has no scenario_job_id")
 
+    # If there are unsubmitted tasks (e.g. from a prior 422 failure), retry submission
+    scenario = get_generated_scenario_by_job_id(str(scenario_job_id))
+    if scenario and _scenario_has_unsubmitted_kie_tasks(scenario):
+        logger.info("Job id=%s has unsubmitted KIE tasks — retrying submission for job_id=%s", job["id"], scenario_job_id)
+        try:
+            submit_saved_kie_tasks(str(scenario_job_id))
+        except Exception as error:
+            logger.error("KIE re-submission failed for job_id=%s: %s", scenario_job_id, error)
+
     poll_saved_kie_tasks(job_id=str(scenario_job_id), limit=1)
     scenario = get_generated_scenario_by_job_id(str(scenario_job_id))
     if not scenario:
         raise RuntimeError(f"Scenario with job_id={scenario_job_id} not found")
+
+    # Log status for visibility
+    counts = _count_kie_status(scenario)
+    logger.info(
+        "KIE poll job id=%s: total=%d success=%d fail=%d pending=%d unsubmitted=%d ready_asset=%d",
+        job["id"], counts["total"], counts["success"], counts["fail"],
+        counts["pending"], counts["unsubmitted"], counts["ready_asset"],
+    )
 
     if _scenario_has_pending_kie_tasks(scenario):
         requeue_final_video_job(
@@ -172,6 +233,17 @@ def poll_waiting_kie_stage(job: Dict[str, Any]) -> None:
             error_message=None,
         )
         return
+
+    # Check if ALL non-ready-asset tasks failed — that's an error, not success
+    all_failed = all(
+        item.get("use_ready_asset") or item.get("task_state") == "fail" or item.get("submission_status") == "failed"
+        for item in ((scenario.get("video_generation_prompts") or {}).get("prompts") or [])
+    )
+    if all_failed and counts["total"] > counts["ready_asset"]:
+        raise RuntimeError(
+            f"All KIE tasks failed for scenario job_id={scenario_job_id}. "
+            f"fail={counts['fail']} unsubmitted={counts['unsubmitted']}"
+        )
 
     update_final_video_job(
         int(job["id"]),
