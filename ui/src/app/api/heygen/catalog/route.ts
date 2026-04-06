@@ -77,8 +77,9 @@ export async function GET() {
                   resolvedLookId,
                   isMotion: details.is_motion === true,
                 };
-              } catch (error) {
-                console.error(`HeyGen look details import failed for ${resolvedLookId}:`, error);
+              } catch {
+                // Not all looks are photo avatars (some are studio/regular),
+                // so "Photar not found" is expected — treat as non-motion.
                 return {
                   look,
                   resolvedLookId,

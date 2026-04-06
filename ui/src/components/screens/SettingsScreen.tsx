@@ -277,7 +277,7 @@ const mergeCatalogIntoAvatarConfigs = (
             ...catalogLook,
             ...currentLook,
             look_name: currentLook.look_name || catalogLook?.look_name || currentLook.look_id,
-            preview_image_url: currentLook.preview_image_url || catalogLook?.preview_image_url || "",
+            preview_image_url: catalogLook?.preview_image_url || currentLook.preview_image_url || "",
           },
           lookIndex
         );
@@ -294,7 +294,7 @@ const mergeCatalogIntoAvatarConfigs = (
           ...currentAvatar,
           avatar_name: currentAvatar.avatar_name || catalogAvatar.avatar_name || currentAvatar.avatar_id,
           folder_name: currentAvatar.folder_name || catalogAvatar.folder_name || "",
-          preview_image_url: currentAvatar.preview_image_url || catalogAvatar.preview_image_url || "",
+          preview_image_url: catalogAvatar.preview_image_url || currentAvatar.preview_image_url || "",
           looks: mergedLooks,
         },
         merged.length
