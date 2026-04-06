@@ -460,8 +460,32 @@ def get_kie_task_details(task_id: str) -> Dict[str, Any]:
         params={"taskId": task_id},
         timeout=60,
     )
-    response.raise_for_status()
-    return response.json()
+
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {"raw": response.text}
+
+    if not response.ok:
+        # KIE returns 422 with "recordInfo is null" when task doesn't exist
+        error_msg = payload.get("msg") or payload.get("message") or response.text[:300]
+        logger.warning(
+            "KIE recordInfo failed: task_id=%s status=%s msg=%s",
+            task_id, response.status_code, error_msg,
+        )
+        raise RuntimeError(f"KIE recordInfo HTTP {response.status_code}: {error_msg}")
+
+    # Also check for API-level error code inside the 200 response
+    api_code = payload.get("code")
+    if api_code and str(api_code) not in {"0", "200", "success"}:
+        error_msg = payload.get("msg") or payload.get("message") or f"code={api_code}"
+        logger.warning(
+            "KIE recordInfo API error: task_id=%s code=%s msg=%s",
+            task_id, api_code, error_msg,
+        )
+        raise RuntimeError(f"KIE recordInfo code={api_code}: {error_msg}")
+
+    return payload
 
 
 def _parse_result_urls(result_json: Any) -> List[str]:
@@ -508,13 +532,29 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
             "error": fail_msg,
         }
     except Exception as error:
-        logger.error("Failed to refresh KIE task %s: %s", item.get("task_id"), error)
+        error_str = str(error)
+        # KIE returns 404 or 422 "recordInfo is null" for tasks that no longer exist
+        task_not_found = any(marker in error_str for marker in ("404", "422", "recordInfo is null"))
+        logger.error(
+            "Failed to refresh KIE task %s (not_found=%s): %s",
+            item.get("task_id"), task_not_found, error,
+        )
+        if task_not_found:
+            return {
+                **item,
+                "provider": "kie.ai",
+                "provider_model": item.get("provider_model"),
+                "submission_status": "failed",
+                "task_id": None,  # Clear so retry logic can re-submit
+                "task_state": "fail",
+                "error": error_str,
+            }
         return {
             **item,
             "provider": "kie.ai",
             "provider_model": item.get("provider_model"),
-            "submission_status": "failed" if "404" in str(error) else item.get("submission_status", "submitted"),
-            "error": str(error),
+            "submission_status": item.get("submission_status", "submitted"),
+            "error": error_str,
         }
 
 
