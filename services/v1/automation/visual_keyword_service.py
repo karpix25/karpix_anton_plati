@@ -395,44 +395,49 @@ def _build_coverage_keyword_slots(
     timeline_cursor = FIRST_ATTENTION_CUT_MIN_SECONDS
     
     # Available time after the first hook
-    available_for_broll = max_end - FIRST_ATTENTION_CUT_MIN_SECONDS
+    available_total_remaining = max_end - timeline_cursor
     actual_broll_needed = target_total_broll 
+    actual_avatar_needed = available_total_remaining - actual_broll_needed
     
     if actual_broll_needed <= 0:
         return []
         
-    # Estimate cycles: Target slot length for high quality is 2.5 - 5.0s
+    # Estimate cycles
     target_slot_len = max(min_clip_len, profile.get("slot_target", 3.0))
     if coverage_percent > 60.0:
-        target_slot_len = max(target_slot_len, 4.0) # For high coverage, prefer longer clips
+        target_slot_len = max(target_slot_len, 4.0)
         
-    num_cycles = max(1, round(actual_broll_needed / target_slot_len))
+    num_clips = max(1, round(actual_broll_needed / target_slot_len))
     
+    # Island Logic: Calculate how many 2.0s gaps we can fit after the hook
+    total_gaps_possible = int(max(0, actual_avatar_needed) / min_avatar_len)
+    
+    # Which indices of clips should be followed by a gap?
+    gap_indices = set()
+    if total_gaps_possible > 0:
+        # Distribute gaps among clips
+        # If we have 10 clips and 2 gaps, we want them at index 3 and 7 (roughly)
+        step = (num_clips) / (total_gaps_possible + 1)
+        for g in range(1, total_gaps_possible + 1):
+            gap_indices.add(int(g * step))
+
     slots: List[Dict[str, float]] = []
     current_broll_total = 0.0
     
-    for i in range(num_cycles):
+    for i in range(num_clips):
         if timeline_cursor + min_clip_len > max_end:
             break
             
         # 1. Avatar Gap (except for the first cycle which already had the hook)
         if i > 0:
-            remaining_total_time = max_end - timeline_cursor
-            remaining_broll = target_total_broll - current_broll_total
-            
-            # Binary Gap Logic: How much avatar time remains? 
-            # If we divide it across remaining gaps, is it enough for each gap to be >= 2.0s?
-            remaining_avatar_total = remaining_total_time - remaining_broll
-            potential_gap = remaining_avatar_total / max(1, (num_cycles - i))
-            
-            # Rule: If potential gap is below 2.0s, we GO BACK-TO-BACK (gap = 0.0)
-            if potential_gap < min_avatar_len:
-                current_gap = 0.0
-            else:
-                current_gap = potential_gap
-            
-            if current_gap > 0.0:
-                # Find best boundary for gap end (slot start)
+            # Check if this index is marked for a gap
+            if i in gap_indices:
+                # We insert a 2.0s gap (minimum)
+                # How much avatar time to actually spend? We try to spend it all across these gaps.
+                current_gap = actual_avatar_needed / total_gaps_possible
+                current_gap = max(min_avatar_len, current_gap)
+                
+                # Find best boundary
                 start_boundary = _select_boundary(
                     boundaries=boundaries,
                     min_time=timeline_cursor + min_avatar_len,
@@ -442,7 +447,7 @@ def _build_coverage_keyword_slots(
                 )
                 timeline_cursor = round(start_boundary["time"], 1) if start_boundary else round(timeline_cursor + current_gap, 1)
             else:
-                # Back-to-back: Next slot starts EXACTLY where previous ended
+                # Back-to-back
                 timeline_cursor = round(timeline_cursor, 1)
 
         if timeline_cursor + min_clip_len > max_end:
@@ -450,11 +455,9 @@ def _build_coverage_keyword_slots(
 
         # 2. B-roll Slot
         remaining_needed_broll = target_total_broll - current_broll_total
-        remaining_slots = num_cycles - i
-        ideal_slot_len = remaining_needed_broll / max(1, remaining_slots)
+        remaining_clips = num_clips - i
+        ideal_slot_len = remaining_needed_broll / max(1, remaining_clips)
         ideal_slot_len = min(ideal_slot_len, profile["slot_max"])
-        
-        # Ensure it's at least min_clip_len
         ideal_slot_len = max(min_clip_len, ideal_slot_len)
         
         end_boundary = _select_boundary(
@@ -466,7 +469,6 @@ def _build_coverage_keyword_slots(
         )
         slot_end = round(end_boundary["time"], 1) if end_boundary else round(min(timeline_cursor + ideal_slot_len, max_end), 1)
         
-        # Double check duration rule
         if slot_end - timeline_cursor < min_clip_len:
             slot_end = round(min(max_end, timeline_cursor + min_clip_len), 1)
             
