@@ -16,7 +16,7 @@ export interface Client {
   broll_coverage_percent?: number;
   broll_semantic_relevance_priority?: "precision" | "balanced" | "dynamic";
   broll_product_clip_policy?: "contextual" | "prefer" | "required";
-  broll_generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video";
+  broll_generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
   product_media_assets?: ProductMediaAsset[];
   product_keyword?: string;
   product_video_url?: string;
@@ -147,7 +147,7 @@ export interface Settings {
   broll_coverage_percent: number;
   broll_semantic_relevance_priority: "precision" | "balanced" | "dynamic";
   broll_product_clip_policy: "contextual" | "prefer" | "required";
-  broll_generator_model: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video";
+  broll_generator_model: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
   product_media_assets: ProductMediaAsset[];
   product_keyword: string;
   product_video_url: string;
@@ -276,7 +276,7 @@ export interface ScenarioVideoPromptItem {
 
 export interface ScenarioVideoPromptsPayload {
   prompts?: ScenarioVideoPromptItem[];
-  generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video";
+  generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
   updated_at?: string;
 }
 

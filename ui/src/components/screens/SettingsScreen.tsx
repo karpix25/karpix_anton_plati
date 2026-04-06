@@ -61,6 +61,18 @@ const BROLL_GENERATOR_MODEL_LABELS: Record<
     title: "Grok Imagine T2V",
     description: "KIE Text To Video: вертикальные ролики 6 секунд, mode normal, 720p.",
   },
+  "veo3": {
+    title: "Veo 3.1 Quality",
+    description: "Флагманская модель Google Veo 3.1: высочайшее качество и детализация, 1080p.",
+  },
+  "veo3_fast": {
+    title: "Veo 3.1 Fast",
+    description: "Быстрая и экономичная версия Veo 3.1: отличный баланс качества и скорости.",
+  },
+  "veo3_lite": {
+    title: "Veo 3.1 Lite",
+    description: "Самая доступная версия Veo 3.1: высокая скорость и минимальная стоимость.",
+  },
 };
 
 const SEMANTIC_RELEVANCE_LABELS: Record<NonNullable<Settings["broll_semantic_relevance_priority"]>, { title: string; description: string }> = {
@@ -2042,6 +2054,9 @@ export function SettingsScreen({
                     <SelectItem value="bytedance/v1-pro-text-to-video">KIE V1 Pro</SelectItem>
                     <SelectItem value="bytedance/seedance-1.5-pro">Seedance 1.5 Pro</SelectItem>
                     <SelectItem value="grok-imagine/text-to-video">Grok Imagine T2V</SelectItem>
+                    <SelectItem value="veo3">Veo 3.1 Quality</SelectItem>
+                    <SelectItem value="veo3_fast">Veo 3.1 Fast</SelectItem>
+                    <SelectItem value="veo3_lite">Veo 3.1 Lite</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs leading-5 text-muted-foreground">{brollGeneratorModelPreview.description}</p>
