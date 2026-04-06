@@ -71,7 +71,7 @@ PACING_PRESETS: Dict[str, Dict[str, float]] = {
         "min_avatar_gap_factor": 0.65,
         "target_avatar_gap_factor": 0.9,
         "max_avatar_gap_factor": 1.35,
-        "min_avatar_gap_floor": 1.8,
+        "min_avatar_gap_floor": 2.0,
         "target_avatar_gap_floor": 2.4,
         "max_avatar_gap_floor": 3.5,
         "slot_min": 2.0,
@@ -347,8 +347,6 @@ def _build_semantic_keyword_slots(
 
         if slot_end - slot_start < slot_min:
             slot_end = round(min(max_end, slot_start + slot_min), 2)
-        if slot_end - slot_start < 0.8:
-            break
 
         slots.append({
             "slot_start": round(slot_start, 1),
@@ -379,96 +377,89 @@ def _build_coverage_keyword_slots(
     profile = PACING_PRESETS[_normalize_broll_pacing_profile(broll_pacing_profile)]
     coverage_percent = _normalize_broll_coverage_percent(broll_coverage_percent)
     max_end = normalized_words[-1]["end"]
-    if max_end <= MIN_BROLL_SEGMENT_SECONDS + 0.2:
+    
+    # Base constants for the 2.0s rule
+    min_clip_len = max(2.0, MIN_BROLL_SEGMENT_SECONDS) 
+    min_avatar_len = 2.0 
+    
+    if max_end <= min_clip_len + FIRST_ATTENTION_CUT_MIN_SECONDS:
         return []
-
-    min_avatar_gap = FIRST_ATTENTION_CUT_MIN_SECONDS
-    target_avatar_gap = FIRST_ATTENTION_CUT_MIN_SECONDS
-    max_avatar_gap = max(FIRST_ATTENTION_CUT_MIN_SECONDS, round(profile["target_avatar_gap_floor"] * 0.65, 2))
-    slot_min = profile["slot_min"]
-    slot_target = profile["slot_target"]
-    slot_max = min(6.0, max(profile["slot_max"], slot_target + 1.0))
 
     if coverage_percent >= 95.0:
         return [{"slot_start": FIRST_ATTENTION_CUT_MIN_SECONDS, "slot_end": round(max_end, 1)}]
 
+    # Calculate global targets
     target_total_broll = round(max_end * (coverage_percent / 100.0), 2)
-    target_total_broll = max(0.0, min(target_total_broll, max_end))
-    if target_total_broll < slot_min * 0.5:
+    
+    # We always start with the Avatar (hook)
+    timeline_cursor = FIRST_ATTENTION_CUT_MIN_SECONDS
+    
+    # If we want X% coverage, we need a specific ratio of B-roll to total cycles
+    available_for_broll = max_end - FIRST_ATTENTION_CUT_MIN_SECONDS
+    actual_broll_needed = target_total_broll 
+    
+    if actual_broll_needed <= 0:
         return []
-    estimated_slot_count = max(1, round(target_total_broll / max(slot_target, 0.1)))
-
+        
+    # Estimate cycles: we want each B-roll to be around 2.5s - 3.5s for quality
+    target_slot_len = max(min_clip_len, profile["slot_target"])
+    num_cycles = max(1, round(actual_broll_needed / target_slot_len))
+    
     slots: List[Dict[str, float]] = []
-    timeline_cursor = 0.0
-    accumulated_broll = 0.0
-
-    while len(slots) < estimated_slot_count and timeline_cursor + slot_min <= max_end:
-        remaining_slots = estimated_slot_count - len(slots)
-        remaining_broll = max(target_total_broll - accumulated_broll, 0.0)
-        if remaining_broll <= 0.05:
+    current_broll_total = 0.0
+    
+    for i in range(num_cycles):
+        if timeline_cursor + min_clip_len > max_end:
             break
-        remaining_time = max_end - timeline_cursor
+            
+        # 1. Avatar Gap (except for the first cycle which already had the hook)
+        if i > 0:
+            remaining_total_time = max_end - timeline_cursor
+            # Simple alternating logic: proportion the remaining avatar time
+            current_gap = (remaining_total_time - (target_total_broll - current_broll_total)) / max(1, (num_cycles - i))
+            current_gap = max(min_avatar_len, current_gap)
+            
+            # Find best boundary for gap end (slot start)
+            start_boundary = _select_boundary(
+                boundaries=boundaries,
+                min_time=timeline_cursor + min_avatar_len,
+                target_time=timeline_cursor + current_gap,
+                max_time=min(timeline_cursor + current_gap + 1.5, max_end - min_clip_len),
+                fallback_extension=1.0
+            )
+            timeline_cursor = round(start_boundary["time"], 1) if start_boundary else round(timeline_cursor + current_gap, 1)
 
-        desired_gap = (remaining_time - remaining_broll) / max(remaining_slots, 1)
-        desired_gap = max(min_avatar_gap, min(desired_gap, max_avatar_gap))
-
-        start_boundary = _select_boundary(
-            boundaries=boundaries,
-            min_time=timeline_cursor + min_avatar_gap,
-            target_time=timeline_cursor + desired_gap,
-            max_time=min(timeline_cursor + max_avatar_gap, max_end - slot_min),
-            fallback_extension=0.9,
-        )
-        if not start_boundary:
-            slot_start = round(timeline_cursor, 2)
-        else:
-            slot_start = round(start_boundary["time"], 2)
-
-        if slot_start <= timeline_cursor + 0.25:
-            timeline_cursor = round(slot_start + 0.25, 2)
-            continue
-
-        remaining_after_start = max_end - slot_start
-        if remaining_after_start < slot_min:
+        if timeline_cursor + min_clip_len > max_end:
             break
 
-        dynamic_slot_target = remaining_broll / max(remaining_slots, 1)
-        dynamic_slot_target = max(slot_min, min(dynamic_slot_target, slot_max))
-        dynamic_slot_max = min(5.0, max(dynamic_slot_target + 0.6, slot_max))
-
+        # 2. B-roll Slot
+        remaining_needed_broll = target_total_broll - current_broll_total
+        remaining_slots = num_cycles - i
+        ideal_slot_len = remaining_needed_broll / max(1, remaining_slots)
+        ideal_slot_len = max(min_clip_len, min(ideal_slot_len, profile["slot_max"]))
+        
         end_boundary = _select_boundary(
             boundaries=boundaries,
-            min_time=slot_start + slot_min,
-            target_time=slot_start + dynamic_slot_target,
-            max_time=min(slot_start + dynamic_slot_max, max_end),
-            fallback_extension=0.5,
+            min_time=timeline_cursor + min_clip_len,
+            target_time=timeline_cursor + ideal_slot_len,
+            max_time=min(timeline_cursor + ideal_slot_len + 1.0, max_end),
+            fallback_extension=0.5
         )
-        slot_end = round(end_boundary["time"], 2) if end_boundary else round(min(slot_start + dynamic_slot_target, max_end), 2)
-
-        if slot_end - slot_start < slot_min:
-            slot_end = round(min(max_end, slot_start + slot_min), 2)
-        if slot_end - slot_start < 0.8:
-            break
-
+        slot_end = round(end_boundary["time"], 1) if end_boundary else round(min(timeline_cursor + ideal_slot_len, max_end), 1)
+        
+        # Final check for 2s rule
+        if slot_end - timeline_cursor < min_clip_len:
+            slot_end = round(min(max_end, timeline_cursor + min_clip_len), 1)
+            
         slots.append({
-            "slot_start": round(slot_start, 1),
-            "slot_end": round(slot_end, 1),
+            "slot_start": round(timeline_cursor, 1),
+            "slot_end": round(slot_end, 1)
         })
-        accumulated_broll += slot_end - slot_start
+        
+        current_broll_total += (slot_end - timeline_cursor)
         timeline_cursor = slot_end
-
-        if accumulated_broll >= target_total_broll - 0.15:
-            break
-
-    if slots:
-        return slots
-
-    return _build_semantic_keyword_slots(
-        normalized_words,
-        broll_interval_seconds=3.0,
-        broll_pacing_profile=broll_pacing_profile,
-        pause_threshold_seconds=pause_threshold_seconds,
-    )
+        
+    return slots
 
 
 def build_keyword_slots(
@@ -1041,32 +1032,32 @@ def _enforce_first_attention_cut(
     ordered = sorted((dict(segment) for segment in segments), key=lambda item: (_safe_float(item.get("slot_start")), _safe_float(item.get("slot_end"))))
     first = ordered[0]
     original_start = _safe_float(first.get("slot_start"))
-    original_end = _safe_float(first.get("slot_end"), original_start)
-    duration = max(0.0, original_end - original_start)
-    bounds = _semantic_duration_bounds(pacing_profile)
-
-    target_start = min(FIRST_ATTENTION_CUT_MAX_SECONDS, max(FIRST_ATTENTION_CUT_MIN_SECONDS, original_start))
+    
+    # If already in the target window, we are good
     if FIRST_ATTENTION_CUT_MIN_SECONDS <= original_start <= FIRST_ATTENTION_CUT_MAX_SECONDS:
         return ordered
 
-    if duration < bounds["min"]:
-        duration = bounds["min"]
-    if duration > bounds["max"]:
-        duration = bounds["max"]
+    # Force move the first segment to start at 2.6s
+    target_start = FIRST_ATTENTION_CUT_MIN_SECONDS
+    original_end = _safe_float(first.get("slot_end"), original_start)
+    duration = max(MIN_BROLL_SEGMENT_SECONDS, original_end - original_start)
+    
+    first["slot_start"] = round(target_start, 1)
+    first["slot_end"] = round(target_start + duration, 1)
+    
+    # If the first segment now goes beyond the video duration, cap it
+    if first["slot_end"] > total_duration:
+        first["slot_end"] = round(total_duration, 1)
+        if first["slot_end"] - first["slot_start"] < 0.5:
+             # If too short after capping, just remove it (avatar will show longer)
+             return ordered[1:]
 
-    next_start = _safe_float(ordered[1].get("slot_start"), total_duration) if len(ordered) > 1 else total_duration
-    max_allowed_end = min(total_duration, next_start)
-    adjusted_end = min(max_allowed_end, target_start + duration)
-    if adjusted_end - target_start < bounds["min"]:
-        adjusted_end = min(total_duration, target_start + bounds["min"])
-        if adjusted_end > next_start and len(ordered) > 1:
-            adjusted_end = next_start
-
-    if adjusted_end - target_start >= bounds["min"]:
-        first["slot_start"] = round(target_start, 1)
-        first["slot_end"] = round(adjusted_end, 1)
-        first["reason"] = f"{first.get('reason') or 'semantic_llm_selection'}; first_attention_cut_guardrail"
-        ordered[0] = first
+    first["reason"] = f"{first.get('reason') or 'semantic_llm_selection'}; forced_first_attention_cut_guardrail"
+    ordered[0] = first
+    
+    # Since we forcibly moved the first segment, it might now overlap with the second one.
+    # We MUST re-resolve overlaps for the whole list starting from the first segment.
+    return _resolve_segment_overlaps(ordered, total_duration, pacing_profile)
 
     return _resolve_segment_overlaps(ordered, total_duration, pacing_profile)
 
@@ -1393,8 +1384,8 @@ SYSTEM:
 - Organic Motion: Только динамика. Камера всегда в движении (Subtle handheld sway, smooth push-in, slow pan along a surface).
 - No Brands & Generic Clutter: Только премиальный минимализм.
 
-ЛОГИКА СЛОТОВ:
-- Первая смена кадра должна произойти примерно в окне {FIRST_ATTENTION_CUT_MIN_SECONDS:.1f}–{FIRST_ATTENTION_CUT_MAX_SECONDS:.1f} секунды, если ролик длиннее 6 секунд. При этом первый сегмент должен быть максимально качественным и буквально передающим смысл фразы.
+ЛОГИКА СЛОТОВ (КРИТИЧЕСКИ ВАЖНО):
+- ПРАВИЛО ПЕРВОГО КАДРА: Первая смена кадра ДОЛЖНА произойти СТРОГО в окне {FIRST_ATTENTION_CUT_MIN_SECONDS:.1f}–{FIRST_ATTENTION_CUT_MAX_SECONDS:.1f} секунды. Это время для того, чтобы зритель увидел аватара. Игнорируй любые слова и фразы, начинающиеся раньше 2.6 сек. Первый визуальный сегмент должен начинаться ровно в {FIRST_ATTENTION_CUT_MIN_SECONDS:.1f} сек.
 {timing_logic}
 
 PRODUCT KEYWORD:
