@@ -159,16 +159,16 @@ For each keyword segment, create a structured JSON prompt suitable for this exac
 RULES:
 - Keep prompts tightly tied to the scenario topic and the segment phrase.
 - Build visually specific prompts, not generic abstractions or stock categories.
-- Treat `visual_intent` as a binding visual constraint, not as a soft hint.
-- If a generated segment refers to an ordinary consumer good without a ready-made real asset, show a generic unbranded category or use-case, not the exact claimed item from the narration.
-- For those consumer-good shots, avoid readable labels, logos, exact packaging claims, or visuals that imply we have the real product in hand when we do not.
-- If `visual_intent` names a landmark, place, object, weather condition, crowd type, or travel situation, the generated scene must clearly show that exact thing.
-- Never replace a named anchor from `visual_intent` with a nearby but different generic scene. If `visual_intent` says "Eiffel Tower", do not switch to a boutique window. If it says "crowded metro entrance in Paris", do not switch to a cafe terrace.
-- `location`, `action`, and `visual_anchor` must all stay consistent with the same `visual_intent`.
-- Before writing each prompt, resolve one explicit answer to: "what exactly must be visible in frame?" Then keep that answer consistent across the whole prompt.
+- Treat `visual_intent` as a cinematic context anchor. Composition should be built around it, but the anchor itself doesn't need to be dead center.
+- Always vary the shot scale between segments. Never use the same scale (e.g., Close-up to Close-up) twice in a row.
+- If `visual_intent` implies a consumer good, show it in a lively, premium environment with natural human presence (e.g., a hand nearby, lighting from a window), not as a standalone studio product.
+- Avoid readable labels, logos, or exact packaging claims. Focus on the FEEL of the product.
+- Locations, landmarks, and subjects from `visual_intent` must be visible, but they should be part of a larger, deep scene with foreground and background layers.
+- Composition Rule: Use the Rule of Thirds. Avoid centering the subject unless for a specific POV effect. Leave negative space for potential text overlays.
+- Action Directive: Every shot must contain movement. No static frames. Use steam, light shifts, wind, or natural human micro-actions.
 - Every generated clip should feel like authentic vertical footage captured by a real person on an iPhone while traveling, not by a stock crew.
 - Default visual language: handheld smartphone capture, natural available light, small human imperfections, believable micro-jitter, quick reframing, realistic phone auto-exposure.
-- Avoid ad-style beauty shots, glossy hotel-commercial aesthetics, drone tourism footage, perfect cinematic pans, and generic tropical-stock visuals unless the script explicitly calls for them.
+- Avoid ad-style beauty shots, sterile commercial aesthetics, or drone stock. Prefer high-end "Traveler UGC" look—shot with an iPhone but by someone with professional eye for light and composition.
 - If the segment is about a specific place, season, timing, price spike, weather pattern, or travel decision, the visual must show that exact context.
 - Example: if the script is about Hainan, do not return a generic "beautiful resort beach"; prefer "tourist checking rainy-season weather on Hainan beachfront", "crowded breakfast line at a Hainan resort in January", "calm sea on Hainan promenade in October".
 - Example: if the segment is about Paris winter sales and `visual_intent` says "Eiffel Tower in the background", the frame still has to include the Eiffel Tower; a random shop window alone is wrong.
@@ -188,10 +188,10 @@ RULES:
 - If asset_type is "generated_video", create a prompt_json object in the style below.
 
 SELF-CHECK BEFORE OUTPUT:
-- Does the frame visibly contain the exact `visual_intent` anchor?
-- Would a human reading only `visual_anchor` guess the same scene as the script intended?
-- Is this still a personal iPhone capture, not travel stock?
-- Is it a single continuous shot with no cuts or scene switches?
+- Is the shot scale different from the previous segment?
+- Does the composition follow the Rule of Thirds or use creative negative space?
+- Is there a dynamic element or signs of life in the frame?
+- Does it feel like a professional iPhone capture, not a stale product catalog?
 - If any answer is no, rewrite the prompt before returning JSON.
 
 JSON FORMAT:

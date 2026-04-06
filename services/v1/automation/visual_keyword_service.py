@@ -1374,19 +1374,24 @@ def extract_visual_keyword_segments(
 
     prompt = f"""
 SYSTEM:
-Ты — ведущий AI Video Artist и режиссер монтажа вертикального контента (Reels/Shorts/TikTok). Твоя задача — создать глубокие визуальные сценарии (Visual Intents), которые БУКВАЛЬНО иллюстрируют текст.
+Ты — Principal AI Video Director и главный режиссер монтажа вертикального контента высокого уровня (Premium UGC/Reels/TikTok). Твоя задача — создать кинематографичные визуальные сценарии (Visual Intents), которые передают АТМОСФЕРУ и контекст фразы, избегая скучных «предметных» съемок.
 
 ГЛАВНАЯ ДИРЕКТИВА:
-- Literal Meaning Only: Визуализируй ПРЯМОЙ смысл слов. Никаких метафор (например, НЕ показывай "лампочку" для идеи или "альбом" для воспоминаний). Если текст о путешествии — покажи самолет или туриста, а не "старый чемодан" как символ.
-- No Location Hallucinations: НЕ придумывай конкретные страны или города (никаких "Morocco", "Paris"), если их нет в сценарии. Используй нейтральные премиальные локации (Modern Apartment, Luxury Office, High-end Terminal).
-- Physical Context: Каждое ключевое слово (keyword) должно быть физическим объектом или действием, реально присутствующим в тексте фразы (Segment Phrase).
+- Cinematic Realism & Context: Вместо того чтобы просто показывать ПРЕДМЕТ в центре кадра, покажи ЖИВУЮ СЦЕНУ. Если текст о путешествии — покажи человека, смотрящего на взлетную полосу через стекло, или POV-вид из такси на ночной город.
+- UGC Human Touch: Кадр должен выглядеть так, будто его снял реальный человек на iPhone. Добавляй признаки жизни: рука в углу кадра, отражение в стекле, движение людей на заднем плане, пар от кофе.
+- No Location Hallucinations: НЕ придумывай конкретные страны, если их нет. Используй премиальные универсальные локации.
 
-ХУДОЖЕСТВЕННЫЙ СТАНДАРТ (9:16 Aesthetics):
-- Vertical Composition: Кадр строго 9:16. Фокус на центральном объекте или правиле третей.
-- Cinematic Motion: Только One Take с плавным движением (Slow tracking, handheld sway, push-in).
-- Micro-Details: Акцент на текстурах через Macro и ECU (поры кожи, ворс ткани, пылинки в свете) — но только для объектов, имеющих отношение к смыслу фразы.
-- Luxury Lighting: Премиальное освещение (Golden hour, volumetric light, cinematic shadows).
-- No Brands: Заменяй бренды на "High-end unbranded device".
+ХУДОЖЕСТВЕННЫЙ СТАНДАРТ (9:16 Cinematic Flow):
+- Dynamic Shot Variety: Категорически запрещено использовать один и тот же план дважды подряд. Чередуй масштабы:
+  * ECU (Extreme Close-Up): Деталь (глаз, палец на кнопке, текстура ткани).
+  * MCU (Medium Close-Up): Портрет или предмет в руках (плечевой план).
+  * MS (Medium Shot): Человек по пояс в среде.
+  * LS (Long Shot / Wide): Атмосферный общий план (интерьер, улица).
+  * POV (Point of View): Вид "из глаз", вовлекающий зрителя.
+- Rule of Thirds & Framing: Избегай центрирования. Используй правило третей, фрейминг через объекты на переднем плане и "отрицательное пространство" (свободное место для текста).
+- Atmospheric Lighting (The "High-End" Look): Всегда прописывай свет: "Golden hour glow", "Volumetric dust motes", "Soft rim lighting from a laptop screen", "Cinematic blue hour shadows".
+- Organic Motion: Только динамика. Камера всегда в движении (Subtle handheld sway, smooth push-in, slow pan along a surface).
+- No Brands & Generic Clutter: Только премиальный минимализм.
 
 ЛОГИКА СЛОТОВ:
 - Первая смена кадра должна произойти примерно в окне {FIRST_ATTENTION_CUT_MIN_SECONDS:.1f}–{FIRST_ATTENTION_CUT_MAX_SECONDS:.1f} секунды, если ролик длиннее 6 секунд. При этом первый сегмент должен быть максимально качественным и буквально передающим смысл фразы.
@@ -1411,8 +1416,8 @@ RETURN JSON:
       "phrase": "описание действия (RU)",
       "word_start": 1.24,
       "word_end": 1.88,
-      "visual_intent": "Deep technical prompt (EN). Структура: [Shot Type / Macro] + [Subject & Action] + [Tactile Textures] + [Lighting & Organic Motion] + [9:16 vertical]",
-      "reason": "Режиссерское обоснование: как этот визуал и макро-детали усиливают смысл."
+      "visual_intent": "Deep cinematic prompt (EN). Структура: [Shot Scale] + [Subject Actions & UGC details] + [Environment & Lighting] + [9:16 vertical composition]",
+      "reason": "Director's reasoning: почему выбран этот ракурс и как он создает ритм (чередование планов)."
     }}
   ]
 }}
