@@ -5,6 +5,7 @@ import time
 from typing import Any, Dict, List
 
 import requests
+from requests.exceptions import HTTPError
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +70,73 @@ def _extract_error_message(payload: Any) -> str | None:
     return None
 
 
+def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
+    """Convert a structured prompt_json object into a plain-text prompt
+    string that KIE API expects.
+
+    KIE API's `prompt` field must be a human-readable cinematic
+    description, NOT a raw JSON dump.  When video_prompt_service
+    produces a rich dict with keys like `global_logic`,
+    `scene_sequencing`, `technical_directives`, `negative_prompt`,
+    this function extracts meaningful text and concatenates it.
+
+    If prompt_json is already a plain string, it is returned as-is.
+    """
+    if isinstance(prompt_json, str):
+        return prompt_json.strip()
+
+    if not isinstance(prompt_json, dict):
+        return json.dumps(prompt_json, ensure_ascii=False)
+
+    parts: list[str] = []
+
+    # 1. Global logic / style directive
+    global_logic = prompt_json.get("global_logic")
+    if global_logic:
+        parts.append(str(global_logic).strip())
+
+    # 2. Scene sequencing – the core visual description
+    scenes = prompt_json.get("scene_sequencing")
+    if isinstance(scenes, list):
+        for scene in scenes:
+            if not isinstance(scene, dict):
+                continue
+            scene_parts: list[str] = []
+            for key in ("location", "action", "visual_anchor"):
+                val = scene.get(key)
+                if val:
+                    scene_parts.append(str(val).strip())
+            if scene_parts:
+                parts.append(". ".join(scene_parts))
+
+    # 3. Technical directives – camera, style, framing
+    tech = prompt_json.get("technical_directives")
+    if isinstance(tech, dict):
+        tech_parts: list[str] = []
+        for key in ("camera_movement", "style", "framing", "shot_preference", "capture_device"):
+            val = tech.get(key)
+            if val:
+                tech_parts.append(str(val).strip())
+        if tech_parts:
+            parts.append(". ".join(tech_parts))
+
+    # 4. Negative prompt
+    neg = prompt_json.get("negative_prompt")
+    if neg:
+        parts.append(f"Negative prompt: {str(neg).strip()}")
+
+    result = "\n".join(parts).strip()
+    if not result:
+        # Last resort – dump as JSON but this should not happen
+        logger.warning("_flatten_prompt_json_to_text: could not extract text, falling back to json.dumps")
+        result = json.dumps(prompt_json, ensure_ascii=False)
+
+    return result
+
+
 def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
     resolved_model = normalize_kie_model(model)
-    prompt_text = json.dumps(prompt_json, ensure_ascii=False)
+    prompt_text = _flatten_prompt_json_to_text(prompt_json)
 
     if resolved_model == SEEDANCE_15_PRO_MODEL:
         return {
@@ -80,10 +145,10 @@ def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = N
                 "prompt": prompt_text,
                 "aspect_ratio": "9:16",
                 "resolution": "720p",
-                "duration": "4",
+                "duration": 8,
                 "fixed_lens": False,
                 "generate_audio": False,
-                "nsfw_checker": True,
+                "nsfw_checker": False,
             },
         }
 
@@ -109,7 +174,7 @@ def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = N
             "camera_fixed": False,
             "seed": -1,
             "enable_safety_checker": True,
-            "nsfw_checker": True,
+            "nsfw_checker": False,
         },
     }
 
@@ -117,7 +182,7 @@ def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = N
 def submit_veo_video_task(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
     api_key = _get_api_key()
     resolved_model = normalize_kie_model(model)
-    prompt_text = json.dumps(prompt_json, ensure_ascii=False) if isinstance(prompt_json, dict) else str(prompt_json)
+    prompt_text = _flatten_prompt_json_to_text(prompt_json)
 
     # Note: Using 9:16 aspect ratio as default for vertical content
     payload = {
@@ -148,13 +213,35 @@ def submit_veo_video_task(prompt_json: Dict[str, Any], model: str | None = None)
         json=payload,
         timeout=60,
     )
-    response.raise_for_status()
 
+    # Capture response body BEFORE raise_for_status so we can log KIE error details
     response_payload = None
     try:
         response_payload = response.json()
     except Exception:
         response_payload = {"raw": response.text}
+
+    if not response.ok:
+        error_detail = _extract_error_message(response_payload) or response.text[:500]
+        logger.error(
+            "KIE VEO submission failed. status=%s model=%s error=%s payload_sent=%s response=%s",
+            response.status_code,
+            resolved_model,
+            error_detail,
+            json.dumps(payload, ensure_ascii=False)[:500],
+            json.dumps(response_payload, ensure_ascii=False)[:500] if response_payload else "<empty>",
+        )
+        return {
+            "provider": "kie.ai",
+            "provider_model": resolved_model,
+            "submission_status": "failed",
+            "task_id": None,
+            "task_state": "fail",
+            "request_payload": payload,
+            "response_payload": response_payload,
+            "result_urls": [],
+            "error": f"HTTP {response.status_code}: {error_detail}",
+        }
 
     task_id = _extract_task_id(response_payload)
     error_message = None
@@ -193,6 +280,12 @@ def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None)
             "error": "KIE_API_KEY is not configured",
         }
 
+    logger.info(
+        "KIE createTask request: model=%s prompt_preview=%s",
+        resolved_model,
+        json.dumps(payload, ensure_ascii=False)[:300],
+    )
+
     response = requests.post(
         KIE_CREATE_TASK_URL,
         headers={
@@ -202,8 +295,8 @@ def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None)
         json=payload,
         timeout=60,
     )
-    response.raise_for_status()
 
+    # Capture response body BEFORE raise_for_status so we can log KIE error details
     response_payload = None
     response_text = None
     try:
@@ -211,6 +304,28 @@ def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None)
     except Exception:
         response_text = response.text
         response_payload = {"raw": response_text}
+
+    if not response.ok:
+        error_detail = _extract_error_message(response_payload) or response_text or response.text[:500]
+        logger.error(
+            "KIE createTask FAILED. status=%s model=%s error=%s payload_sent=%s response=%s",
+            response.status_code,
+            resolved_model,
+            error_detail,
+            json.dumps(payload, ensure_ascii=False)[:500],
+            json.dumps(response_payload, ensure_ascii=False)[:500] if response_payload else "<empty>",
+        )
+        return {
+            "provider": "kie.ai",
+            "provider_model": resolved_model,
+            "submission_status": "failed",
+            "task_id": None,
+            "task_state": "fail",
+            "request_payload": payload,
+            "response_payload": response_payload,
+            "result_urls": [],
+            "error": f"HTTP {response.status_code}: {error_detail}",
+        }
 
     task_id = _extract_task_id(response_payload)
     error_message = None
@@ -223,6 +338,13 @@ def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None)
             response.status_code,
             response_payload,
         )
+
+    logger.info(
+        "KIE createTask OK: model=%s task_id=%s state=%s",
+        resolved_model,
+        task_id,
+        "waiting" if task_id else "unknown",
+    )
 
     return {
         "provider": "kie.ai",
