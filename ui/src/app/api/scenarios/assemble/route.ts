@@ -349,24 +349,29 @@ function resolvePromptSource(
 }
 
 function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
-  let prompts = normalizePromptWindows(
-    (scenario.video_generation_prompts?.prompts || [])
+  const rawPrompts = (scenario.video_generation_prompts?.prompts || [])
     .map((item) => ({
       start: Number(item.slot_start || 0),
       end: Number(item.slot_end || 0),
       assetType: item.asset_type || null,
       source: resolvePromptSource(item),
-    }))
-    .filter((item) => item.source && item.end > item.start)
-    .sort((a, b) => a.start - b.start),
+    }));
+
+  const withSource = rawPrompts.filter((item) => item.source && item.end > item.start);
+  console.log(
+    `[montage] Prompts: ${rawPrompts.length} total → ${withSource.length} with source ` +
+    `(${rawPrompts.length - withSource.length} dropped: no video_url)`
+  );
+
+  let prompts = normalizePromptWindows(
+    withSource.sort((a, b) => a.start - b.start),
     totalDuration
   );
 
   if (scenario.heygen_video_url && prompts.length) {
     const introSeconds = pickFirstAvatarIntroSeconds(totalDuration);
     if (introSeconds > 0) {
-      // Guarantee the montage begins with avatar by trimming any b-roll that starts before the intro window.
-      // If multiple prompts overlap the intro, we clamp them to start after it and then de-overlap sequentially.
+      const beforeIntro = prompts.length;
       prompts = prompts
         .filter((p) => p.end > introSeconds)
         .map((p) => ({
@@ -386,10 +391,22 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
         }
       }
       prompts = adjusted;
+      if (beforeIntro !== prompts.length) {
+        console.log(
+          `[montage] Avatar intro (${introSeconds.toFixed(2)}s): ${beforeIntro} → ${prompts.length} prompts ` +
+          `(${beforeIntro - prompts.length} trimmed)`
+        );
+      }
     }
   }
 
+  const beforeGaps = prompts.length;
   prompts = ensureMinimumAvatarGaps(prompts, totalDuration);
+  if (beforeGaps !== prompts.length) {
+    console.log(
+      `[montage] Avatar gaps: ${beforeGaps} → ${prompts.length} prompts`
+    );
+  }
 
   const segments: TimelineSegment[] = [];
   let cursor = 0;
@@ -426,7 +443,14 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
     });
   }
 
-  return segments.filter((segment) => segment.end - segment.start > 0.05);
+  const finalSegments = segments.filter((segment) => segment.end - segment.start > 0.05);
+  const brollCount = finalSegments.filter((s) => s.kind === "broll").length;
+  const avatarCount = finalSegments.filter((s) => s.kind === "avatar").length;
+  console.log(
+    `[montage] Final timeline: ${finalSegments.length} segments (${brollCount} b-roll, ${avatarCount} avatar) / ${totalDuration.toFixed(1)}s`
+  );
+
+  return finalSegments;
 }
 
 function normalizePromptWindows(
@@ -479,27 +503,24 @@ function ensureMinimumAvatarGaps(
     const next = results[i + 1];
 
     const gap = next.start - current.end;
-    if (gap < MIN_AVATAR_GAP_SECONDS) {
-      const deficit = MIN_AVATAR_GAP_SECONDS - gap;
-      const shift = deficit / 2;
 
-      current.end -= shift;
-      next.start += shift;
-
+    if (gap > 0 && gap < MIN_AVATAR_GAP_SECONDS) {
+      // Gap is too small for a meaningful avatar appearance (< 2s).
+      // Close it by extending current b-roll to meet the next one.
+      // This allows consecutive b-roll playback without a flickering
+      // half-second avatar segment in between.
+      console.log(
+        `[montage] Closing small avatar gap: ${current.end.toFixed(2)}-${next.start.toFixed(2)} ` +
+        `(${gap.toFixed(2)}s < ${MIN_AVATAR_GAP_SECONDS}s min) → extending b-roll`
+      );
+      current.end = next.start;
       current.end = Number(current.end.toFixed(3));
-      next.start = Number(next.start.toFixed(3));
     }
+    // If gap >= MIN_AVATAR_GAP_SECONDS: keep it — avatar fills it naturally.
+    // If gap <= 0: segments already adjacent/overlapping — no action needed.
   }
 
-  // Final filter to remove segments that became way too small to be meaningful
-  return results.filter((p) => {
-    const min =
-      p.assetType === "product_video"
-        ? MIN_PRODUCT_SEGMENT_SECONDS
-        : MIN_BROLL_SEGMENT_SECONDS;
-    // We allow shrinking up to 70% of intended minimum before dropping entirely
-    return p.end - p.start >= Math.max(1.0, min * 0.7);
-  });
+  return results;
 }
 
 async function downloadRemoteFile(url: string, targetPath: string) {
