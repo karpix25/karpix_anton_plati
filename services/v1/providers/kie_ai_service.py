@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 KIE_RECORD_INFO_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
 KIE_VEO_GENERATE_URL = "https://api.kie.ai/api/v1/veo/generate"
+KIE_VEO_RECORD_INFO_URL = "https://api.kie.ai/api/v1/veo/record-info"
 DEFAULT_KIE_MODEL = "bytedance/v1-pro-text-to-video"
 SEEDANCE_15_PRO_MODEL = "bytedance/seedance-1.5-pro"
 GROK_IMAGINE_TEXT_TO_VIDEO_MODEL = "grok-imagine/text-to-video"
@@ -26,6 +27,7 @@ SUPPORTED_KIE_MODELS = {
     VEO3_FAST,
     VEO3_LITE,
 }
+VEO3_MODELS = {VEO3_QUALITY, VEO3_FAST, VEO3_LITE}
 
 
 def _get_api_key() -> str | None:
@@ -449,13 +451,22 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: s
     return enriched_prompts
 
 
-def get_kie_task_details(task_id: str) -> Dict[str, Any]:
+def _is_veo3_model(model: str | None) -> bool:
+    """Check if the model is a Veo 3.1 model (uses different API endpoints)."""
+    return str(model or "").strip() in VEO3_MODELS
+
+
+def get_kie_task_details(task_id: str, model: str | None = None) -> Dict[str, Any]:
+    """Fetch task details from the correct KIE endpoint based on model type."""
     api_key = _get_api_key()
     if not api_key:
         raise ValueError("KIE_API_KEY is not configured")
 
+    # Veo 3.1 uses a different endpoint
+    url = KIE_VEO_RECORD_INFO_URL if _is_veo3_model(model) else KIE_RECORD_INFO_URL
+
     response = requests.get(
-        KIE_RECORD_INFO_URL,
+        url,
         headers={"Authorization": f"Bearer {api_key}"},
         params={"taskId": task_id},
         timeout=60,
@@ -467,11 +478,10 @@ def get_kie_task_details(task_id: str) -> Dict[str, Any]:
         payload = {"raw": response.text}
 
     if not response.ok:
-        # KIE returns 422 with "recordInfo is null" when task doesn't exist
         error_msg = payload.get("msg") or payload.get("message") or response.text[:300]
         logger.warning(
-            "KIE recordInfo failed: task_id=%s status=%s msg=%s",
-            task_id, response.status_code, error_msg,
+            "KIE recordInfo failed: task_id=%s model=%s url=%s status=%s msg=%s",
+            task_id, model, url, response.status_code, error_msg,
         )
         raise RuntimeError(f"KIE recordInfo HTTP {response.status_code}: {error_msg}")
 
@@ -504,21 +514,75 @@ def _parse_result_urls(result_json: Any) -> List[str]:
     return []
 
 
+def _parse_veo3_task_state(data: Dict[str, Any]) -> tuple[str, List[str], str | None]:
+    """Parse Veo 3.1 response format into (task_state, result_urls, fail_msg).
+
+    Veo 3.1 uses successFlag:
+      0 = generating, 1 = success, 2 = failed, 3 = generation failed
+    """
+    success_flag = data.get("successFlag")
+
+    if success_flag == 1:
+        task_state = "success"
+    elif success_flag in {2, 3}:
+        task_state = "fail"
+    elif success_flag == 0:
+        task_state = "processing"
+    else:
+        task_state = "waiting"
+
+    # Extract result URLs from response object
+    result_urls: List[str] = []
+    response_obj = data.get("response")
+    if isinstance(response_obj, dict):
+        for key in ("resultUrls", "fullResultUrls", "originUrls"):
+            urls = response_obj.get(key)
+            if isinstance(urls, list):
+                result_urls.extend(str(u) for u in urls if u)
+            if result_urls:
+                break  # Use first non-empty list
+
+    fail_msg = data.get("errorMessage") or None
+    if not fail_msg and success_flag in {2, 3}:
+        error_code = data.get("errorCode")
+        fail_msg = f"Veo3 generation failed (errorCode={error_code})" if error_code else "Veo3 generation failed"
+
+    return task_state, result_urls, fail_msg
+
+
+def _parse_market_task_state(data: Dict[str, Any]) -> tuple[str, List[str], str | None]:
+    """Parse Market API (Seedance, V1 Pro, Grok) response format."""
+    task_state = data.get("state")
+    result_urls = _parse_result_urls(data.get("resultJson"))
+    fail_msg = data.get("failMsg") or data.get("failCode") or None
+    return task_state, result_urls, fail_msg
+
+
 def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
     if item.get("use_ready_asset") or not item.get("task_id"):
         return item
 
+    model = item.get("provider_model") or (item.get("request_payload") or {}).get("model")
+
     try:
-        response_payload = get_kie_task_details(str(item["task_id"]))
+        response_payload = get_kie_task_details(str(item["task_id"]), model=model)
         data = (response_payload or {}).get("data") or {}
-        task_state = data.get("state")
-        result_urls = _parse_result_urls(data.get("resultJson"))
-        fail_msg = data.get("failMsg") or data.get("failCode") or None
+
+        # Route to correct parser based on model
+        if _is_veo3_model(model):
+            task_state, result_urls, fail_msg = _parse_veo3_task_state(data)
+        else:
+            task_state, result_urls, fail_msg = _parse_market_task_state(data)
+
+        logger.info(
+            "KIE task refresh: task_id=%s model=%s state=%s urls=%d fail=%s",
+            item.get("task_id"), model, task_state, len(result_urls), fail_msg,
+        )
 
         return {
             **item,
             "provider": "kie.ai",
-            "provider_model": item.get("provider_model") or data.get("model") or ((item.get("request_payload") or {}).get("model")),
+            "provider_model": model or data.get("model"),
             "submission_status": "completed" if task_state == "success" else ("failed" if task_state == "fail" else "submitted"),
             "task_state": task_state,
             "response_payload": response_payload,
@@ -526,7 +590,7 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
             "video_url": result_urls[0] if result_urls else None,
             "progress": data.get("progress"),
             "cost_time": data.get("costTime"),
-            "create_time": data.get("createTime"),
+            "create_time": data.get("createTime") or data.get("completeTime"),
             "update_time": data.get("updateTime"),
             "complete_time": data.get("completeTime"),
             "error": fail_msg,
@@ -534,10 +598,10 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as error:
         error_str = str(error)
         # KIE returns 404 or 422 "recordInfo is null" for tasks that no longer exist
-        task_not_found = any(marker in error_str for marker in ("404", "422", "recordInfo is null"))
+        task_not_found = any(marker in error_str for marker in ("404", "422", "recordInfo is null", "record is null"))
         logger.error(
-            "Failed to refresh KIE task %s (not_found=%s): %s",
-            item.get("task_id"), task_not_found, error,
+            "Failed to refresh KIE task %s model=%s (not_found=%s): %s",
+            item.get("task_id"), model, task_not_found, error,
         )
         if task_not_found:
             return {
