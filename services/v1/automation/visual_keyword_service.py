@@ -1389,6 +1389,7 @@ SYSTEM:
 - No Brands: Заменяй бренды на "High-end unbranded device".
 
 ЛОГИКА СЛОТОВ:
+- Первая смена кадра должна произойти примерно в окне {FIRST_ATTENTION_CUT_MIN_SECONDS:.1f}–{FIRST_ATTENTION_CUT_MAX_SECONDS:.1f} секунды, если ролик длиннее 6 секунд. При этом первый сегмент должен быть максимально качественным и буквально передающим смысл фразы.
 {timing_logic}
 
 PRODUCT KEYWORD:
@@ -1457,14 +1458,18 @@ WORD TIMESTAMPS:
         force_product_segment = timing_mode != "fixed" and product_clip_policy == "required"
 
         return {
-            "segments": _apply_product_asset(
-                final_segments,
-                product_keyword,
-                product_video_url,
-                product_media_assets,
-                words,
-                slots,
-                force_product_segment=force_product_segment,
+            "segments": _enforce_first_attention_cut(
+                _apply_product_asset(
+                    final_segments,
+                    product_keyword,
+                    product_video_url,
+                    product_media_assets,
+                    words,
+                    slots,
+                    force_product_segment=force_product_segment,
+                ),
+                total_duration,
+                pacing_profile,
             ),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -1475,14 +1480,18 @@ WORD TIMESTAMPS:
             fallback_segments = _apply_fixed_enumeration_priority(fallback_segments, words, slots, product_keyword)
         force_product_segment = timing_mode != "fixed" and product_clip_policy == "required"
         return {
-            "segments": _apply_product_asset(
-                fallback_segments,
-                product_keyword,
-                product_video_url,
-                product_media_assets,
-                words,
-                slots,
-                force_product_segment=force_product_segment,
+            "segments": _enforce_first_attention_cut(
+                _apply_product_asset(
+                    fallback_segments,
+                    product_keyword,
+                    product_video_url,
+                    product_media_assets,
+                    words,
+                    slots,
+                    force_product_segment=force_product_segment,
+                ),
+                total_duration,
+                pacing_profile,
             ),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
