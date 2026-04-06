@@ -1106,18 +1106,16 @@ def _enforce_coverage_limit(
     total_duration: float,
     coverage_percent: float,
 ) -> List[Dict[str, Any]]:
-    """Hard-enforce coverage_percent by dropping lowest-priority segments.
+    """Hard-enforce coverage_percent by dropping segments evenly across timeline.
 
-    LLMs tend to over-generate segments, ignoring the coverage target
-    in the prompt.  This function calculates actual coverage and drops
-    excess segments until the total b-roll duration fits within the
-    target (with a 15% tolerance, e.g. 54% target → allow up to 62%).
+    LLMs tend to over-generate segments, ignoring the coverage target.
+    This function drops excess segments distributed EVENLY so that
+    avatar gaps appear throughout the video, not in one big chunk.
 
     Priority rules:
     - Product clips are NEVER dropped
     - The first segment (attention cut) is NEVER dropped
-    - Remaining segments are scored by position (earlier = higher priority)
-    - Segments are dropped from the end first
+    - Drops are spread evenly across the remaining segments
     """
     if not segments or total_duration <= 0 or coverage_percent >= 95.0:
         return segments
@@ -1125,13 +1123,10 @@ def _enforce_coverage_limit(
     target_coverage = _normalize_broll_coverage_percent(coverage_percent)
     max_allowed_seconds = total_duration * (min(target_coverage + 15.0, 100.0) / 100.0)
 
-    def _total_broll(segs: List[Dict[str, Any]]) -> float:
-        return sum(
-            max(0, _safe_float(s.get("slot_end")) - _safe_float(s.get("slot_start")))
-            for s in segs
-        )
+    def _seg_duration(s: Dict[str, Any]) -> float:
+        return max(0, _safe_float(s.get("slot_end")) - _safe_float(s.get("slot_start")))
 
-    current_total = _total_broll(segments)
+    current_total = sum(_seg_duration(s) for s in segments)
     if current_total <= max_allowed_seconds:
         return segments
 
@@ -1141,43 +1136,54 @@ def _enforce_coverage_limit(
         max_allowed_seconds, target_coverage + 15.0,
     )
 
-    # Build priority list: product clips and first segment are protected
-    protected_indices: set[int] = set()
-    droppable: List[tuple[int, float]] = []
-
+    # Separate protected vs droppable (keep original order/indices)
+    droppable_indices: List[int] = []
     for i, seg in enumerate(segments):
         is_product = seg.get("asset_type") == "product_video"
         is_first = i == 0
+        if not is_product and not is_first:
+            droppable_indices.append(i)
 
-        if is_product or is_first:
-            protected_indices.add(i)
-        else:
-            # Score: later segments are dropped first (lower score = drop first)
-            score = 1.0 - (_safe_float(seg.get("slot_start")) / max(total_duration, 1.0))
-            droppable.append((i, score))
+    if not droppable_indices:
+        return segments
 
-    # Sort droppable by score ascending (lowest priority first = drop first)
-    droppable.sort(key=lambda x: x[1])
+    # Calculate how many to drop: try removing one at a time with even spacing
+    # until we're within budget
+    excess = current_total - max_allowed_seconds
+    # Estimate drops needed based on average segment duration
+    avg_droppable_dur = sum(_seg_duration(segments[i]) for i in droppable_indices) / len(droppable_indices)
+    num_to_drop = min(len(droppable_indices), max(1, round(excess / max(avg_droppable_dur, 0.1))))
 
-    # Drop segments one by one until within budget
+    # Pick drops evenly spaced across droppable list (stride-based)
+    # e.g. 6 droppable, drop 3 → pick indices 0, 2, 4 from droppable list
     drop_indices: set[int] = set()
-    remaining_total = current_total
+    if num_to_drop >= len(droppable_indices):
+        drop_indices = set(droppable_indices)
+    else:
+        stride = len(droppable_indices) / num_to_drop
+        for k in range(num_to_drop):
+            pick = int(k * stride + stride / 2)  # center of each stride window
+            pick = min(pick, len(droppable_indices) - 1)
+            drop_indices.add(droppable_indices[pick])
 
-    for idx, _score in droppable:
-        if remaining_total <= max_allowed_seconds:
-            break
-        seg = segments[idx]
-        seg_duration = max(0, _safe_float(seg.get("slot_end")) - _safe_float(seg.get("slot_start")))
-        drop_indices.add(idx)
-        remaining_total -= seg_duration
+    # Verify we're within budget; if not, drop one more
+    remaining_total = current_total - sum(_seg_duration(segments[i]) for i in drop_indices)
+    while remaining_total > max_allowed_seconds and len(drop_indices) < len(droppable_indices):
+        for idx in droppable_indices:
+            if idx not in drop_indices:
+                drop_indices.add(idx)
+                remaining_total -= _seg_duration(segments[idx])
+                break
 
     if drop_indices:
+        final_total = current_total - sum(_seg_duration(segments[i]) for i in drop_indices)
         logger.info(
-            "Coverage enforcement: dropping %d segments, keeping %d (%.1fs → %.1fs)",
+            "Coverage enforcement: dropping %d segments evenly, keeping %d (%.1fs → %.1fs = %.0f%%)",
             len(drop_indices),
             len(segments) - len(drop_indices),
             current_total,
-            remaining_total,
+            final_total,
+            (final_total / total_duration) * 100 if total_duration > 0 else 0,
         )
 
     return [seg for i, seg in enumerate(segments) if i not in drop_indices]
