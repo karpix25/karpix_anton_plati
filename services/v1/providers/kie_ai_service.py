@@ -10,13 +10,20 @@ logger = logging.getLogger(__name__)
 
 KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 KIE_RECORD_INFO_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
+KIE_VEO_GENERATE_URL = "https://api.kie.ai/api/v1/veo/generate"
 DEFAULT_KIE_MODEL = "bytedance/v1-pro-text-to-video"
 SEEDANCE_15_PRO_MODEL = "bytedance/seedance-1.5-pro"
 GROK_IMAGINE_TEXT_TO_VIDEO_MODEL = "grok-imagine/text-to-video"
+VEO3_QUALITY = "veo3"
+VEO3_FAST = "veo3_fast"
+VEO3_LITE = "veo3_lite"
 SUPPORTED_KIE_MODELS = {
     DEFAULT_KIE_MODEL,
     SEEDANCE_15_PRO_MODEL,
     GROK_IMAGINE_TEXT_TO_VIDEO_MODEL,
+    VEO3_QUALITY,
+    VEO3_FAST,
+    VEO3_LITE,
 }
 
 
@@ -107,9 +114,72 @@ def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = N
     }
 
 
-def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
+def submit_veo_video_task(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
     api_key = _get_api_key()
     resolved_model = normalize_kie_model(model)
+    prompt_text = json.dumps(prompt_json, ensure_ascii=False) if isinstance(prompt_json, dict) else str(prompt_json)
+
+    # Note: Using 9:16 aspect ratio as default for vertical content
+    payload = {
+        "prompt": prompt_text,
+        "model": resolved_model,
+        "aspect_ratio": "9:16",
+        "generationType": "TEXT_2_VIDEO",
+        "enableTranslation": True,
+    }
+
+    if not api_key:
+        return {
+            "provider": "kie.ai",
+            "provider_model": resolved_model,
+            "submission_status": "skipped",
+            "task_id": None,
+            "request_payload": payload,
+            "response_payload": None,
+            "error": "KIE_API_KEY is not configured",
+        }
+
+    response = requests.post(
+        KIE_VEO_GENERATE_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=60,
+    )
+    response.raise_for_status()
+
+    response_payload = None
+    try:
+        response_payload = response.json()
+    except Exception:
+        response_payload = {"raw": response.text}
+
+    task_id = _extract_task_id(response_payload)
+    error_message = None
+    if not task_id:
+        error_message = _extract_error_message(response_payload)
+
+    return {
+        "provider": "kie.ai",
+        "provider_model": resolved_model,
+        "submission_status": "submitted" if task_id else "unknown",
+        "task_id": task_id,
+        "task_state": "waiting" if task_id else None,
+        "request_payload": payload,
+        "response_payload": response_payload,
+        "result_urls": [],
+        "error": None if task_id else (error_message or "Task submitted but taskId missing in response"),
+    }
+
+
+def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None) -> Dict[str, Any]:
+    resolved_model = normalize_kie_model(model)
+    if resolved_model in {VEO3_QUALITY, VEO3_FAST, VEO3_LITE}:
+        return submit_veo_video_task(prompt_json, resolved_model)
+
+    api_key = _get_api_key()
     payload = build_kie_request_payload(prompt_json, resolved_model)
 
     if not api_key:

@@ -9,6 +9,9 @@ from services.v1.providers.kie_ai_service import (
     DEFAULT_KIE_MODEL,
     GROK_IMAGINE_TEXT_TO_VIDEO_MODEL,
     SEEDANCE_15_PRO_MODEL,
+    VEO3_QUALITY,
+    VEO3_FAST,
+    VEO3_LITE,
     normalize_kie_model,
 )
 
@@ -45,6 +48,39 @@ def _resolve_broll_model_profile(generator_model: str | None) -> Dict[str, Any]:
             "generate_audio": False,
             "model_label": "Grok Imagine T2V",
             "mode": "normal",
+        }
+
+    if resolved_model == VEO3_QUALITY:
+        return {
+            "generator_model": resolved_model,
+            "clip_duration_seconds": 5.0,
+            "resolution": "1080p",
+            "aspect_ratio": "9:16",
+            "generate_audio": False,
+            "model_label": "Veo 3.1 Quality",
+            "mode": "TEXT_2_VIDEO",
+        }
+
+    if resolved_model == VEO3_FAST:
+        return {
+            "generator_model": resolved_model,
+            "clip_duration_seconds": 5.0,
+            "resolution": "720p",
+            "aspect_ratio": "9:16",
+            "generate_audio": False,
+            "model_label": "Veo 3.1 Fast",
+            "mode": "TEXT_2_VIDEO",
+        }
+
+    if resolved_model == VEO3_LITE:
+        return {
+            "generator_model": resolved_model,
+            "clip_duration_seconds": 5.0,
+            "resolution": "720p",
+            "aspect_ratio": "9:16",
+            "generate_audio": False,
+            "model_label": "Veo 3.1 Lite",
+            "mode": "TEXT_2_VIDEO",
         }
 
     return {
