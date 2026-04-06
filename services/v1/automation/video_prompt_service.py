@@ -171,6 +171,7 @@ VISUAL STORYTELLING RULES (CRITICAL):
    - Silhouettes and partial figures (legs walking, shadow on wall, arm reaching)
    - Personal objects in frame (phone screen, sunglasses on table, open passport, packed suitcase)
    NEVER describe a full face close-up or a person posing for camera.
+   APPEARANCE: Any visible person (hands, skin, silhouette, hair) must be European-looking — light skin, European features. This is the target audience demographic.
 
 4. CAMERA BEHAVIOR THROUGH ACTIONS, NOT LABELS
    ❌ BAD: "handheld smartphone movement with natural micro-jitter"
