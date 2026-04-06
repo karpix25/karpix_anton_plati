@@ -1101,6 +1101,88 @@ def _semantic_target_segment_count(total_duration: float, pacing_profile: str, c
     return max(1, round(target_total / max(target_seconds, 0.1)))
 
 
+def _enforce_coverage_limit(
+    segments: List[Dict[str, Any]],
+    total_duration: float,
+    coverage_percent: float,
+) -> List[Dict[str, Any]]:
+    """Hard-enforce coverage_percent by dropping lowest-priority segments.
+
+    LLMs tend to over-generate segments, ignoring the coverage target
+    in the prompt.  This function calculates actual coverage and drops
+    excess segments until the total b-roll duration fits within the
+    target (with a 15% tolerance, e.g. 54% target → allow up to 62%).
+
+    Priority rules:
+    - Product clips are NEVER dropped
+    - The first segment (attention cut) is NEVER dropped
+    - Remaining segments are scored by position (earlier = higher priority)
+    - Segments are dropped from the end first
+    """
+    if not segments or total_duration <= 0 or coverage_percent >= 95.0:
+        return segments
+
+    target_coverage = _normalize_broll_coverage_percent(coverage_percent)
+    max_allowed_seconds = total_duration * (min(target_coverage + 15.0, 100.0) / 100.0)
+
+    def _total_broll(segs: List[Dict[str, Any]]) -> float:
+        return sum(
+            max(0, _safe_float(s.get("slot_end")) - _safe_float(s.get("slot_start")))
+            for s in segs
+        )
+
+    current_total = _total_broll(segments)
+    if current_total <= max_allowed_seconds:
+        return segments
+
+    logger.info(
+        "Coverage enforcement: actual=%.1fs (%.0f%%) > target=%.1fs (%.0f%%), will trim",
+        current_total, (current_total / total_duration) * 100,
+        max_allowed_seconds, target_coverage + 15.0,
+    )
+
+    # Build priority list: product clips and first segment are protected
+    protected_indices: set[int] = set()
+    droppable: List[tuple[int, float]] = []
+
+    for i, seg in enumerate(segments):
+        is_product = seg.get("asset_type") == "product_video"
+        is_first = i == 0
+
+        if is_product or is_first:
+            protected_indices.add(i)
+        else:
+            # Score: later segments are dropped first (lower score = drop first)
+            score = 1.0 - (_safe_float(seg.get("slot_start")) / max(total_duration, 1.0))
+            droppable.append((i, score))
+
+    # Sort droppable by score ascending (lowest priority first = drop first)
+    droppable.sort(key=lambda x: x[1])
+
+    # Drop segments one by one until within budget
+    drop_indices: set[int] = set()
+    remaining_total = current_total
+
+    for idx, _score in droppable:
+        if remaining_total <= max_allowed_seconds:
+            break
+        seg = segments[idx]
+        seg_duration = max(0, _safe_float(seg.get("slot_end")) - _safe_float(seg.get("slot_start")))
+        drop_indices.add(idx)
+        remaining_total -= seg_duration
+
+    if drop_indices:
+        logger.info(
+            "Coverage enforcement: dropping %d segments, keeping %d (%.1fs → %.1fs)",
+            len(drop_indices),
+            len(segments) - len(drop_indices),
+            current_total,
+            remaining_total,
+        )
+
+    return [seg for i, seg in enumerate(segments) if i not in drop_indices]
+
+
 def _build_semantic_llm_segments(
     scenario_text: str,
     tts_text: str,
@@ -1207,7 +1289,8 @@ WORD TIMESTAMPS:
             normalized_segments.append(normalized)
 
     resolved_segments = _resolve_segment_overlaps(normalized_segments, total_duration, pacing_profile)
-    return _enforce_first_attention_cut(resolved_segments, total_duration, pacing_profile)
+    enforced = _enforce_coverage_limit(resolved_segments, total_duration, coverage_percent)
+    return _enforce_first_attention_cut(enforced, total_duration, pacing_profile)
 
 
 def _align_segments_to_slot_grid(
