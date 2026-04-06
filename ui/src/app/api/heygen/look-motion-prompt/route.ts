@@ -71,7 +71,7 @@ export async function POST(request: Request) {
         "X-Title": "Plati Po Miru",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-001",
+        model: "google/gemini-2.5-flash",
         temperature: 0.4,
         messages: [
           {

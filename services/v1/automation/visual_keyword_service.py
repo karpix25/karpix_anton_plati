@@ -1159,7 +1159,7 @@ WORD TIMESTAMPS:
 
     client = _openrouter_client()
     response = client.chat.completions.create(
-        model="google/gemini-2.0-flash-001",
+        model="google/gemini-2.5-flash",
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
     )
@@ -1435,7 +1435,7 @@ WORD TIMESTAMPS:
     try:
         client = _openrouter_client()
         response = client.chat.completions.create(
-            model="google/gemini-2.0-flash-001",
+            model="google/gemini-2.5-flash",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )
