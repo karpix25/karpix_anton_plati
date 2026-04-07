@@ -535,7 +535,7 @@ def _build_semantic_llm_segments(config: GenerationConfig, scenario: str, transc
         builder = VisualPromptBuilder(config)
         client = _openrouter_client()
         response = client.chat.completions.create(
-            model="google/gemini-2.0-flash-001",
+            model="google/gemini-2.5-flash",
             messages=[
                 {"role": "system", "content": builder.build_system_prompt(scenario)},
                 {"role": "user", "content": builder.build_user_prompt(transcript, slots)}

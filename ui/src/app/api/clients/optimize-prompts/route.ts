@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
-const OPENROUTER_MODEL = "google/gemini-2.0-flash-001";
+const OPENROUTER_MODEL = "google/gemini-2.5-flash";
 
 const CATEGORY_FIELD_MAP: Record<string, string> = {
   scenario: "learned_rules_scenario",
