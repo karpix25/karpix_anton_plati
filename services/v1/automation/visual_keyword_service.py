@@ -315,10 +315,29 @@ class ProductAssetManager:
     def apply_assets(self, segments: List[VisualSegment], words: List[Word], slots: List[TimingSlot]) -> List[VisualSegment]:
         prod_keyword = (self.config.product_keyword or "").lower().strip()
         if not prod_keyword: return segments
+        
+        policy = self.config.product_clip_policy # "required" or "contextual"
         result: List[VisualSegment] = []
+        
         for seg in segments:
-            combined = f"{seg.get('keyword', '')} {seg.get('phrase', '')}".lower()
-            if prod_keyword in combined:
+            phrase = seg.get('phrase', '').lower()
+            keyword_match = prod_keyword in phrase
+            
+            # Logic:
+            # REQUIRED -> If word in text, MUST be product.
+            # CONTEXTUAL -> If AI recommended it OR (word in text AND AI matched it)
+            
+            use_product = False
+            if policy == "required":
+                use_product = keyword_match
+            else: # contextual
+                # Trust the AI's 'should_use_product_clip' flag
+                use_product = seg.get("should_use_product_clip", False)
+                # Fallback: if AI missed a direct mention but keyword is there, 
+                # we could still show it, but user said 'better generative' for contextual.
+                # So we stick to the AI flag for contextual.
+
+            if use_product:
                 asset = self.pick_asset()
                 seg.update({
                     "asset_type": "product_video",
@@ -331,15 +350,6 @@ class ProductAssetManager:
             else:
                 seg.update({"asset_type": "generated_video", "generate_video": True})
             result.append(seg)
-        
-        # Force product segment if required
-        has_prod = any(s.get("asset_type") == "product_video" for s in result)
-        if self.config.product_clip_policy == "required" and not has_prod:
-            forced = self._find_forced_product_segment(words, slots, prod_keyword)
-            if forced:
-                asset = self.pick_asset()
-                forced.update({"asset_url": asset["url"] if asset else self.config.product_video_url})
-                result.append(forced)
         return result
 
     def _find_forced_product_segment(self, words: List[Word], slots: List[TimingSlot], keyword: str) -> Optional[VisualSegment]:
@@ -509,10 +519,12 @@ TASK: Extract at most {len(slots)} segments that match the keywords in the trans
       "keyword": "<main subject RU>",
       "phrase": "<short phrase RU>",
       "visual_intent": "<VEO-3 Technical details in EN>",
-      "reason": "<why this keyword fits this timing>"
+      "should_use_product_clip": <boolean, true if keyword mentions product and it fits the style, false if generative video is better for native feel>,
+      "reason": "<why this keyword fits this timing and why you chose/didn't choose product clip>"
     }}
   ]
 }}"""
+        return user_msg
         return user_msg
 
 # --- ORCHESTRATOR ---

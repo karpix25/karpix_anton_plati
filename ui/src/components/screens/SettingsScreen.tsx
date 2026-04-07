@@ -93,16 +93,12 @@ const SEMANTIC_RELEVANCE_LABELS: Record<NonNullable<Settings["broll_semantic_rel
 
 const PRODUCT_CLIP_POLICY_LABELS: Record<NonNullable<Settings["broll_product_clip_policy"]>, { title: string; description: string }> = {
   contextual: {
-    title: "Только если уместно",
-    description: "Product clip не должен вытеснять главные тезисы сценария.",
-  },
-  prefer: {
-    title: "Стараться вставить",
-    description: "Product clip желателен, но не ценой потери основных смысловых блоков.",
+    title: "Контекстная вставка",
+    description: "Нативный монтаж: если ИИ решит, что генерация лучше раскрывает смысл, то вставит её вместо товара.",
   },
   required: {
-    title: "Обязательно вставить",
-    description: "Хотя бы один product clip должен попасть в разметку.",
+    title: "Обязательно (по ключу)",
+    description: "Прямая вставка: если ключевое слово произносится в тексте, видео товара будет вставлено 100%.",
   },
 };
 
@@ -2292,6 +2288,7 @@ export function SettingsScreen({
                                 src={avatar.preview_image_url}
                                 alt={avatar.avatar_name || avatar.avatar_id}
                                 className="h-full w-full object-cover"
+                                referrerPolicy="no-referrer"
                               />
                             ) : (
                               <div className="px-2 text-center text-[10px] text-muted-foreground">Нет preview</div>
@@ -2352,6 +2349,7 @@ export function SettingsScreen({
                         src={avatar.preview_image_url}
                         alt={avatar.avatar_name || avatar.avatar_id}
                         className="h-[180px] w-full object-cover"
+                        referrerPolicy="no-referrer"
                       />
                     ) : (
                       <div className="flex h-[180px] items-center justify-center bg-[#f0f4f7] px-4 text-center text-xs text-muted-foreground">
@@ -2486,6 +2484,7 @@ export function SettingsScreen({
                                           src={look.preview_image_url}
                                           alt={look.look_name || look.look_id}
                                           className="h-[120px] w-full object-cover"
+                                          referrerPolicy="no-referrer"
                                         />
                                       ) : (
                                         <div className="flex h-[120px] items-center justify-center bg-[#f0f4f7] px-3 text-center text-[11px] text-muted-foreground">
@@ -2548,6 +2547,7 @@ export function SettingsScreen({
                             src={selectedLook.preview_image_url}
                             alt={selectedLook.look_name || selectedLook.look_id}
                             className="h-[96px] w-full object-cover"
+                            referrerPolicy="no-referrer"
                           />
                         ) : (
                           <div className="flex h-[96px] items-center justify-center bg-[#f0f4f7] px-3 text-center text-[11px] text-muted-foreground">
