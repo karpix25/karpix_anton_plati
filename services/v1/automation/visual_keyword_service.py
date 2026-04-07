@@ -512,15 +512,17 @@ Return ONLY JSON in this format:
 def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcript: str, words: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
     try:
         config = GenerationConfig(
-            interval=kwargs.get("broll_interval_seconds", 3.0),
+            interval=float(kwargs.get("broll_interval_seconds") or 3.5),
             timing_mode=kwargs.get("broll_timing_mode", "semantic_pause"),
             pacing_profile=kwargs.get("broll_pacing_profile", "balanced"),
-            coverage_percent=kwargs.get("broll_coverage_percent", 35.0),
+            pause_threshold=float(kwargs.get("broll_pause_threshold_seconds") or 0.45),
+            coverage_percent=float(kwargs.get("broll_coverage_percent") or 35.0),
+            relevance_priority=kwargs.get("broll_semantic_relevance_priority", "balanced"),
+            product_clip_policy=kwargs.get("broll_product_clip_policy", "contextual"),
             product_keyword=kwargs.get("product_keyword"),
             product_video_url=kwargs.get("product_video_url"),
             product_media_assets=kwargs.get("product_media_assets"),
             learned_rules=kwargs.get("learned_rules_visual"),
-            product_clip_policy=kwargs.get("product_clip_policy", "contextual")
         )
         engine = TimingEngine(config)
         norm_words = engine.normalize_words(words)
