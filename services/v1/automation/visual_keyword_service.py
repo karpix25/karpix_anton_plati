@@ -482,18 +482,25 @@ class VisualPromptBuilder:
     - **No Vague Words**: Avoid "cinematic", "amazing", "beautiful". Use physical facts.
     - **Appearance**: Visible people must be European-looking (light skin).
 """
+        if self.config.product_keyword:
+            prompt += f"\nГЛАВНЫЙ ПРОДУКТ (PRODUCT_KEYWORD): '{self.config.product_keyword}'. Обязательно выдели сегмент(ы), где упоминается этот продукт, чтобы мы могли вставить реальное видео товара.\n"
+        
         if self.config.learned_rules:
             prompt += f"\nДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА ОТ ПОЛЬЗОВАТЕЛЯ (УЧТИ ОБЯЗАТЕЛЬНО):\n{self.config.learned_rules}\n"
         return prompt
 
     def build_user_prompt(self, transcript: str, slots: List[TimingSlot]) -> str:
-        return f"""TRANSCRIPT: {transcript}
+        user_msg = f"""TRANSCRIPT: {transcript}
 
 AVAILABLE SLOTS (Choose from these and map to keywords): 
 {json.dumps(slots)}
 
 TASK: Extract at most {len(slots)} segments that match the keywords in the transcript.
-Return ONLY JSON in this format:
+"""
+        if self.config.product_keyword:
+            user_msg += f"ВАЖНО: Обязательно найди и выдели моменты, где говорится про '{self.config.product_keyword}'.\n"
+        
+        user_msg += f"""Return ONLY JSON in this format:
 {{
   "segments": [
     {{
@@ -506,6 +513,7 @@ Return ONLY JSON in this format:
     }}
   ]
 }}"""
+        return user_msg
 
 # --- ORCHESTRATOR ---
 
