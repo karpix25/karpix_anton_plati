@@ -266,12 +266,36 @@ KEYWORD SEGMENTS:
             content = content.split("```", 1)[1].split("```", 1)[0].strip()
 
         payload = json.loads(content)
-        prompts = payload.get("prompts") if isinstance(payload, dict) else []
-        if not isinstance(prompts, list):
-            prompts = []
+        ai_prompts = payload.get("prompts") if isinstance(payload, dict) else []
+        if not isinstance(ai_prompts, list):
+            ai_prompts = []
+
+        # Merge AI prompts with original technical metadata from keyword_segments
+        final_prompts = []
+        for i, segment in enumerate(keyword_segments):
+            # Try to match AI prompt by index (default behavior)
+            ai_p = ai_prompts[i] if i < len(ai_prompts) else {}
+            
+            # Use original metadata for critical technical fields
+            asset_type = segment.get("asset_type")
+            use_ready_asset = asset_type == "product_video"
+            
+            final_prompts.append({
+                "slot_start": ai_p.get("slot_start") or segment.get("slot_start"),
+                "slot_end": ai_p.get("slot_end") or segment.get("slot_end"),
+                "keyword": segment.get("keyword"),
+                "phrase": segment.get("phrase"),
+                "prompt": ai_p.get("prompt"),
+                "pacing": ai_p.get("pacing", "normal"),
+                "asset_type": asset_type,
+                "asset_url": segment.get("asset_url"),
+                "use_ready_asset": use_ready_asset,
+                # If it's a ready asset, prompt_json is secondary/not needed
+                "prompt_json": ai_p if not use_ready_asset else None
+            })
 
         return {
-            "prompts": prompts,
+            "prompts": final_prompts,
             "generator_model": profile["generator_model"],
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
