@@ -469,10 +469,11 @@ class VisualPromptBuilder:
 - Никаких брендов и логотипов.
 
 ИНСТРУКЦИИ:
-- keyword: Главный объект (RU)
-- phrase: Действие или контекст        - **visual_intent**: A technical description for the video generator (EN). 
-          Structure: [Shot Scale (CU/MS/WS)] + [Subject & Action] + [Cinematography/Lighting].
-          Example: "CU of a hand holding a gold credit card, Dolly In, warm Rembrandt lighting, 4K textures."
+- **keyword**: Главный объект (RU)
+- **phrase**: Действие или контекст (RU)
+- **visual_intent**: A technical description for the video generator (EN). 
+  Structure: [Shot Scale (CU/MS/WS)] + [Subject & Action] + [Cinematography/Lighting].
+  Example: "CU of a hand holding a gold credit card, Dolly In, warm Rembrandt lighting, 4K textures."
 
     **TECHNICAL GUIDELINES (Veo-3 Meta-Framework):**
     - **Cinematography**: Use Dolly, Truck, Pan, Tilt, Arc movements.
@@ -534,7 +535,7 @@ def _build_semantic_llm_segments(config: GenerationConfig, scenario: str, transc
         builder = VisualPromptBuilder(config)
         client = _openrouter_client()
         response = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
+            model="google/gemini-2.0-flash-001",
             messages=[
                 {"role": "system", "content": builder.build_system_prompt(scenario)},
                 {"role": "user", "content": builder.build_user_prompt(transcript, slots)}
