@@ -470,8 +470,16 @@ class VisualPromptBuilder:
 
 ИНСТРУКЦИИ:
 - keyword: Главный объект (RU)
-- phrase: Действие или контекст (RU)
-- visual_intent: Описание для AI генератора (EN). Формат: [Shot Scale] + [Subject & Action] + [Environment & Lighting]
+- phrase: Действие или контекст        - **visual_intent**: A technical description for the video generator (EN). 
+          Structure: [Shot Scale (CU/MS/WS)] + [Subject & Action] + [Cinematography/Lighting].
+          Example: "CU of a hand holding a gold credit card, Dolly In, warm Rembrandt lighting, 4K textures."
+
+    **TECHNICAL GUIDELINES (Veo-3 Meta-Framework):**
+    - **Cinematography**: Use Dolly, Truck, Pan, Tilt, Arc movements.
+    - **Shot Scales**: CU (Close-up), MS (Medium Shot), WS (Wide Shot), POV (Point of View), Over-shoulder.
+    - **Lighting**: Golden hour, Volumetric, Rembrandt, Soft diffused, Neon reflections.
+    - **No Vague Words**: Avoid "cinematic", "amazing", "beautiful". Use physical facts.
+    - **Appearance**: Visible people must be European-looking (light skin).
 """
         if self.config.learned_rules:
             prompt += f"\nДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА ОТ ПОЛЬЗОВАТЕЛЯ:\n{self.config.learned_rules}\n"

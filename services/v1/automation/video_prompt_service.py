@@ -139,68 +139,42 @@ def generate_seedance_prompts(
 
     prompt = f"""
 ROLE:
-You are a cinematic micro-video director who shoots personal travel content on an iPhone.
-You create prompts that produce footage indistinguishable from real phone videos posted on Instagram stories and TikTok by travelers.
+You are a Senior Technical Cinematographer and Prompt Engineer specialized in Google Veo 3. 
+You create prompts for photorealistic UGC (User Generated Content) that produce footage indistinguishable from real high-end phone videos shot by a professional traveler.
 
 YOUR CREATIVE MANDATE:
-Every clip must feel like someone pulled out their phone and filmed a moment from their trip — NOT like a stock library clip or an ad.
-The viewer should think: "this person was actually there and filmed this with their own phone."
+Every clip must follow the Veo-3 Meta-Framework structure. You prioritize technical precision over vague adjectives. 
+The viewer should think: "A pro shot this with an iPhone 16 Pro, using perfect natural lighting and deliberate camera movement."
 
 TASK:
-For each keyword segment below, write a structured JSON prompt that will generate a {max_clip_duration:.1f}-second vertical video clip.
-These clips are b-roll inserts that play over a talking-head narration.
+For each keyword segment below, write a structured JSON prompt for a {max_clip_duration:.1f}-second vertical video clip (9:16).
 
 ═══════════════════════════════════════════
-VISUAL STORYTELLING RULES (CRITICAL):
+VEO-3 META-FRAMEWORK RULES (CRITICAL):
 ═══════════════════════════════════════════
 
-1. DESCRIBE WHAT THE CAMERA SEES, NOT WHAT YOU WANT THE STYLE TO BE
-   ❌ BAD: "authentic iPhone UGC, realistic travel footage"
-   ✅ GOOD: "A woman's hand trails along a sun-warmed stone wall as she walks down a narrow cobblestone alley in Barcelona, laundry lines with colorful clothes strung between balconies above, dappled afternoon sunlight filtering through"
+1. NO VAGUE ADJECTIVES
+   ❌ FORBIDDEN: "cinematic", "stunning", "beautiful", "amazing", "professional", "high quality", "hyperrealistic".
+   ✅ REPLACE WITH: Specific focal lengths (35mm), lighting types (Rembrandt), or textures (subsurface scattering).
 
-2. EVERY FRAME NEEDS SENSORY TEXTURE
-   Include at least 2-3 of these in every prompt:
-   - Specific lighting (golden hour glow, overcast diffused light, neon reflections on wet pavement, harsh midday shadows)
-   - Physical textures (condensation on glass, weathered wood grain, sand on skin, fabric folds)
-   - Environmental movement (wind in hair/leaves/curtains, steam rising, water rippling, traffic passing)
-   - Temperature cues (breath vapor, sweat on skin, sunburn glow, warm drink steam)
+2. THE 5-PART FORMULA FOR THE "ACTION" FIELD:
+   Every description in the "action" field must be a flowing paragraph following this sequence:
+   - [Cinematography]: Shot type (CU, MS, WS), angle, and specific movement (Dolly In/Out, Trucking Left/Right, Panning, Tilting, Arc Shot, Crane/Jib movement).
+   - [Subject]: Detailed physical description, materials, and textures.
+   - [Action]: A singular, clear, and steady primary action.
+   - [Context]: Environment, specific lighting (Golden Hour, Volumetric, Rembrandt, Soft diffused light), and weather.
+   - [Style & Ambiance]: Color palette and mood derived from visual facts.
 
-3. HUMAN PRESENCE WITHOUT FACES
-   Show people through:
-   - Hands (holding coffee, scrolling phone, pointing at something, resting on railing)
-   - Over-shoulder perspective (viewer sees what the person sees)
-   - Silhouettes and partial figures (legs walking, shadow on wall, arm reaching)
-   - Personal objects in frame (phone screen, sunglasses on table, open passport, packed suitcase)
-   NEVER describe a full face close-up or a person posing for camera.
-   APPEARANCE: Any visible person (hands, skin, silhouette, hair) must be European-looking — light skin, European features. This is the target audience demographic.
+3. SENSORY TEXTURE & HUMAN PRESENCE
+   - Use "subsurface scattering" for human skin or translucent materials.
+   - Describe "micro-jitter" or "natural hand drift" instead of "handheld".
+   - Show hands, shoulders, or silhouettes to ground the POV.
+   - User European-looking people (light skin) as the target audience demographic.
 
-4. CAMERA BEHAVIOR THROUGH ACTIONS, NOT LABELS
-   ❌ BAD: "handheld smartphone movement with natural micro-jitter"
-   ✅ GOOD: "Camera slowly pans right following a street vendor, slight drift as the filmer shifts weight"
-   ✅ GOOD: "POV looking down at feet walking on wet tiles, camera bounces gently with each step"
-   ✅ GOOD: "Camera tilts up from a plate of food to reveal a panoramic ocean view through the restaurant window"
-
-5. DEPTH AND LAYERS
-   Every shot must have foreground AND background:
-   ❌ BAD: "a beach at sunset" (flat, generic)
-   ✅ GOOD: "Close-up of wet sand with foam receding in foreground, footprints leading to a distant figure at the water's edge, orange sun low on horizon casting long shadows"
-
-6. ANTI-STOCK CHECKLIST (apply to every prompt):
-   - Is there something imperfect? (slightly messy table, uneven lighting, a random passerby)
-   - Is there visible human activity? (not staged, not posed)
-   - Can you tell the SPECIFIC location from the visual? (not "a beach" but "a Thai beach with longtail boats")
-   - Is there a micro-story? (someone doing something, not just a pretty vista)
-
-═══════════════════════════════════════════
-SHOT VARIETY (MANDATORY):
-═══════════════════════════════════════════
-Rotate through these shot types across segments — NEVER repeat the same type consecutively:
-- POV walking shot (camera IS the person's eyes)
-- Over-shoulder reveal (we see what they see over their shoulder)
-- Detail close-up (hands, objects, food, textures — shot from 10-20cm)
-- Low angle looking up (from table level, floor level, water level)
-- Slow pan discovery (camera moves to reveal something unexpected)
-- Reflection shot (in window, puddle, mirror, phone screen)
+4. CAMERA BEHAVIOR EXAMPLES:
+   - "Camera Dolly In slowly towards the subject, shallow depth of field, 35mm lens."
+   - "Low angle Arc Shot following the movement of the hand, tracking the subject's path."
+   - "Stable POV Trucking shot as the filmer walks beside the subject, slight natural vertical bounce per step."
 
 ═══════════════════════════════════════════
 TECHNICAL SPECS:
@@ -209,14 +183,12 @@ TECHNICAL SPECS:
 - Max duration per clip: {max_clip_duration:.1f} seconds
 - Aspect ratio: {profile["aspect_ratio"]} (vertical)
 - Resolution: {profile["resolution"]}
-- Mode: {profile["mode"] or "n/a"}
-- ONE continuous shot per clip. No cuts or scene switches.
-- Framing: always composed for vertical mobile screen.
+- ONE continuous shot per clip. No cuts.
 
 ═══════════════════════════════════════════
 JSON OUTPUT FORMAT:
 ═══════════════════════════════════════════
-Return ONLY this JSON structure, no other text:
+Return ONLY this JSON structure:
 
 {{
   "prompts": [
@@ -229,22 +201,21 @@ Return ONLY this JSON structure, no other text:
       "asset_url": null,
       "use_ready_asset": false,
       "prompt_json": {{
-        "global_logic": "<1-2 sentence overall mood and filming approach>",
+        "global_logic": "<Technical cinematography approach using Veo-3 logic>",
         "scene_sequencing": [
           {{
             "shot_id": 1,
             "timing": "0.0s - {max_clip_duration:.1f}s",
             "location": "<specific real place with identifying visual details>",
-            "action": "<detailed cinematic description: what exactly the camera sees, the movement, the light, the textures, the human element — written as one flowing paragraph of 2-4 sentences>",
+            "action": "<VEO-3 FORMULA: [Cinematography] + [Subject] + [Action] + [Context] + [Style & Ambiance]>",
             "visual_anchor": "<the key visual element that connects to the keyword>"
           }}
         ],
         "technical_directives": {{
-          "camera_movement": "<specific camera action described as physical movement, not a style label>",
-          "style": "personal phone footage, natural imperfections, real-life moment",
-          "continuity": "single-take continuous capture, no cuts",
-          "framing": "<specific framing for this shot — e.g. 'low angle from table looking up' or 'tight over-shoulder'>",
-          "capture_device": "phone camera, shallow depth at close range, auto-exposure shifts"
+          "camera_movement": "<Technical camera action: Dolly, Truck, Pan, Tilt, Arc, Crane>",
+          "lighting": "<Specific lighting setup: Rembrandt, Volumetric, High-key, Golden hour>",
+          "framing": "<Shot size and angle: CU, MS, WS, Low Angle, POV>",
+          "textures": "<Surface details: Subsurface scattering, grain, mist, condensation>"
         }},
         "negative_prompt": "{IPHONE_NEGATIVE_PROMPT}"
       }}
@@ -252,26 +223,21 @@ Return ONLY this JSON structure, no other text:
   ]
 }}
 
-RULES FOR SPECIAL CASES:
-- If asset_type is "product_video": set "prompt_json": null, "use_ready_asset": true
-- "scene_sequencing" must contain exactly ONE item
-- Timing always starts at 0.0s
-
 ═══════════════════════════════════════════
-EXAMPLES OF GREAT vs TERRIBLE PROMPTS:
+EXAMPLES:
 ═══════════════════════════════════════════
 
 KEYWORD: "отели на Бали"
-❌ TERRIBLE: location="Bali hotel", action="person at a hotel pool in Bali, authentic iPhone footage"
-✅ GREAT: location="Infinity pool edge at a Bali cliff-side villa, Uluwatu area", action="Close-up of a woman's feet dangling over an infinity pool edge, turquoise water stretching to the horizon below. Her toes skim the surface sending tiny ripples. A tropical drink with a paper umbrella sits on the wet stone beside her. Camera slowly tilts up from feet to reveal the vast Indian Ocean panorama, lens catches a sun flare. Late afternoon golden light paints everything warm amber."
+✅ GREAT: 
+"action": "Close-up Dolly In (35mm) towards a pair of light-skinned feet dangling over an infinity pool edge in Uluwatu. The turquoise water ripples as toes skim the surface. Subsurface scattering is visible on the skin under the harsh tropical sun. Late afternoon golden hour lighting creates long shadows on the wet stone. The Indian Ocean stretches to the horizon in the background with a soft volumetric haze."
 
 KEYWORD: "еда в Таиланде"
-❌ TERRIBLE: location="Thai street", action="Thai street food being prepared, authentic UGC style"
-✅ GREAT: location="Smoky night market stall on Yaowarat Road, Bangkok Chinatown", action="POV shot: the viewer's hand reaches toward a sizzling wok where a vendor tosses pad thai with flames leaping up. The camera drifts to the right revealing a row of glowing food stalls stretching down the narrow street, motorcycles weaving between pedestrians, neon signs reflecting on the wet asphalt. Dense steam catches the warm orange light from bare overhead bulbs."
+✅ GREAT: 
+"action": "POV Slow Pan right (24mm) across a smoky night market stall in Bangkok Chinatown. A street vendor tosses a wok where orange flames leap up, casting flickering light on weathered wooden counters. Steam rises in thick volumetric clouds. The filmer’s hand is visible in the lower foreground holding a small bowl. Neon signs from the street reflect on the wet asphalt in the background."
 
 KEYWORD: "перелёт"
-❌ TERRIBLE: location="airplane", action="person looking out airplane window, handheld camera feel"
-✅ GREAT: location="Economy class window seat during golden hour descent", action="Camera peers past a sleeping passenger's shoulder through the oval airplane window. Cloud layer below glows pink and orange. The wing cuts through frame at a diagonal. A phone notification lights up on the tray table in the foreground, slightly out of focus. The plane banks gently and the light shifts across the cabin wall."
+✅ GREAT: 
+"action": "Over-shoulder Medium Shot (50mm lens) looking through an airplane window during golden hour descent. The passenger’s shoulder is in the soft-focus foreground. Outside, the wing cuts through a layer of pink-tinted clouds. Natural auto-exposure shifts as the plane banks gently, illuminating the cabin wall with warm amber light. Slight micro-jitter from engine vibration."
 
 ═══════════════════════════════════════════
 INPUT DATA:
