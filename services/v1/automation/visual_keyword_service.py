@@ -1199,6 +1199,7 @@ def _build_semantic_llm_segments(
     relevance_priority: str,
     product_clip_policy: str,
     product_keyword: str | None,
+    learned_rules_visual: str | None = None,
 ) -> List[Dict[str, Any]]:
     normalized_words = _normalize_words(words)
     total_duration = _get_total_duration(normalized_words)
@@ -1267,6 +1268,8 @@ TRANSCRIPT:
 
 WORD TIMESTAMPS:
 {json.dumps(normalized_words, ensure_ascii=False)}
+
+{('CLIENT-SPECIFIC LEARNED RULES (from feedback analysis — FOLLOW STRICTLY):' + chr(10) + learned_rules_visual.strip()) if learned_rules_visual and learned_rules_visual.strip() else ''}
 """
 
     client = _openrouter_client()
@@ -1423,6 +1426,7 @@ def extract_visual_keyword_segments(
     product_keyword: str | None = None,
     product_video_url: str | None = None,
     product_media_assets: List[Dict[str, Any]] | None = None,
+    learned_rules_visual: str | None = None,
 ) -> Dict[str, Any]:
     interval = _normalize_broll_interval_seconds(broll_interval_seconds)
     timing_mode = _normalize_broll_timing_mode(broll_timing_mode)
@@ -1458,6 +1462,7 @@ def extract_visual_keyword_segments(
                 relevance_priority=semantic_relevance_priority,
                 product_clip_policy=product_clip_policy,
                 product_keyword=product_keyword,
+                learned_rules_visual=learned_rules_visual,
             )
             force_product_segment = product_clip_policy == "required"
             return {

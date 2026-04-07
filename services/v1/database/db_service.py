@@ -364,6 +364,9 @@ def init_db() -> None:
             auto_generate_final_videos BOOLEAN DEFAULT FALSE,
             daily_final_video_limit INTEGER DEFAULT 3,
             monthly_final_video_limit INTEGER DEFAULT 30,
+            learned_rules_scenario TEXT,
+            learned_rules_visual TEXT,
+            learned_rules_video TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
         """CREATE TABLE IF NOT EXISTS topic_configs (
@@ -421,6 +424,9 @@ def init_db() -> None:
             montage_background_audio_name TEXT, montage_background_audio_path TEXT,
             montage_yandex_disk_path TEXT, montage_yandex_public_url TEXT, montage_yandex_status TEXT,
             montage_yandex_error TEXT, montage_yandex_uploaded_at TIMESTAMP,
+            feedback_rating TEXT,
+            feedback_comment TEXT,
+            feedback_categories TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
         """CREATE TABLE IF NOT EXISTS final_video_jobs (
@@ -584,7 +590,13 @@ def init_db() -> None:
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS usage_count INTEGER DEFAULT 0",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
-        "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP"
+        "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS learned_rules_scenario TEXT",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS learned_rules_visual TEXT",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS learned_rules_video TEXT",
+        "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_rating TEXT",
+        "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_comment TEXT",
+        "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_categories TEXT"
     ]
     try:
         with DBConnection() as cursor:

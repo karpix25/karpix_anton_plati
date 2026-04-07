@@ -52,6 +52,12 @@ async function ensureScenarioDurationColumn() {
   await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS background_audio_tag TEXT DEFAULT 'neutral'");
   await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_name TEXT");
   await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_path TEXT");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_rating TEXT");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_comment TEXT");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_categories TEXT");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS learned_rules_scenario TEXT");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS learned_rules_visual TEXT");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS learned_rules_video TEXT");
 }
 
 export async function GET(request: Request) {

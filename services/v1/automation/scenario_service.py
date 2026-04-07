@@ -280,7 +280,7 @@ def _hook_context_from_source_cards(topic_card=None, structure_card=None):
         return _hook_context_from_transcript("")
 
 
-def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
+def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
     """
     Produces a very close rewrite of the source transcript.
     The structure, pacing, theme, and dramatic arc should stay almost identical.
@@ -476,6 +476,8 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Does the rewrite feel almost as rich and watchable as the source?
     - Did I avoid demonstrative references to unseen websites, apps, or products like "вот эти сайты" or "первый сайт"?
 
+    {('CLIENT-SPECIFIC LEARNED RULES (from feedback analysis — FOLLOW STRICTLY):' + chr(10) + '    ' + (learned_rules_scenario or '').strip()) if learned_rules_scenario and learned_rules_scenario.strip() else ''}
+
     RETURN JSON:
     {{
         "scene_name": "Short title",
@@ -505,7 +507,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
             "rewrite_type": "close_rewrite"
         }
 
-def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
+def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
     """
     Generates a NEW scenario by "Mirroring" the viral DNA of the source video 
     into a script for the target product.
@@ -592,6 +594,8 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
         "hook_preservation_notes": "Как сохранен формат хука референса",
         "strategy_notes": "Как вы адаптировали Врага и Инъекцию Экспертности"
     }}
+
+    {('CLIENT-SPECIFIC LEARNED RULES (from feedback analysis — FOLLOW STRICTLY):' + chr(10) + '    ' + (learned_rules_scenario or '').strip()) if learned_rules_scenario and learned_rules_scenario.strip() else ''}
     """
     
     try:
@@ -602,7 +606,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
             "script": "Error generating script"
         }
 
-def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
+def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
     """
     Generates a scenario from a cluster of similar references instead of a single audit.
     This keeps the resulting script much closer to a chosen topic and angle.
@@ -709,6 +713,8 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
         "hook_preservation_notes": "Как вы сохранили формат хука из кластера",
         "cluster_alignment_notes": "Как вы синтезировали опыт всех роликов"
     }}
+
+    {('CLIENT-SPECIFIC LEARNED RULES (from feedback analysis — FOLLOW STRICTLY):' + chr(10) + '    ' + (learned_rules_scenario or '').strip()) if learned_rules_scenario and learned_rules_scenario.strip() else ''}
     """
 
     try:
@@ -721,7 +727,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
             "topic_angle": target_angle
         }
 
-def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None):
+def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
     """
     Generates a new scenario by combining a reusable topic card and a reusable structure card.
     """
@@ -826,6 +832,8 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
             "hook_type": "Brief description of the hook logic"
         }}
     }}
+
+    {('CLIENT-SPECIFIC LEARNED RULES (from feedback analysis — FOLLOW STRICTLY):' + chr(10) + '    ' + (learned_rules_scenario or '').strip()) if learned_rules_scenario and learned_rules_scenario.strip() else ''}
     """
 
     try:

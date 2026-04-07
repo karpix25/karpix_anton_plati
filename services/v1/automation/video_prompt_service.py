@@ -123,6 +123,7 @@ def generate_seedance_prompts(
     tts_text: str,
     keyword_segments: List[Dict[str, Any]],
     generator_model: str | None = None,
+    learned_rules_video: str | None = None,
 ) -> Dict[str, Any]:
     profile = _resolve_broll_model_profile(generator_model)
     max_clip_duration = float(profile["clip_duration_seconds"])
@@ -284,6 +285,8 @@ TTS TEXT:
 
 KEYWORD SEGMENTS:
 {json.dumps(prompt_inputs, ensure_ascii=False)}
+
+{('CLIENT-SPECIFIC LEARNED RULES (from feedback analysis — FOLLOW STRICTLY):' + chr(10) + learned_rules_video.strip()) if learned_rules_video and learned_rules_video.strip() else ''}
 """
 
     try:

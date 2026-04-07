@@ -327,6 +327,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         tts_silence_trim_enabled = None
         tts_sentence_trim_enabled = None
         tts_sentence_trim_min_gap_seconds = None
+        learned_rules_scenario = None
+        learned_rules_visual = None
+        learned_rules_video = None
         
         if resolved_client_id:
             client_data = get_client(client_id=resolved_client_id)
@@ -356,6 +359,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 tts_silence_trim_enabled = client_data.get("tts_silence_trim_enabled")
                 tts_sentence_trim_enabled = client_data.get("tts_sentence_trim_enabled")
                 tts_sentence_trim_min_gap_seconds = client_data.get("tts_sentence_trim_min_gap_seconds")
+                learned_rules_scenario = client_data.get("learned_rules_scenario")
+                learned_rules_visual = client_data.get("learned_rules_visual")
+                learned_rules_video = client_data.get("learned_rules_video")
                 
         # Only rewrite the scenario, bypassing the ingestion and transcription phases
         from services.v1.automation.scenario_service import rewrite_reference_script, find_unshowable_asset_reference_issues
@@ -373,6 +379,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
             target_duration_seconds=target_duration_seconds,
             target_duration_min_seconds=target_duration_min_seconds,
             target_duration_max_seconds=target_duration_max_seconds,
+            learned_rules_scenario=learned_rules_scenario,
         )
         
         import uuid
@@ -471,12 +478,14 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                     product_keyword=product_keyword,
                     product_video_url=product_video_url,
                     product_media_assets=product_media_assets,
+                    learned_rules_visual=learned_rules_visual,
                 )
                 video_generation_prompts = generate_seedance_prompts(
                     scenario_text=script_text,
                     tts_text=tts_script,
                     keyword_segments=(video_keyword_segments or {}).get("segments", []),
                     generator_model=broll_generator_model,
+                    learned_rules_video=learned_rules_video,
                 )
             except Exception as media_error:
                 logger.error(f"Failed to auto-generate media pipeline for single scenario {res_job_id}: {media_error}")

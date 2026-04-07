@@ -155,6 +155,9 @@ export default function CuratorDashboard() {
       monthly_final_video_limit: selectedClient?.monthly_final_video_limit || 30,
       monthly_final_video_count: selectedClient?.monthly_final_video_count || 0,
       open_final_video_jobs: selectedClient?.open_final_video_jobs || 0,
+      learned_rules_scenario: selectedClient?.learned_rules_scenario || "",
+      learned_rules_visual: selectedClient?.learned_rules_visual || "",
+      learned_rules_video: selectedClient?.learned_rules_video || "",
     }},
     [selectedClient]
   );
@@ -315,6 +318,7 @@ export default function CuratorDashboard() {
                 const result = await heygenCatalogQuery.refetch();
                 return result.data || [];
               }}
+              onRefreshWorkspace={refreshWorkspace}
               isSavingHeygenAvatars={saveHeygenAvatarsMutation.isPending}
             />
           )}

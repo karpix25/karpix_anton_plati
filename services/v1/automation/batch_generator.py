@@ -342,6 +342,9 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     tts_silence_trim_enabled = client.get("tts_silence_trim_enabled")
     tts_sentence_trim_enabled = client.get("tts_sentence_trim_enabled")
     tts_sentence_trim_min_gap_seconds = client.get("tts_sentence_trim_min_gap_seconds")
+    learned_rules_scenario = client.get("learned_rules_scenario")
+    learned_rules_visual = client.get("learned_rules_visual")
+    learned_rules_video = client.get("learned_rules_video")
 
     # Get references
     ranked_references = get_reference_pool(niche=niche, client_id=client_id, topic=topic, angle=angle)
@@ -408,6 +411,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 target_duration_max_seconds=target_duration_max_seconds,
                 variation_index=i + 1,
                 total_variations=count,
+                learned_rules_scenario=learned_rules_scenario,
             )
             source_references = [f"topic:{topic_card.get('id')}", f"struct:{structure_card.get('id')}"]
             source_reference = source_references[0]
@@ -428,7 +432,8 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 target_duration_min_seconds=target_duration_min_seconds,
                 target_duration_max_seconds=target_duration_max_seconds,
                 variation_index=i + 1,
-                total_variations=count
+                total_variations=count,
+                learned_rules_scenario=learned_rules_scenario,
             )
             source_references = [ref["reels_url"]]
             source_reference = ref["reels_url"]
@@ -442,6 +447,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 target_duration_seconds=target_duration_seconds,
                 target_duration_min_seconds=target_duration_min_seconds,
                 target_duration_max_seconds=target_duration_max_seconds,
+                learned_rules_scenario=learned_rules_scenario,
             )
             source_references = [ref["reels_url"]]
             source_reference = ref["reels_url"]
@@ -459,6 +465,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 target_duration_seconds=target_duration_seconds,
                 target_duration_min_seconds=target_duration_min_seconds,
                 target_duration_max_seconds=target_duration_max_seconds,
+                learned_rules_scenario=learned_rules_scenario,
             )
             source_references = [item["reels_url"] for item in cluster_references]
             source_reference = ref["reels_url"]
@@ -555,12 +562,14 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                     product_keyword=product_keyword,
                     product_video_url=product_video_url,
                     product_media_assets=product_media_assets,
+                    learned_rules_visual=learned_rules_visual,
                 )
                 video_generation_prompts = generate_seedance_prompts(
                     scenario_text=script_text,
                     tts_text=tts_script,
                     keyword_segments=(video_keyword_segments or {}).get("segments", []),
                     generator_model=broll_generator_model,
+                    learned_rules_video=learned_rules_video,
                 )
             except Exception as e:
                 logger.error(f"Failed to auto-generate TTS/timestamps/keywords for scenario {res_job_id}: {e}")

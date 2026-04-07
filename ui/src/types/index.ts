@@ -44,6 +44,9 @@ export interface Client {
   monthly_final_video_limit?: number;
   monthly_final_video_count?: number;
   open_final_video_jobs?: number;
+  learned_rules_scenario?: string;
+  learned_rules_visual?: string;
+  learned_rules_video?: string;
 }
 
 export type SubtitleMode = "word_by_word" | "phrase_block";
@@ -175,6 +178,9 @@ export interface Settings {
   monthly_final_video_limit: number;
   monthly_final_video_count: number;
   open_final_video_jobs: number;
+  learned_rules_scenario?: string;
+  learned_rules_visual?: string;
+  learned_rules_video?: string;
 }
 
 export interface MinimaxVoiceOption {
@@ -356,4 +362,7 @@ export interface Scenario {
   montage_yandex_uploaded_at?: string | null;
   created_at?: string;
   source_reference?: string;
+  feedback_rating?: "like" | "dislike" | null;
+  feedback_comment?: string | null;
+  feedback_categories?: string | null;
 }

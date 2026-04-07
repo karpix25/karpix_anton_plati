@@ -24,6 +24,7 @@ interface SettingsScreenProps {
   elevenlabsVoices: ElevenLabsVoiceOption[];
   onSaveHeygenAvatars: (avatars: HeygenAvatarConfig[]) => void;
   onRefreshHeygenCatalog?: () => Promise<HeygenAvatarConfig[]>;
+  onRefreshWorkspace?: () => void;
   isSavingHeygenAvatars: boolean;
 }
 
@@ -334,6 +335,7 @@ export function SettingsScreen({
   elevenlabsVoices,
   onSaveHeygenAvatars,
   onRefreshHeygenCatalog,
+  onRefreshWorkspace,
   isSavingHeygenAvatars,
 }: SettingsScreenProps) {
   const [isUploadingProductVideo, setIsUploadingProductVideo] = useState(false);
@@ -342,6 +344,7 @@ export function SettingsScreen({
   const [motionPromptRequestKey, setMotionPromptRequestKey] = useState<string | null>(null);
   const [expandedAvatarPanels, setExpandedAvatarPanels] = useState<Record<string, boolean>>({});
   const [selectedLookTabs, setSelectedLookTabs] = useState<Record<string, string>>({});
+  const [optimizingCategory, setOptimizingCategory] = useState<string | null>(null);
   const normalizedHeygenAvatars = useMemo(
     () => heygenAvatars.map((avatar, avatarIndex) => normalizeAvatar(avatar, avatarIndex)),
     [heygenAvatars]
@@ -941,6 +944,31 @@ export function SettingsScreen({
     );
     if (!confirmed) return;
     onDeleteProject();
+  };
+
+  const handleOptimizePrompts = async (category: "scenario" | "visual" | "video") => {
+    if (!selectedClientId) return;
+    try {
+      setOptimizingCategory(category);
+      const response = await fetch('/api/clients/optimize-prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: selectedClientId, category })
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Failed to optimize prompts");
+      }
+      alert("Правила успешно обновлены");
+      if (onRefreshWorkspace) {
+        onRefreshWorkspace();
+      }
+    } catch (e) {
+      console.error(e);
+      alert(`Ошибка: ${e instanceof Error ? e.message : "Неизвестная ошибка"}`);
+    } finally {
+      setOptimizingCategory(null);
+    }
   };
 
   return (
@@ -2157,6 +2185,51 @@ export function SettingsScreen({
               )}
             </Button>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl bg-white p-8 shadow-sm">
+        <div className="mb-8">
+            <h2 className="text-3xl font-semibold tracking-tight text-foreground">Prompt Evolution</h2>
+            <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
+              Управление обратной связью и автогенерацией правил для промптов. 
+              Нейросеть проанализирует лайки/дизлайки и комментарии, чтобы составить список улучшений для будущих генераций.
+            </p>
+        </div>
+        
+        <div className="grid gap-6 md:grid-cols-3">
+            {[
+                { id: "scenario", title: "Сценарий", rules: draftSettings.learned_rules_scenario },
+                { id: "visual", title: "Визуал (B-roll)", rules: draftSettings.learned_rules_visual },
+                { id: "video", title: "Видео (Prompts)", rules: draftSettings.learned_rules_video },
+            ].map((cat) => (
+                <div key={cat.id} className="flex flex-col gap-3 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-5 shadow-sm transition-all hover:border-[#d1d9e0]">
+                    <div className="flex items-center justify-between">
+                        <div className="font-bold text-foreground">{cat.title}</div>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-primary hover:bg-primary/10"
+                            onClick={() => handleOptimizePrompts(cat.id as any)}
+                            disabled={!selectedClientId || (optimizingCategory !== null && optimizingCategory !== cat.id)}
+                            title="Пересчитать правила на основе фидбэка"
+                        >
+                            {optimizingCategory === cat.id ? (
+                                <LoaderCircle className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Wand2 className="h-4 w-4" />
+                            )}
+                        </Button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto max-h-[200px] rounded-lg bg-white/50 p-3 italic text-xs leading-relaxed text-muted-foreground border border-dashed border-slate-200">
+                        {cat.rules || "Нет выученных правил"}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-slate-400">
+                        {cat.rules ? "Авто-правила применены" : "Ожидание фидбэка"}
+                    </div>
+                </div>
+            ))}
         </div>
       </div>
 

@@ -78,6 +78,9 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
     tts_provider = "minimax"
     tts_voice_id = None
     elevenlabs_voice_id = None
+    learned_rules_scenario = None
+    learned_rules_visual = None
+    learned_rules_video = None
     
     if client_id:
         from services.v1.database.db_service import get_client, get_client_monthly_count
@@ -91,6 +94,9 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
             tts_provider = client_data.get("tts_provider") or "minimax"
             tts_voice_id = client_data.get("tts_voice_id")
             elevenlabs_voice_id = client_data.get("elevenlabs_voice_id")
+            learned_rules_scenario = client_data.get("learned_rules_scenario")
+            learned_rules_visual = client_data.get("learned_rules_visual")
+            learned_rules_video = client_data.get("learned_rules_video")
 
     selected_avatar_variant = None
     if client_id:
@@ -188,7 +194,8 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
         niche=niche,
         target_product_info=target_product_info,
         brand_voice=brand_voice,
-        target_audience=target_audience
+        target_audience=target_audience,
+        learned_rules_scenario=learned_rules_scenario,
     )
     script_text = scenario_json.get("script")
     save_content_data(job_id, scenario_json=scenario_json, niche=niche)
