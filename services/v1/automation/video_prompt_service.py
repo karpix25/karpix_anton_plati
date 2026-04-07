@@ -129,11 +129,8 @@ def generate_seedance_prompts(
     max_clip_duration = float(profile["clip_duration_seconds"])
 
     if not keyword_segments:
-        return {
-            "prompts": [],
-            "generator_model": profile["generator_model"],
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
+        logger.warning("Empty segments provided to prompt generator. Creating global fallback prompt.")
+        keyword_segments = [{"slot_start": 0.0, "slot_end": 10.0, "keyword": "Professional Atmosphere", "phrase": "General scene", "visual_intent": "WS of a modern professional environment, 4K"}]
 
     prompt_inputs = _build_prompt_segment_inputs(keyword_segments)
 

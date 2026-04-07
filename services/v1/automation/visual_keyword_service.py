@@ -218,7 +218,7 @@ class TimingEngine:
         interval = self.config.interval
         max_end = max((w["end"] for w in words), default=0.0)
         slots: List[TimingSlot] = []
-        current = max(interval, FIRST_ATTENTION_CUT_MIN_SECONDS)
+        current = max(interval, 2.0)
         while current <= max_end + 0.01:
             slots.append({
                 "slot_start": round(current, 1),
@@ -378,7 +378,7 @@ class VisualSegmentProcessor:
         if not segments: return []
         min_avatar_len = 2.0
         min_slot_len = self.profile["slot_min"]
-        ordered = sorted((dict(s) for s in segments), key=lambda x: (x["slot_start"], x.get("slot_end", 0)))
+        ordered = sorted((dict(s) for s in segments), key=lambda x: (float(x.get("slot_start", 0)), float(x.get("slot_end", 0))))
         resolved: List[VisualSegment] = []
         for seg in ordered:
             start = seg["slot_start"]
@@ -392,7 +392,7 @@ class VisualSegmentProcessor:
                     end = min(self.total_duration, start + min_slot_len)
             if end - start < min_slot_len or start >= self.total_duration:
                 continue
-            seg["slot_start"], seg["slot_end"] = round(start, 1), round(min(end, self.total_duration), 1)
+            seg["slot_start"], seg["slot_end"] = round(start, 2), round(min(end, self.total_duration), 2)
             resolved.append(seg)
         return resolved
 
@@ -483,13 +483,29 @@ class VisualPromptBuilder:
     - **Appearance**: Visible people must be European-looking (light skin).
 """
         if self.config.learned_rules:
-            prompt += f"\nДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА ОТ ПОЛЬЗОВАТЕЛЯ:\n{self.config.learned_rules}\n"
+            prompt += f"\nДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА ОТ ПОЛЬЗОВАТЕЛЯ (УЧТИ ОБЯЗАТЕЛЬНО):\n{self.config.learned_rules}\n"
         return prompt
 
     def build_user_prompt(self, transcript: str, slots: List[TimingSlot]) -> str:
         return f"""TRANSCRIPT: {transcript}
-SLOTS: {json.dumps(slots)}
-ВЕРНИ JSON: {{ "segments": [...] }}"""
+
+AVAILABLE SLOTS (Choose from these and map to keywords): 
+{json.dumps(slots)}
+
+TASK: Extract at most {len(slots)} segments that match the keywords in the transcript.
+Return ONLY JSON in this format:
+{{
+  "segments": [
+    {{
+      "slot_start": <must be from one of the slots above>,
+      "slot_end": <must be from one of the slots above>,
+      "keyword": "<main subject RU>",
+      "phrase": "<short phrase RU>",
+      "visual_intent": "<VEO-3 Technical details in EN>",
+      "reason": "<why this keyword fits this timing>"
+    }}
+  ]
+}}"""
 
 # --- ORCHESTRATOR ---
 
