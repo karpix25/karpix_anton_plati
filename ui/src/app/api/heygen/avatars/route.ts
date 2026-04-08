@@ -10,6 +10,7 @@ async function ensureHeygenLookMotionColumns() {
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_status TEXT',
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_error TEXT',
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_updated_at TIMESTAMP',
+    'ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS gender TEXT',
   ];
 
   for (const statement of statements) {
@@ -79,8 +80,8 @@ export async function PUT(request: Request) {
       const avatar = avatars[avatarIndex];
       const avatarResult = await client.query(
         `INSERT INTO client_heygen_avatars (
-          client_id, avatar_id, avatar_name, folder_name, preview_image_url, is_active, usage_count, sort_order
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          client_id, avatar_id, avatar_name, folder_name, preview_image_url, is_active, usage_count, sort_order, gender
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         RETURNING id`,
         [
           clientId,
@@ -91,6 +92,7 @@ export async function PUT(request: Request) {
           avatar.is_active ?? true,
           avatar.usage_count ?? 0,
           avatar.sort_order ?? avatarIndex,
+          avatar.gender || null,
         ]
       );
 

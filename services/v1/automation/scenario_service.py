@@ -280,7 +280,7 @@ def _hook_context_from_source_cards(topic_card=None, structure_card=None):
         return _hook_context_from_transcript("")
 
 
-def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
+def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
     """
     Produces a very close rewrite of the source transcript.
     The structure, pacing, theme, and dramatic arc should stay almost identical.
@@ -353,6 +353,11 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - This is variation #{variation_index} out of {total_variations}. The wording can shift, but the script should still feel like the same winning reel.
     - Do NOT default to generic anti-pattern hooks or stock openers that were NOT present in the source.
     {_asset_visibility_guardrails()}
+
+    GENDER AGREEMENT (FOR RUSSIAN LANGUAGE):
+    - The narrator's gender is: {gender}.
+    - Ensure all Russian verbs (past tense), adjectives, and pronouns match this gender.
+    - Example for "{gender}": {"Я пошел/купил" if gender == "male" else "Я пошла/купила"}.
 
     HOOK PRESERVATION RULES:
     - Source opening sentence 1: {hook_context["first_sentence"] or "N/A"}
@@ -507,7 +512,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
             "rewrite_type": "close_rewrite"
         }
 
-def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
+def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
     """
     Generates a NEW scenario by "Mirroring" the viral DNA of the source video 
     into a script for the target product.
@@ -585,6 +590,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     6. **Human Touch**: Используйте маркеры живой речи из Linguistic Fingerprint оригинала (связки, обращения, темп).
     7. Не используйте указательные формулировки для внешних сайтов, приложений и товаров, которые зритель не увидит в кадре: нельзя "вот эти сайты", "первый сайт", "вот этот крем". Говорите только обобщенно: "есть сервис", "одна платформа", "несколько сайтов", "средство от комаров".
     8. Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
+    9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
 
     ВЕРНИТЕ JSON:
     {{
@@ -606,7 +612,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
             "script": "Error generating script"
         }
 
-def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
+def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
     """
     Generates a scenario from a cluster of similar references instead of a single audit.
     This keeps the resulting script much closer to a chosen topic and angle.
@@ -700,6 +706,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     7a. Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
     8. Вариация №{variation_index} из {total_variations}.
     9. Не используйте указательные формулировки для неподготовленных внешних сайтов, приложений и товаров: нельзя "вот эти сайты", "первый сайт", "второй сайт", "вот этот спрей". Если нужно упомянуть ресурс или предмет, описывайте его обобщенно и без визуального указания.
+    10. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
 
     OPENING REFERENCES TO FOLLOW STRUCTURALLY:
     {json.dumps(reference_openings, ensure_ascii=False, indent=2)}
@@ -727,7 +734,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
             "topic_angle": target_angle
         }
 
-def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None):
+def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
     """
     Generates a new scenario by combining a reusable topic card and a reusable structure card.
     """
@@ -780,6 +787,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     6. PRODUCT INTEGRATION: Woven the product naturally as the "Enabler". It shouldn't feel like a mid-roll ad, it should be the logical solution to the pain point mentioned.
     7. Avoid repetitive stock openers if they were not present in the source hook. Forbidden phrases unless present in the source opening: {json.dumps(banned_hook_phrases, ensure_ascii=False)}
     8. Do NOT use demonstrative references to third-party sites, apps, or consumer products that the viewer cannot literally see on screen. Forbidden examples: "вот эти сайты", "первый сайт", "вот этот крем". Use generic wording instead: "есть сервис", "одна платформа", "несколько сайтов", "крем с высоким SPF".
+    9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
 
     TOPIC CARD (The "What"):
     {json.dumps(topic_meta or topic_card, ensure_ascii=False, indent=2)}

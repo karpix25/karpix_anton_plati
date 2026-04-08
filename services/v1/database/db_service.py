@@ -580,6 +580,7 @@ def init_db() -> None:
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS usage_count INTEGER DEFAULT 0",
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP",
+        "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS gender TEXT",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS preview_image_url TEXT",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_look_id TEXT",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_prompt TEXT",
@@ -838,9 +839,9 @@ def replace_client_heygen_avatars(client_id: int, avatars: List[Dict[str, Any]])
         for avatar_index, avatar in enumerate(avatars or []):
             cursor.execute("""
                 INSERT INTO client_heygen_avatars (
-                    client_id, avatar_id, avatar_name, folder_name, preview_image_url, is_active, usage_count, sort_order, last_used_at
+                    client_id, avatar_id, avatar_name, folder_name, preview_image_url, is_active, usage_count, sort_order, last_used_at, gender
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 client_id,
@@ -852,6 +853,7 @@ def replace_client_heygen_avatars(client_id: int, avatars: List[Dict[str, Any]])
                 avatar.get("usage_count", 0),
                 avatar.get("sort_order", avatar_index),
                 avatar.get("last_used_at"),
+                avatar.get("gender"),
             ))
             avatar_row = cursor.fetchone()
             if not avatar_row:

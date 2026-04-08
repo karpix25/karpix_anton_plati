@@ -13,6 +13,7 @@ type HeygenAvatarLook = {
   look_id?: string;
   name?: string;
   image_url?: string | null;
+  gender?: string;
 };
 
 type HeygenPhotoAvatarDetails = {
@@ -106,6 +107,7 @@ export async function GET() {
             preview_image_url: group.preview_image || nonMotionLooks[0]?.image_url || looks[0]?.image_url || "",
             is_active: true,
             sort_order: index,
+            gender: nonMotionLooks[0]?.gender || looks[0]?.gender || "female",
             looks: nonMotionLooks.map((look, lookIndex) => ({
               look_id: look.id,
               look_name: look.name || `${group.name || group.id} look ${lookIndex + 1}`,

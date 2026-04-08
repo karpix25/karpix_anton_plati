@@ -37,6 +37,7 @@ from services.v1.database.db_service import (
     get_references_by_angle,
     save_content_data,
     save_generated_scenario,
+    choose_next_client_avatar_variant,
 )
 from services.v1.providers.minimax_service import prepare_text_for_minimax_tts, text_to_speech_minimax
 from services.v1.providers.elevenlabs_service import DEFAULT_ELEVENLABS_VOICE_ID, prepare_text_for_elevenlabs_tts, text_to_speech_elevenlabs
@@ -349,6 +350,10 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     # Get references
     ranked_references = get_reference_pool(niche=niche, client_id=client_id, topic=topic, angle=angle)
     
+    # Get active avatar gender for Russian grammar agreement
+    active_avatar = choose_next_client_avatar_variant(client_id)
+    gender = active_avatar.get("gender", "female") if active_avatar else "female"
+    
     # In cluster mode, we use multiple references at once
     cluster_references = ranked_references if mode == "cluster" else []
     
@@ -412,6 +417,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 variation_index=i + 1,
                 total_variations=count,
                 learned_rules_scenario=learned_rules_scenario,
+                gender=gender,
             )
             source_references = [f"topic:{topic_card.get('id')}", f"struct:{structure_card.get('id')}"]
             source_reference = source_references[0]
@@ -434,6 +440,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 variation_index=i + 1,
                 total_variations=count,
                 learned_rules_scenario=learned_rules_scenario,
+                gender=gender,
             )
             source_references = [ref["reels_url"]]
             source_reference = ref["reels_url"]
@@ -448,6 +455,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 target_duration_min_seconds=target_duration_min_seconds,
                 target_duration_max_seconds=target_duration_max_seconds,
                 learned_rules_scenario=learned_rules_scenario,
+                gender=gender,
             )
             source_references = [ref["reels_url"]]
             source_reference = ref["reels_url"]
@@ -466,6 +474,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 target_duration_min_seconds=target_duration_min_seconds,
                 target_duration_max_seconds=target_duration_max_seconds,
                 learned_rules_scenario=learned_rules_scenario,
+                gender=gender,
             )
             source_references = [item["reels_url"] for item in cluster_references]
             source_reference = ref["reels_url"]

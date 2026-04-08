@@ -9,7 +9,7 @@ import os
 import subprocess
 import re
 from services.v1.automation.pipeline_orchestrator import run_content_gen_pipeline
-from services.v1.database.db_service import get_db_connection, init_db
+from services.v1.database.db_service import get_db_connection, init_db, choose_next_client_avatar_variant
 from datetime import datetime, timezone
 
 # Set up logging
@@ -369,6 +369,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         import uuid
         
         logger.info(f"Rewriting scenario for Content {content_id}")
+        
+        # Get active avatar gender for Russian grammar agreement
+        active_avatar = choose_next_client_avatar_variant(resolved_client_id)
+        gender = active_avatar.get("gender", "female") if active_avatar else "female"
+        
         scenario_json = rewrite_reference_script(
             transcript=transcript,
             audit_json=audit_json,
@@ -380,6 +385,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
             target_duration_min_seconds=target_duration_min_seconds,
             target_duration_max_seconds=target_duration_max_seconds,
             learned_rules_scenario=learned_rules_scenario,
+            gender=gender,
         )
         
         import uuid

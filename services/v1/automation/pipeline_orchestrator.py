@@ -187,6 +187,7 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
             }
 
     # Phase 2: Scenario (Close rewrite of the original reference)
+    gender = selected_avatar_variant.get("gender", "female") if selected_avatar_variant else "female"
     scenario_json = rewrite_reference_script(
         transcript,
         audit_json=audit_json,
@@ -196,6 +197,7 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
         brand_voice=brand_voice,
         target_audience=target_audience,
         learned_rules_scenario=learned_rules_scenario,
+        gender=gender,
     )
     script_text = scenario_json.get("script")
     save_content_data(job_id, scenario_json=scenario_json, niche=niche)
