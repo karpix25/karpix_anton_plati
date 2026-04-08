@@ -15,7 +15,7 @@ export interface Client {
   broll_pause_threshold_seconds?: number;
   broll_coverage_percent?: number;
   broll_semantic_relevance_priority?: "precision" | "balanced" | "dynamic";
-  broll_product_clip_policy?: "contextual" | "prefer" | "required";
+  broll_product_clip_policy?: "contextual" | "required";
   broll_generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
   product_media_assets?: ProductMediaAsset[];
   product_keyword?: string;
@@ -149,7 +149,7 @@ export interface Settings {
   broll_pause_threshold_seconds: number;
   broll_coverage_percent: number;
   broll_semantic_relevance_priority: "precision" | "balanced" | "dynamic";
-  broll_product_clip_policy: "contextual" | "prefer" | "required";
+  broll_product_clip_policy: "contextual" | "required";
   broll_generator_model: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
   product_media_assets: ProductMediaAsset[];
   product_keyword: string;
