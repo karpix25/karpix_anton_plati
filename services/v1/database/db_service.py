@@ -6,6 +6,8 @@ import os
 import logging
 import re
 import random
+import secrets
+import hashlib
 from datetime import datetime
 from contextlib import contextmanager
 from typing import Optional, Dict, List, Any, Union, Tuple
@@ -373,6 +375,56 @@ def init_db() -> None:
             topic_id TEXT PRIMARY KEY, client_id INTEGER REFERENCES clients(id),
             niche TEXT, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )""",
+        """CREATE TABLE IF NOT EXISTS telegram_user_access (
+            id SERIAL PRIMARY KEY,
+            telegram_user_id BIGINT UNIQUE NOT NULL,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            approved_at TIMESTAMP,
+            approved_by BIGINT,
+            rejected_at TIMESTAMP,
+            rejected_by BIGINT,
+            notes TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CHECK (status IN ('pending', 'approved', 'rejected'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_user_access_status ON telegram_user_access(status)",
+        """CREATE TABLE IF NOT EXISTS telegram_web_auth_requests (
+            id SERIAL PRIMARY KEY,
+            request_id TEXT UNIQUE NOT NULL,
+            nonce TEXT NOT NULL,
+            telegram_user_id BIGINT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            redirect_path TEXT NOT NULL DEFAULT '/',
+            session_token_hash TEXT,
+            session_expires_at TIMESTAMP,
+            approved_at TIMESTAMP,
+            used_at TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '20 minutes'),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CHECK (status IN ('pending', 'approved', 'used', 'expired', 'cancelled'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_auth_requests_status ON telegram_web_auth_requests(status)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_auth_requests_expires ON telegram_web_auth_requests(expires_at)",
+        """CREATE TABLE IF NOT EXISTS telegram_web_sessions (
+            id SERIAL PRIMARY KEY,
+            session_token_hash TEXT UNIQUE NOT NULL,
+            telegram_user_id BIGINT NOT NULL,
+            username TEXT,
+            first_name TEXT,
+            last_name TEXT,
+            expires_at TIMESTAMP NOT NULL,
+            revoked_at TIMESTAMP,
+            last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_sessions_user ON telegram_web_sessions(telegram_user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_sessions_expires ON telegram_web_sessions(expires_at)",
         """CREATE TABLE IF NOT EXISTS processed_content (
             id SERIAL PRIMARY KEY, job_id TEXT UNIQUE, client_id INTEGER REFERENCES clients(id),
             niche TEXT, target_product_info TEXT, reels_url TEXT, transcript TEXT,
@@ -597,7 +649,35 @@ def init_db() -> None:
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS learned_rules_video TEXT",
         "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_rating TEXT",
         "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_comment TEXT",
-        "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_categories TEXT"
+        "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS feedback_categories TEXT",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS approved_by BIGINT",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS rejected_by BIGINT",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS notes TEXT",
+        "ALTER TABLE telegram_user_access ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_user_access_status ON telegram_user_access(status)",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS telegram_user_id BIGINT",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending'",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS redirect_path TEXT NOT NULL DEFAULT '/'",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS session_token_hash TEXT",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS session_expires_at TIMESTAMP",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS used_at TIMESTAMP",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP + INTERVAL '20 minutes')",
+        "ALTER TABLE telegram_web_auth_requests ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_auth_requests_status ON telegram_web_auth_requests(status)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_auth_requests_expires ON telegram_web_auth_requests(expires_at)",
+        "ALTER TABLE telegram_web_sessions ADD COLUMN IF NOT EXISTS username TEXT",
+        "ALTER TABLE telegram_web_sessions ADD COLUMN IF NOT EXISTS first_name TEXT",
+        "ALTER TABLE telegram_web_sessions ADD COLUMN IF NOT EXISTS last_name TEXT",
+        "ALTER TABLE telegram_web_sessions ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMP",
+        "ALTER TABLE telegram_web_sessions ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_sessions_user ON telegram_web_sessions(telegram_user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_telegram_web_sessions_expires ON telegram_web_sessions(expires_at)"
     ]
     try:
         with DBConnection() as cursor:
@@ -1237,6 +1317,302 @@ def get_topic_config(topic_id: str) -> Optional[Dict[str, Any]]:
         """, (str(topic_id),))
         row = cursor.fetchone()
         return dict(row) if row else None
+
+def get_telegram_user_access(telegram_user_id: int) -> Optional[Dict[str, Any]]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            "SELECT * FROM telegram_user_access WHERE telegram_user_id = %s",
+            (int(telegram_user_id),),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def request_telegram_access(
+    telegram_user_id: int,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO telegram_user_access (
+                telegram_user_id, username, first_name, last_name, status, requested_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT (telegram_user_id) DO UPDATE SET
+                username = COALESCE(EXCLUDED.username, telegram_user_access.username),
+                first_name = COALESCE(EXCLUDED.first_name, telegram_user_access.first_name),
+                last_name = COALESCE(EXCLUDED.last_name, telegram_user_access.last_name),
+                status = CASE
+                    WHEN telegram_user_access.is_admin = TRUE OR telegram_user_access.status = 'approved' THEN 'approved'
+                    ELSE 'pending'
+                END,
+                requested_at = CASE
+                    WHEN telegram_user_access.is_admin = TRUE OR telegram_user_access.status = 'approved'
+                        THEN telegram_user_access.requested_at
+                    ELSE CURRENT_TIMESTAMP
+                END,
+                approved_at = CASE
+                    WHEN telegram_user_access.is_admin = TRUE OR telegram_user_access.status = 'approved'
+                        THEN telegram_user_access.approved_at
+                    ELSE NULL
+                END,
+                approved_by = CASE
+                    WHEN telegram_user_access.is_admin = TRUE OR telegram_user_access.status = 'approved'
+                        THEN telegram_user_access.approved_by
+                    ELSE NULL
+                END,
+                rejected_at = NULL,
+                rejected_by = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+            """,
+            (int(telegram_user_id), username, first_name, last_name),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+
+def ensure_telegram_admin(
+    telegram_user_id: int,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO telegram_user_access (
+                telegram_user_id, username, first_name, last_name, status, is_admin, approved_at, approved_by, updated_at
+            )
+            VALUES (%s, %s, %s, %s, 'approved', TRUE, CURRENT_TIMESTAMP, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (telegram_user_id) DO UPDATE SET
+                username = COALESCE(EXCLUDED.username, telegram_user_access.username),
+                first_name = COALESCE(EXCLUDED.first_name, telegram_user_access.first_name),
+                last_name = COALESCE(EXCLUDED.last_name, telegram_user_access.last_name),
+                status = 'approved',
+                is_admin = TRUE,
+                approved_at = COALESCE(telegram_user_access.approved_at, CURRENT_TIMESTAMP),
+                approved_by = COALESCE(telegram_user_access.approved_by, EXCLUDED.approved_by),
+                rejected_at = NULL,
+                rejected_by = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+            """,
+            (int(telegram_user_id), username, first_name, last_name, int(telegram_user_id)),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+
+def approve_telegram_user(telegram_user_id: int, admin_telegram_user_id: int) -> Dict[str, Any]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO telegram_user_access (
+                telegram_user_id, status, is_admin, approved_at, approved_by, updated_at
+            )
+            VALUES (%s, 'approved', FALSE, CURRENT_TIMESTAMP, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (telegram_user_id) DO UPDATE SET
+                status = 'approved',
+                approved_at = CURRENT_TIMESTAMP,
+                approved_by = EXCLUDED.approved_by,
+                rejected_at = NULL,
+                rejected_by = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+            """,
+            (int(telegram_user_id), int(admin_telegram_user_id)),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+
+def reject_telegram_user(telegram_user_id: int, admin_telegram_user_id: int) -> Dict[str, Any]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO telegram_user_access (
+                telegram_user_id, status, is_admin, rejected_at, rejected_by, updated_at
+            )
+            VALUES (%s, 'rejected', FALSE, CURRENT_TIMESTAMP, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (telegram_user_id) DO UPDATE SET
+                status = CASE WHEN telegram_user_access.is_admin = TRUE THEN 'approved' ELSE 'rejected' END,
+                rejected_at = CASE WHEN telegram_user_access.is_admin = TRUE THEN NULL ELSE CURRENT_TIMESTAMP END,
+                rejected_by = CASE WHEN telegram_user_access.is_admin = TRUE THEN NULL ELSE EXCLUDED.rejected_by END,
+                approved_at = CASE WHEN telegram_user_access.is_admin = TRUE THEN telegram_user_access.approved_at ELSE NULL END,
+                approved_by = CASE WHEN telegram_user_access.is_admin = TRUE THEN telegram_user_access.approved_by ELSE NULL END,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+            """,
+            (int(telegram_user_id), int(admin_telegram_user_id)),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else {}
+
+def list_pending_telegram_users(limit: int = 25) -> List[Dict[str, Any]]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            SELECT *
+            FROM telegram_user_access
+            WHERE status = 'pending'
+            ORDER BY requested_at ASC, id ASC
+            LIMIT %s
+            """,
+            (int(limit),),
+        )
+        rows = cursor.fetchall() or []
+        return [dict(row) for row in rows]
+
+def list_telegram_users(limit: int = 50, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        if status in {"pending", "approved", "rejected"}:
+            cursor.execute(
+                """
+                SELECT *
+                FROM telegram_user_access
+                WHERE status = %s
+                ORDER BY updated_at DESC, id DESC
+                LIMIT %s
+                """,
+                (status, int(limit)),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT *
+                FROM telegram_user_access
+                ORDER BY updated_at DESC, id DESC
+                LIMIT %s
+                """,
+                (int(limit),),
+            )
+        rows = cursor.fetchall() or []
+        return [dict(row) for row in rows]
+
+def is_telegram_user_approved(telegram_user_id: int) -> bool:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM telegram_user_access
+            WHERE telegram_user_id = %s AND status = 'approved'
+            LIMIT 1
+            """,
+            (int(telegram_user_id),),
+        )
+        return cursor.fetchone() is not None
+
+def is_telegram_admin(telegram_user_id: int) -> bool:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            SELECT 1
+            FROM telegram_user_access
+            WHERE telegram_user_id = %s AND status = 'approved' AND is_admin = TRUE
+            LIMIT 1
+            """,
+            (int(telegram_user_id),),
+        )
+        return cursor.fetchone() is not None
+
+def _hash_session_token(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def attach_telegram_user_to_web_auth_request(
+    request_id: str,
+    nonce: str,
+    telegram_user_id: int,
+) -> bool:
+    with DBConnection() as cursor:
+        cursor.execute(
+            """
+            UPDATE telegram_web_auth_requests
+            SET telegram_user_id = COALESCE(telegram_user_id, %s),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE request_id = %s
+              AND nonce = %s
+              AND status = 'pending'
+              AND expires_at > CURRENT_TIMESTAMP
+            """,
+            (int(telegram_user_id), str(request_id), str(nonce)),
+        )
+        return (cursor.rowcount or 0) > 0
+
+def approve_telegram_web_auth_request(
+    request_id: str,
+    nonce: str,
+    telegram_user_id: int,
+    username: Optional[str] = None,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    session_ttl_hours: int = 24,
+) -> Optional[Dict[str, Any]]:
+    with DBConnection(use_dict_cursor=True) as cursor:
+        cursor.execute(
+            """
+            SELECT *
+            FROM telegram_web_auth_requests
+            WHERE request_id = %s
+              AND nonce = %s
+              AND status = 'pending'
+              AND expires_at > CURRENT_TIMESTAMP
+            FOR UPDATE
+            """,
+            (str(request_id), str(nonce)),
+        )
+        auth_row = cursor.fetchone()
+        if not auth_row:
+            return None
+
+        token = secrets.token_urlsafe(48)
+        token_hash = _hash_session_token(token)
+        ttl_hours = max(1, int(session_ttl_hours or 24))
+
+        cursor.execute(
+            """
+            INSERT INTO telegram_web_sessions (
+                session_token_hash,
+                telegram_user_id,
+                username,
+                first_name,
+                last_name,
+                expires_at,
+                last_seen_at
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                %s,
+                CURRENT_TIMESTAMP + (%s * INTERVAL '1 hour'),
+                CURRENT_TIMESTAMP
+            )
+            """,
+            (token_hash, int(telegram_user_id), username, first_name, last_name, ttl_hours),
+        )
+
+        cursor.execute(
+            """
+            UPDATE telegram_web_auth_requests
+            SET status = 'approved',
+                telegram_user_id = %s,
+                session_token_hash = %s,
+                session_expires_at = CURRENT_TIMESTAMP + (%s * INTERVAL '1 hour'),
+                approved_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            RETURNING request_id, redirect_path, status, session_expires_at
+            """,
+            (int(telegram_user_id), token_hash, ttl_hours, auth_row["id"]),
+        )
+        updated = cursor.fetchone()
+        if not updated:
+            return None
+
+        payload = dict(updated)
+        payload["session_token"] = token
+        return payload
 
 def get_references_by_niche(niche="General", client_id=1):
     """

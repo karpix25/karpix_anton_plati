@@ -5,14 +5,18 @@ type HeygenAvatarGroup = {
   name?: string;
   group_type?: string;
   preview_image?: string;
+  preview_image_url?: string;
 };
 
 type HeygenAvatarLook = {
   id: string;
   avatar_id?: string;
   look_id?: string;
+  photo_avatar_id?: string;
   name?: string;
   image_url?: string | null;
+  preview_image?: string | null;
+  preview_image_url?: string | null;
   gender?: string;
 };
 
@@ -21,6 +25,69 @@ type HeygenPhotoAvatarDetails = {
   is_motion?: boolean;
   status?: string;
 };
+
+const IMAGE_KEYS = [
+  "preview_image_url",
+  "preview_image",
+  "image_url",
+  "image",
+  "thumbnail_url",
+  "thumbnail",
+  "cover_image_url",
+  "cover_image",
+  "url",
+] as const;
+
+function pickString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function normalizeImageUrl(value: string) {
+  if (!value) {
+    return "";
+  }
+  if (value.startsWith("//")) {
+    return `https:${value}`;
+  }
+  return value;
+}
+
+function readImageUrl(value: unknown): string {
+  if (typeof value === "string") {
+    return normalizeImageUrl(value.trim());
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = pickString(...IMAGE_KEYS.map((key) => record[key]));
+  if (direct) {
+    return normalizeImageUrl(direct);
+  }
+
+  const nested = [
+    record.preview,
+    record.image,
+    record.thumbnail,
+    record.cover,
+    record.avatar,
+  ];
+
+  for (const item of nested) {
+    const nestedUrl = readImageUrl(item);
+    if (nestedUrl) {
+      return nestedUrl;
+    }
+  }
+
+  return "";
+}
 
 async function heygenFetch(path: string) {
   const apiKey = process.env.HEYGEN_API_KEY;
@@ -44,7 +111,7 @@ async function heygenFetch(path: string) {
 }
 
 function resolveLookId(look: HeygenAvatarLook) {
-  const candidate = [look.id, look.avatar_id, look.look_id].find(
+  const candidate = [look.id, look.look_id, look.photo_avatar_id, look.avatar_id].find(
     (value) => typeof value === "string" && value.trim()
   );
   return candidate?.trim() || "";
@@ -100,18 +167,22 @@ export async function GET() {
             return null;
           }
 
+          const avatarPreviewImageUrl = readImageUrl(group)
+            || readImageUrl(nonMotionLooks[0])
+            || readImageUrl(looks[0]);
+
           return {
             avatar_id: group.id,
             avatar_name: group.name || group.id,
             folder_name: group.group_type || "HEYGEN",
-            preview_image_url: group.preview_image || nonMotionLooks[0]?.image_url || looks[0]?.image_url || "",
+            preview_image_url: avatarPreviewImageUrl,
             is_active: true,
             sort_order: index,
             gender: nonMotionLooks[0]?.gender || looks[0]?.gender || "female",
             looks: nonMotionLooks.map((look, lookIndex) => ({
               look_id: look.id,
               look_name: look.name || `${group.name || group.id} look ${lookIndex + 1}`,
-              preview_image_url: look.image_url || "",
+              preview_image_url: readImageUrl(look),
               is_active: true,
               sort_order: lookIndex,
             })),
@@ -122,7 +193,7 @@ export async function GET() {
             avatar_id: group.id,
             avatar_name: group.name || group.id,
             folder_name: group.group_type || "HEYGEN",
-            preview_image_url: group.preview_image || "",
+            preview_image_url: readImageUrl(group),
             is_active: true,
             sort_order: index,
             looks: [],

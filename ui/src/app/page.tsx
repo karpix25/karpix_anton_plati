@@ -1,6 +1,6 @@
 "use client";
 
-import React, { startTransition, useEffect, useMemo, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
@@ -14,6 +14,16 @@ import { GraphScreen } from "@/components/screens/GraphScreen";
 import { ReferenceModal } from "@/components/ReferenceModal";
 import { Screen, Reference, TopicCard, StructureCard, Settings, ProductMediaAsset } from "@/types";
 import { navItems } from "@/lib/constants";
+
+type AuthState = "loading" | "authenticated" | "unauthenticated";
+type TelegramSessionUser = {
+  telegramUserId: number;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  isAdmin: boolean;
+  expiresAt: string;
+};
 
 const normalizeProductMediaAssets = (value: unknown) => {
   const normalizeItem = (item: unknown): ProductMediaAsset | null => {
@@ -63,6 +73,11 @@ const normalizeProductMediaAssets = (value: unknown) => {
 };
 
 export default function CuratorDashboard() {
+  const [authState, setAuthState] = useState<AuthState>("loading");
+  const [authUser, setAuthUser] = useState<TelegramSessionUser | null>(null);
+  const [authError, setAuthError] = useState("");
+  const [isStartingTelegramAuth, setIsStartingTelegramAuth] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   // --- Local State ---
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
@@ -196,6 +211,130 @@ export default function CuratorDashboard() {
     }
   }, [clients, selectedClientId]);
 
+  const checkTelegramSession = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auth/telegram/session", { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (response.ok && payload?.ok && payload?.user) {
+        setAuthUser(payload.user as TelegramSessionUser);
+        setAuthState("authenticated");
+        return;
+      }
+      setAuthUser(null);
+      setAuthState("unauthenticated");
+    } catch (error) {
+      console.error("Failed to check Telegram session:", error);
+      setAuthUser(null);
+      setAuthState("unauthenticated");
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkTelegramSession();
+  }, [checkTelegramSession]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const url = new URL(window.location.href);
+    const error = url.searchParams.get("auth_error");
+    if (!error) {
+      return;
+    }
+    setAuthError("Не удалось завершить вход через Telegram. Попробуйте ещё раз.");
+    url.searchParams.delete("auth_error");
+    window.history.replaceState({}, "", url.toString());
+  }, []);
+
+  const handleStartTelegramAuth = async () => {
+    setAuthError("");
+    setIsStartingTelegramAuth(true);
+    try {
+      const returnTo =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}${window.location.hash}`
+          : "/";
+      const response = await fetch("/api/auth/telegram/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ returnTo }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.botUrl) {
+        throw new Error(payload?.error || "Failed to initialize Telegram auth");
+      }
+      window.location.href = String(payload.botUrl);
+    } catch (error) {
+      console.error("Telegram auth start failed:", error);
+      setAuthError(error instanceof Error ? error.message : "Не удалось открыть Telegram-бота.");
+      setIsStartingTelegramAuth(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await fetch("/api/auth/telegram/logout", { method: "POST" });
+      setAuthUser(null);
+      setAuthState("unauthenticated");
+      setAuthError("");
+    } catch (error) {
+      console.error("Failed to logout Telegram session:", error);
+      setAuthError("Не удалось выйти из аккаунта.");
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  if (authState === "loading") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-6">
+        <div className="rounded-2xl border border-[#dce5ec] bg-white px-8 py-7 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground">Проверяю Telegram-сессию...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (authState !== "authenticated") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f8fafc] px-6">
+        <div className="w-full max-w-md space-y-5 rounded-3xl border border-[#dce5ec] bg-white p-8 shadow-sm">
+          <div className="space-y-2">
+            <h1 className="text-2xl font-semibold text-foreground">Вход через Telegram</h1>
+            <p className="text-sm leading-6 text-muted-foreground">
+              Нажмите кнопку, перейдите в бота и подтвердите вход. Бот вернёт вас обратно в браузер.
+            </p>
+          </div>
+
+          {authError ? (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {authError}
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={handleStartTelegramAuth}
+            disabled={isStartingTelegramAuth}
+            className="w-full rounded-xl bg-[#0f172a] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#0b1220] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isStartingTelegramAuth ? "Открываю Telegram..." : "Авторизоваться через Telegram"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void checkTelegramSession()}
+            className="w-full rounded-xl border border-[#dce5ec] px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-[#f6f9fc]"
+          >
+            Я уже авторизовался
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   // --- Handlers ---
   const handleSaveSettings = (settings: Settings) => {
     saveSettingsMutation.mutate(settings);
@@ -235,6 +374,19 @@ export default function CuratorDashboard() {
   // --- Render ---
   return (
     <main className="min-h-screen bg-[#f8fafc] font-sans text-foreground selection:bg-primary/10">
+      <div className="fixed right-4 top-4 z-50 flex items-center gap-3 rounded-xl border border-[#dce5ec] bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur">
+        <span className="text-muted-foreground">
+          {authUser?.firstName || authUser?.username || `id:${authUser?.telegramUserId ?? ""}`}
+        </span>
+        <button
+          type="button"
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="rounded-md border border-[#dce5ec] px-2 py-1 font-semibold text-foreground transition hover:bg-[#f6f9fc] disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isLoggingOut ? "Выход..." : "Выйти"}
+        </button>
+      </div>
       <Sidebar
         selectedClientId={selectedClientId}
         setSelectedClientId={setSelectedClientId}
