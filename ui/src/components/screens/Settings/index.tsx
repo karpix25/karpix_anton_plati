@@ -62,7 +62,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
               Project Settings
             </h1>
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              ID: {props.selectedClientId || "Unselected"} • {props.settings.name}
+              ID: {props.selectedClientId || "Unselected"}
             </p>
           </div>
           

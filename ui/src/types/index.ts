@@ -206,6 +206,23 @@ export interface ElevenLabsVoiceOption {
   };
 }
 
+// Compatibility aliases for modular Settings components.
+export interface Voice {
+  voice_id: string;
+  voice_name?: string;
+  name?: string;
+  category?: string;
+  description?: string | string[];
+  preview_url?: string;
+  labels?: {
+    accent?: string;
+    age?: string;
+    description?: string;
+    gender?: string;
+    use_case?: string;
+  };
+}
+
 export type ClientSettings = Settings & {
   auto_generate: boolean;
   monthly_limit: number;
@@ -301,6 +318,8 @@ export interface HeygenAvatarLook {
   usage_count?: number;
   sort_order?: number;
 }
+
+export type HeygenLookConfig = HeygenAvatarLook;
 
 export interface HeygenAvatarConfig {
   id?: number;
