@@ -114,7 +114,6 @@ const HEYGEN_MOTION_TYPE_OPTIONS = [
 
 const DEFAULT_MINIMAX_VOICE_ID = "Russian_Engaging_Podcaster_v1";
 const DEFAULT_ELEVENLABS_VOICE_ID = "0ArNnoIAWKlT4WweaVMY";
-const ELEVENLABS_MODEL_ID = "eleven_v3";
 const DEFAULT_HEYGEN_MOTION_TYPE = "consistent";
 const HEYGEN_MOTION_PROMPT_MAX_LENGTH = 500;
 const PENDING_MOTION_STATUSES = new Set(["pending", "queued", "processing", "in_progress"]);
@@ -191,8 +190,8 @@ const normalizeSettings = (settings: Settings): Settings => {
       Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds > 0 ? silenceTrimMinSeconds : 0.35,
     tts_silence_trim_threshold_db:
       Number.isFinite(silenceTrimThresholdDb) ? silenceTrimThresholdDb : -45,
-    tts_silence_trim_enabled: settings.tts_silence_trim_enabled ?? true,
-    tts_sentence_trim_enabled: settings.tts_sentence_trim_enabled ?? false,
+    tts_silence_trim_enabled: false,
+    tts_sentence_trim_enabled: true,
     tts_sentence_trim_min_gap_seconds:
       Number.isFinite(sentenceTrimMinGapSeconds) && sentenceTrimMinGapSeconds >= 0 ? sentenceTrimMinGapSeconds : 0.3,
   };
@@ -380,7 +379,6 @@ export function SettingsScreen({
   );
   const estimatedWordMin = Math.max(Math.round(targetDurationMinSeconds * 2.4 * 0.85), 20);
   const estimatedWordMax = Math.max(Math.round(targetDurationMaxSeconds * 2.4 * 1.15), estimatedWordMin);
-  const ttsProvider = draftSettings.tts_provider || "minimax";
   const subtitlesEnabled = draftSettings.subtitles_enabled || false;
   const subtitleMode = draftSettings.subtitle_mode || "word_by_word";
   const subtitleStylePreset = draftSettings.subtitle_style_preset || "classic";
@@ -390,10 +388,6 @@ export function SettingsScreen({
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
   const subtitleOutlineWidth = Number(draftSettings.subtitle_outline_width || 3);
   const subtitleMarginPercentDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
-  const ttsSilenceTrimMinSeconds = Number(draftSettings.tts_silence_trim_min_duration_seconds || 0.35);
-  const ttsSilenceTrimThresholdDb = Number(draftSettings.tts_silence_trim_threshold_db ?? -45);
-  const ttsSilenceTrimEnabled = draftSettings.tts_silence_trim_enabled ?? true;
-  const ttsSentenceTrimEnabled = draftSettings.tts_sentence_trim_enabled ?? false;
   const ttsSentenceTrimMinGapSeconds = Number(draftSettings.tts_sentence_trim_min_gap_seconds ?? 0.3);
   const subtitleMarginPercent = Math.min(
     100,
@@ -402,10 +396,6 @@ export function SettingsScreen({
   const subtitleMarginV = Math.round((subtitleMarginPercent / 100) * 1280);
   const subtitlePreviewRef = useRef<HTMLDivElement | null>(null);
   const [subtitlePreviewScale, setSubtitlePreviewScale] = useState(0.24);
-  const selectedVoice = minimaxVoices.find((voice) => voice.voice_id === draftSettings.tts_voice_id);
-  const selectedElevenLabsVoice = elevenlabsVoices.find(
-    (voice) => voice.voice_id === (draftSettings.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID)
-  );
   const subtitleModePreview = SUBTITLE_MODE_OPTIONS[subtitleMode];
   const subtitleStylePreview = SUBTITLE_STYLE_PRESET_OPTIONS[subtitleStylePreset];
   const subtitleFontPreview = SUBTITLE_FONT_OPTIONS[subtitleFontFamily];
@@ -1137,158 +1127,6 @@ export function SettingsScreen({
             </div>
 
             <div className="space-y-3 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  TTS Provider
-                </label>
-                <Select
-                  value={ttsProvider}
-                  onValueChange={(value: Settings["tts_provider"]) => setDraftSettings((prev) => ({ ...prev, tts_provider: value }))}
-                >
-                  <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
-                    <SelectValue placeholder="Выберите провайдера озвучки" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="minimax">MiniMax</SelectItem>
-                    <SelectItem value="elevenlabs">ElevenLabs v3</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {ttsProvider === "minimax" ? (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Голос озвучки MiniMax
-                  </label>
-                  <Select
-                    value={draftSettings.tts_voice_id}
-                    onValueChange={(value) => setDraftSettings((prev) => ({ ...prev, tts_voice_id: value }))}
-                  >
-                    <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
-                      <SelectValue placeholder="Выберите голос озвучки" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-96">
-                      {minimaxVoices.map((voice) => (
-                        <SelectItem key={`${voice.category}-${voice.voice_id}`} value={voice.voice_id}>
-                          {voice.voice_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Голос озвучки ElevenLabs
-                  </label>
-                  <Select
-                    value={draftSettings.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID}
-                    onValueChange={(value) => setDraftSettings((prev) => ({ ...prev, elevenlabs_voice_id: value }))}
-                  >
-                    <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
-                      <SelectValue placeholder="Выберите голос озвучки" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-96">
-                      {elevenlabsVoices.map((voice) => (
-                        <SelectItem key={voice.voice_id} value={voice.voice_id}>
-                          {voice.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="flex items-center justify-between rounded-xl border border-white/70 bg-white px-4 py-2 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">Вырезание тишины (dB)</span>
-                <label className="flex items-center gap-2 text-xs text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={ttsSilenceTrimEnabled}
-                    onChange={(event) =>
-                      setDraftSettings((prev) => ({ ...prev, tts_silence_trim_enabled: event.target.checked }))
-                    }
-                    className="h-4 w-4 rounded border-[#d6e0e8]"
-                  />
-                  Включено
-                </label>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Вырезание тишины (минимальная пауза)
-                  </label>
-                  <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
-                    {ttsSilenceTrimMinSeconds.toFixed(2)} сек
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={0.8}
-                  step={0.05}
-                  value={ttsSilenceTrimMinSeconds}
-                  onChange={(event) =>
-                    setDraftSettings((prev) => ({
-                      ...prev,
-                      tts_silence_trim_min_duration_seconds: Number(event.target.value),
-                    }))
-                  }
-                  className="w-full accent-primary"
-                />
-                <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                  <span>0.20 сек</span>
-                  <span>0.40 сек</span>
-                  <span>0.80 сек</span>
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Удаляет тишину из TTS до расчёта word timestamps. Меньше значение = более агрессивная склейка, больше значение = мягче и естественнее.
-                </p>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    Порог тишины (dB)
-                  </label>
-                  <div className="rounded-full bg-white px-3 py-1 text-xs font-bold text-foreground shadow-sm">
-                    {ttsSilenceTrimThresholdDb.toFixed(0)} dB
-                  </div>
-                </div>
-                <input
-                  type="range"
-                  min={-60}
-                  max={-25}
-                  step={1}
-                  value={ttsSilenceTrimThresholdDb}
-                  onChange={(event) =>
-                    setDraftSettings((prev) => ({
-                      ...prev,
-                      tts_silence_trim_threshold_db: Number(event.target.value),
-                    }))
-                  }
-                  className="w-full accent-primary"
-                />
-                <div className="flex justify-between text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-                  <span>-60 dB</span>
-                  <span>-45 dB</span>
-                  <span>-25 dB</span>
-                </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  Чем ближе к нулю, тем агрессивнее срезаются тихие участки. Если «съедает» слова — опустите порог до -45…-55 dB.
-                </p>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-white/70 bg-white px-4 py-2 text-xs text-muted-foreground">
-                <span className="font-semibold text-foreground">Паузы между предложениями</span>
-                <label className="flex items-center gap-2 text-xs text-foreground">
-                  <input
-                    type="checkbox"
-                    checked={ttsSentenceTrimEnabled}
-                    onChange={(event) =>
-                      setDraftSettings((prev) => ({ ...prev, tts_sentence_trim_enabled: event.target.checked }))
-                    }
-                    className="h-4 w-4 rounded border-[#d6e0e8]"
-                  />
-                  Включено
-                </label>
-              </div>
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -1307,6 +1145,8 @@ export function SettingsScreen({
                   onChange={(event) =>
                     setDraftSettings((prev) => ({
                       ...prev,
+                      tts_sentence_trim_enabled: true,
+                      tts_silence_trim_enabled: false,
                       tts_sentence_trim_min_gap_seconds: Number(event.target.value),
                     }))
                   }
@@ -1321,37 +1161,8 @@ export function SettingsScreen({
                   Режет только паузы между предложениями, не трогая слова. Работает после word timestamps и пересчитывает тайминг.
                 </p>
               </div>
-              <div className="rounded-xl border border-white/70 bg-white px-4 py-3 text-xs leading-5 text-muted-foreground">
-                <div><span className="font-semibold text-foreground">Провайдер:</span> {ttsProvider === "elevenlabs" ? "ElevenLabs v3" : "MiniMax"}</div>
-                {ttsProvider === "elevenlabs" ? (
-                  <>
-                    <div><span className="font-semibold text-foreground">Voice ID:</span> {draftSettings.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID}</div>
-                    <div><span className="font-semibold text-foreground">Model:</span> {ELEVENLABS_MODEL_ID}</div>
-                    {selectedElevenLabsVoice?.category ? (
-                      <div><span className="font-semibold text-foreground">Категория:</span> {selectedElevenLabsVoice.category}</div>
-                    ) : null}
-                    {selectedElevenLabsVoice?.labels?.gender ? (
-                      <div><span className="font-semibold text-foreground">Голос:</span> {selectedElevenLabsVoice.labels.gender}</div>
-                    ) : null}
-                    {selectedElevenLabsVoice?.labels?.accent ? (
-                      <div><span className="font-semibold text-foreground">Акцент:</span> {selectedElevenLabsVoice.labels.accent}</div>
-                    ) : null}
-                    {selectedElevenLabsVoice?.description ? (
-                      <div><span className="font-semibold text-foreground">Описание:</span> {selectedElevenLabsVoice.description}</div>
-                    ) : null}
-                  </>
-                ) : (
-                  <>
-                    <div><span className="font-semibold text-foreground">Voice ID:</span> {draftSettings.tts_voice_id}</div>
-                    <div><span className="font-semibold text-foreground">Категория:</span> {selectedVoice?.category || "system"}</div>
-                    {selectedVoice?.description?.length ? (
-                      <div><span className="font-semibold text-foreground">Описание:</span> {selectedVoice.description.join(" ")}</div>
-                    ) : null}
-                  </>
-                )}
-              </div>
               <p className="text-xs text-muted-foreground">
-                Этот провайдер используется и для ручной кнопки «Озвучить», и для фоновой генерации TTS в пайплайне.
+                Голос и провайдер теперь задаются отдельно в блоке HeyGen для каждого аватара.
               </p>
             </div>
 
@@ -2148,7 +1959,7 @@ export function SettingsScreen({
               <p>Описание продукта определяет, как сервис встраивается в текст.</p>
               <p>Tone of voice нужен, чтобы сценарии звучали в нужной манере.</p>
               <p>Целевая аудитория помогает выбирать правильные боли, примеры и обещания.</p>
-              <p>TTS Provider определяет, пойдёт ли озвучка через MiniMax или ElevenLabs, а ниже задаются соответствующие параметры голоса.</p>
+              <p>Голос и TTS-провайдер теперь настраиваются отдельно для каждого аватара в блоке HeyGen.</p>
               <p>Субтитры вшиваются в финальный монтаж по word timestamps: можно выбрать режим показа, стиль, кириллический Google Font, цвет текста, жирность и обводку.</p>
               <p>Целевая длина задаёт желаемую длительность итогового сценария вместо жёсткой привязки к референсу.</p>
               <p>Режим тайминга определяет, режем ли мы ролик по смыслу и паузам, по целевому проценту покрытия перебивками или по жёсткому интервалу.</p>
@@ -2160,7 +1971,13 @@ export function SettingsScreen({
             </div>
             <Button
               className="primary-gradient mt-6 h-12 w-full rounded-xl font-bold text-white shadow-lg"
-              onClick={() => onSave(draftSettings)}
+              onClick={() =>
+                onSave({
+                  ...draftSettings,
+                  tts_silence_trim_enabled: false,
+                  tts_sentence_trim_enabled: true,
+                })
+              }
               disabled={!selectedClientId || isSaving}
             >
               {isSaving ? (
