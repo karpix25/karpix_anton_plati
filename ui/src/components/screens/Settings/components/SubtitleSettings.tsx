@@ -10,8 +10,8 @@ import {
 import {
   SUBTITLE_FONT_OPTIONS,
   SUBTITLE_MODE_OPTIONS,
-  SUBTITLE_STYLE_OPTIONS,
-} from "../SettingsConstants";
+  SUBTITLE_STYLE_PRESET_OPTIONS,
+} from "@/lib/subtitles";
 
 interface SubtitleSettingsProps {
   draftSettings: Settings;
@@ -38,7 +38,7 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   const subtitleMarginV = typeof draftSettings.subtitle_margin_v === "number" ? draftSettings.subtitle_margin_v : 154;
 
   const modePreview = SUBTITLE_MODE_OPTIONS[subtitleMode];
-  const stylePreview = SUBTITLE_STYLE_OPTIONS[subtitleStylePreset];
+  const stylePreview = SUBTITLE_STYLE_PRESET_OPTIONS[subtitleStylePreset];
   const fontPreview = SUBTITLE_FONT_OPTIONS[subtitleFontFamily];
 
   return (

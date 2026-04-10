@@ -18,6 +18,26 @@ export const PACING_LABELS: Record<Settings["broll_pacing_profile"], { title: st
   },
 };
 
+export const BROLL_PACING_OPTIONS = PACING_LABELS;
+
+export const BROLL_TIMING_MODE_OPTIONS: Record<
+  Settings["broll_timing_mode"],
+  { title: string; description: string }
+> = {
+  semantic_pause: {
+    title: "По паузам и смыслу",
+    description: "LLM анализирует смысл текста и расставляет видео там, где они лучше всего иллюстрируют сказанное.",
+  },
+  coverage_percent: {
+    title: "По проценту покрытия",
+    description: "Система старается заполнить ролик перебивками так, чтобы они занимали определённую долю времени.",
+  },
+  fixed: {
+    title: "Фиксированный интервал",
+    description: "Жёсткий ритм: ровно через каждые несколько секунд аватар сменяется видео-футажом.",
+  },
+};
+
 export const BROLL_GENERATOR_MODEL_LABELS: Record<
   Settings["broll_generator_model"],
   { title: string; description: string }
@@ -48,6 +68,8 @@ export const BROLL_GENERATOR_MODEL_LABELS: Record<
   },
 };
 
+export const BROLL_GENERATOR_OPTIONS = BROLL_GENERATOR_MODEL_LABELS;
+
 export const SEMANTIC_RELEVANCE_LABELS: Record<NonNullable<Settings["broll_semantic_relevance_priority"]>, { title: string; description: string }> = {
   precision: {
     title: "Максимально в тему",
@@ -63,16 +85,24 @@ export const SEMANTIC_RELEVANCE_LABELS: Record<NonNullable<Settings["broll_seman
   },
 };
 
+export const SEMANTIC_RELEVANCE_OPTIONS = SEMANTIC_RELEVANCE_LABELS;
+
 export const PRODUCT_CLIP_POLICY_LABELS: Record<NonNullable<Settings["broll_product_clip_policy"]>, { title: string; description: string }> = {
   contextual: {
     title: "Контекстная вставка",
     description: "Нативный монтаж: если ИИ решит, что генерация лучше раскрывает смысл, то вставит её вместо товара.",
+  },
+  prefer: {
+    title: "Предпочтительно",
+    description: "Система будет стараться вставить видео товара при любом удобном случае.",
   },
   required: {
     title: "Обязательно (по ключу)",
     description: "Прямая вставка: если ключевое слово произносится в тексте, видео товара будет вставлено 100%.",
   },
 };
+
+export const PRODUCT_CLIP_POLICY_OPTIONS = PRODUCT_CLIP_POLICY_LABELS;
 
 export const HEYGEN_MOTION_TYPE_OPTIONS = [
   { value: "consistent", label: "Consistent" },

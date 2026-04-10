@@ -9,7 +9,7 @@ import {
   HEYGEN_MOTION_PROMPT_MAX_LENGTH,
   HEYGEN_MOTION_TYPE_OPTIONS,
 } from "../SettingsConstants";
-import { isPendingMotionStatus } from "@/lib/heygen";
+import { isPendingMotionStatus } from "../SettingsUtils";
 
 interface HeygenLookItemProps {
   avatar: HeygenAvatarConfig;

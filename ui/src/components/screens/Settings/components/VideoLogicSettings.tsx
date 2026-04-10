@@ -51,7 +51,7 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
           </p>
         </div>
         <div className="rounded-full bg-white border border-[#e5ebf0] px-4 py-1.5 text-[11px] font-bold text-primary shadow-sm uppercase tracking-wider">
-           {PACING_LABELS[brollPacingProfile]} / {brollTimingMode === "fixed" ? "Fixed" : brollTimingMode === "coverage_percent" ? "Coverage" : "Semantic"}
+           {PACING_LABELS[brollPacingProfile].title} / {brollTimingMode === "fixed" ? "Fixed" : brollTimingMode === "coverage_percent" ? "Coverage" : "Semantic"}
         </div>
       </div>
 

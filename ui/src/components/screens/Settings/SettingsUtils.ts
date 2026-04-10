@@ -13,6 +13,9 @@ import {
 
 export const safeTrim = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
+export const isPendingMotionStatus = (value: unknown) =>
+  ["pending", "queued", "processing", "in_progress"].includes(safeTrim(value).toLowerCase());
+
 export const normalizeMotionPrompt = (value: unknown) => safeTrim(value).slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH);
 
 export const normalizeProductMediaAssets = (value: unknown): ProductMediaAsset[] => {

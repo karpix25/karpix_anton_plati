@@ -9,12 +9,12 @@ import {
 import {
   getAvatarConfigKey,
   mergeCatalogIntoAvatarConfigs,
+  isPendingMotionStatus,
   normalizeAvatar,
   normalizeLook,
   normalizeMotionPrompt,
   normalizeSettings,
 } from "./SettingsUtils";
-import { isPendingMotionStatus } from "@/lib/heygen";
 
 interface UseSettingsStateProps {
   settings: Settings;
