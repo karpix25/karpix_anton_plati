@@ -264,7 +264,13 @@ export default function CuratorDashboard() {
       if (!response.ok || !payload?.botUrl) {
         throw new Error(payload?.error || "Failed to initialize Telegram auth");
       }
-      window.location.href = String(payload.botUrl);
+      const botUrl = String(payload.botUrl);
+      const popup = window.open(botUrl, "_blank", "noopener,noreferrer");
+      if (!popup) {
+        window.location.href = botUrl;
+        return;
+      }
+      setIsStartingTelegramAuth(false);
     } catch (error) {
       console.error("Telegram auth start failed:", error);
       setAuthError(error instanceof Error ? error.message : "Не удалось открыть Telegram-бота.");
