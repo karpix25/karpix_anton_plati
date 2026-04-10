@@ -100,6 +100,21 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
                <Plus className="mr-2 h-4 w-4" />
                Добавить аватара
             </Button>
+            <Button
+              type="button"
+              className="primary-gradient h-11 rounded-xl text-xs font-black uppercase tracking-widest text-white shadow-lg hover:shadow-xl"
+              onClick={handleSaveHeygen}
+              disabled={!selectedClientId || isSavingHeygenAvatars}
+            >
+              {isSavingHeygenAvatars ? (
+                <>
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  Сохраняю...
+                </>
+              ) : (
+                "Сохранить HeyGen Pool"
+              )}
+            </Button>
         </div>
       </div>
 
@@ -131,25 +146,6 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
         ))}
       </div>
 
-      {avatarConfigs.length > 0 && (
-         <div className="flex justify-end pt-2">
-            <Button
-              type="button"
-              className="primary-gradient h-14 rounded-2xl px-12 font-black text-white shadow-xl hover:shadow-2xl transition-all active:scale-95 text-sm uppercase tracking-widest"
-              onClick={handleSaveHeygen}
-              disabled={!selectedClientId || isSavingHeygenAvatars}
-            >
-              {isSavingHeygenAvatars ? (
-                <>
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                  Сохраняю...
-                </>
-              ) : (
-                "Сохранить HeyGen Pool"
-              )}
-            </Button>
-         </div>
-      )}
     </div>
   );
 };
