@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import re
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, Tuple
 
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
@@ -45,6 +45,7 @@ if not token:
     exit(1)
 
 bot = TeleBot(token)
+ACCESS_REQUEST_MESSAGES: Dict[int, Set[Tuple[int, int]]] = {}
 
 def _parse_admin_ids_from_env() -> Set[int]:
     raw_tokens = []
@@ -193,30 +194,121 @@ def _notify_main_admin_about_request(access_row: Dict[str, Any]) -> None:
         if requester_id == int(admin_id):
             continue
         try:
-            bot.send_message(chat_id=admin_id, text=text, reply_markup=keyboard)
+            sent = bot.send_message(chat_id=admin_id, text=text, reply_markup=keyboard)
+            sent_chat_id = getattr(getattr(sent, "chat", None), "id", None)
+            sent_message_id = getattr(sent, "message_id", None)
+            if sent_chat_id and sent_message_id:
+                ACCESS_REQUEST_MESSAGES.setdefault(requester_id, set()).add((int(sent_chat_id), int(sent_message_id)))
         except Exception as error:
             logger.error("Failed to notify admin %s about access request: %s", admin_id, error)
 
-def _apply_user_access_action(user_id: int, admin_user_id: int, action: str) -> str:
+def _build_access_resolution_text(
+    user_id: int,
+    access_row: Optional[Dict[str, Any]],
+    action: str,
+    admin_user_id: int,
+) -> str:
+    status = _plain((access_row or {}).get("status") or "unknown")
+    resolution = "одобрено" if action == "approve" else "отклонено"
+    return (
+        "Заявка на доступ обновлена\n\n"
+        f"Пользователь: {_format_user_label(access_row)}\n"
+        f"Telegram ID: {user_id}\n"
+        f"Статус: {status}\n"
+        f"Решение: {resolution} администратором {admin_user_id}"
+    )
+
+def _sync_access_resolution_to_admins(
+    user_id: int,
+    access_row: Optional[Dict[str, Any]],
+    action: str,
+    admin_user_id: int,
+) -> None:
+    text = _build_access_resolution_text(user_id, access_row, action, admin_user_id)
+    tracked_messages = list(ACCESS_REQUEST_MESSAGES.get(user_id, set()))
+    tracked_chat_ids = {chat_id for chat_id, _ in tracked_messages}
+
+    for chat_id, message_id in tracked_messages:
+        try:
+            bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text)
+        except Exception as error:
+            logger.warning(
+                "Failed to edit admin access-request message chat_id=%s message_id=%s: %s",
+                chat_id,
+                message_id,
+                error,
+            )
+        try:
+            bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
+        except Exception:
+            pass
+
+    for admin_id in sorted(ADMIN_TELEGRAM_IDS):
+        if int(admin_id) == int(user_id):
+            continue
+        if int(admin_id) in tracked_chat_ids:
+            continue
+        try:
+            bot.send_message(chat_id=admin_id, text=text)
+        except Exception as error:
+            logger.warning("Failed to send access resolution to admin %s: %s", admin_id, error)
+
+    ACCESS_REQUEST_MESSAGES.pop(user_id, None)
+
+def _apply_user_access_action(user_id: int, admin_user_id: int, action: str) -> Dict[str, Any]:
+    current_access = get_telegram_user_access(user_id) or {}
+    current_status = str(current_access.get("status") or "").lower()
+
     if _is_admin_user(user_id):
-        return "Этот пользователь уже является администратором." if action == "approve" else "Нельзя отклонить администратора."
+        return {
+            "text": "Этот пользователь уже является администратором." if action == "approve" else "Нельзя отклонить администратора.",
+            "access_row": current_access,
+            "status": current_status,
+            "resolved_action": None,
+        }
 
     if action == "approve":
+        if current_status == "approved":
+            return {
+                "text": f"Пользователь {user_id} уже одобрен.",
+                "access_row": current_access,
+                "status": current_status,
+                "resolved_action": None,
+            }
         updated = approve_telegram_user(user_id, admin_user_id)
         status = _plain(updated.get("status"))
-        try:
-            bot.send_message(chat_id=user_id, text="Ваша заявка одобрена. Доступ к боту открыт.")
-        except Exception as error:
-            logger.warning("Failed to notify approved user %s: %s", user_id, error)
-        return f"Пользователь {user_id} одобрен.\nСтатус: {status}"
+        if current_status != "approved":
+            try:
+                bot.send_message(chat_id=user_id, text="Ваша заявка одобрена. Доступ к боту открыт.")
+            except Exception as error:
+                logger.warning("Failed to notify approved user %s: %s", user_id, error)
+        return {
+            "text": f"Пользователь {user_id} одобрен.\nСтатус: {status}",
+            "access_row": updated,
+            "status": str(updated.get("status") or "").lower(),
+            "resolved_action": "approve",
+        }
 
+    if current_status == "rejected":
+        return {
+            "text": f"Пользователь {user_id} уже отклонён.",
+            "access_row": current_access,
+            "status": current_status,
+            "resolved_action": None,
+        }
     updated = reject_telegram_user(user_id, admin_user_id)
     status = _plain(updated.get("status"))
-    try:
-        bot.send_message(chat_id=user_id, text="Ваша заявка отклонена. Можно отправить /start для повторной заявки.")
-    except Exception as error:
-        logger.warning("Failed to notify rejected user %s: %s", user_id, error)
-    return f"Пользователь {user_id} отклонён.\nСтатус: {status}"
+    if current_status != "rejected":
+        try:
+            bot.send_message(chat_id=user_id, text="Ваша заявка отклонена. Можно отправить /start для повторной заявки.")
+        except Exception as error:
+            logger.warning("Failed to notify rejected user %s: %s", user_id, error)
+    return {
+        "text": f"Пользователь {user_id} отклонён.\nСтатус: {status}",
+        "access_row": updated,
+        "status": str(updated.get("status") or "").lower(),
+        "resolved_action": "reject",
+    }
 
 def _parse_web_auth_payload(payload: str) -> Optional[tuple[str, str]]:
     text = str(payload or "").strip()
@@ -475,7 +567,15 @@ def handle_approve_user(message):
         return
 
     admin_user_id = int(getattr(message.from_user, "id"))
-    _reply_in_same_thread(message, _apply_user_access_action(user_id, admin_user_id, "approve"))
+    result = _apply_user_access_action(user_id, admin_user_id, "approve")
+    if result.get("resolved_action") in {"approve", "reject"}:
+        _sync_access_resolution_to_admins(
+            user_id,
+            result.get("access_row"),
+            str(result.get("resolved_action")),
+            admin_user_id,
+        )
+    _reply_in_same_thread(message, str(result.get("text") or "Готово."))
 
 
 @bot.message_handler(commands=['reject_user'])
@@ -495,7 +595,15 @@ def handle_reject_user(message):
         return
 
     admin_user_id = int(getattr(message.from_user, "id"))
-    _reply_in_same_thread(message, _apply_user_access_action(user_id, admin_user_id, "reject"))
+    result = _apply_user_access_action(user_id, admin_user_id, "reject")
+    if result.get("resolved_action") in {"approve", "reject"}:
+        _sync_access_resolution_to_admins(
+            user_id,
+            result.get("access_row"),
+            str(result.get("resolved_action")),
+            admin_user_id,
+        )
+    _reply_in_same_thread(message, str(result.get("text") or "Готово."))
 
 
 @bot.callback_query_handler(func=lambda call: str(getattr(call, "data", "")).startswith("access:"))
@@ -522,7 +630,15 @@ def handle_access_callback(call):
         bot.answer_callback_query(call.id, "Некорректный Telegram ID.", show_alert=True)
         return
 
-    result_text = _apply_user_access_action(user_id, admin_user_id, action)
+    result = _apply_user_access_action(user_id, admin_user_id, action)
+    result_text = str(result.get("text") or "Готово.")
+    if result.get("resolved_action") in {"approve", "reject"}:
+        _sync_access_resolution_to_admins(
+            user_id,
+            result.get("access_row"),
+            str(result.get("resolved_action")),
+            admin_user_id,
+        )
     chat_id = getattr(getattr(call, "message", None), "chat", None)
     message_id = getattr(getattr(call, "message", None), "message_id", None)
 
