@@ -247,39 +247,22 @@ export default function CuratorDashboard() {
     window.history.replaceState({}, "", url.toString());
   }, []);
 
-  const handleStartTelegramAuth = async () => {
+  const handleStartTelegramAuth = () => {
     setAuthError("");
     setIsStartingTelegramAuth(true);
-    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
-    if (!popup) {
-      setAuthError("Браузер заблокировал новую вкладку. Разрешите pop-up и повторите.");
-      setIsStartingTelegramAuth(false);
-      return;
-    }
-
     try {
       const returnTo =
         typeof window !== "undefined"
           ? `${window.location.pathname}${window.location.search}${window.location.hash}`
           : "/";
-      const response = await fetch("/api/auth/telegram/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ returnTo }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.botUrl) {
-        throw new Error(payload?.error || "Failed to initialize Telegram auth");
+
+      const startUrl = `/api/auth/telegram/start?returnTo=${encodeURIComponent(returnTo)}`;
+      const popup = window.open(startUrl, "_blank", "noopener");
+      if (!popup) {
+        throw new Error("Браузер заблокировал новую вкладку. Разрешите pop-up и повторите.");
       }
-      const botUrl = String(payload.botUrl);
-      popup.location.href = botUrl;
-      setIsStartingTelegramAuth(false);
+      setTimeout(() => setIsStartingTelegramAuth(false), 400);
     } catch (error) {
-      try {
-        popup.close();
-      } catch (closeError) {
-        console.error("Failed to close auth popup:", closeError);
-      }
       console.error("Telegram auth start failed:", error);
       setAuthError(error instanceof Error ? error.message : "Не удалось открыть Telegram-бота.");
       setIsStartingTelegramAuth(false);
