@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
@@ -46,11 +46,34 @@ if not token:
 
 bot = TeleBot(token)
 
-try:
-    ADMIN_TELEGRAM_ID = int(str(os.getenv("TELEGRAM_ADMIN_ID", "")).strip()) if str(os.getenv("TELEGRAM_ADMIN_ID", "")).strip() else None
-except ValueError:
-    ADMIN_TELEGRAM_ID = None
-    logger.warning("TELEGRAM_ADMIN_ID is not a valid integer. Admin approval flow will be disabled.")
+def _parse_admin_ids_from_env() -> Set[int]:
+    raw_tokens = []
+    raw_ids = str(os.getenv("TELEGRAM_ADMIN_IDS", "")).strip()
+    if raw_ids:
+        raw_tokens.extend(re.split(r"[,\s;]+", raw_ids))
+    legacy_id = str(os.getenv("TELEGRAM_ADMIN_ID", "")).strip()
+    if legacy_id:
+        raw_tokens.append(legacy_id)
+
+    admin_ids: Set[int] = set()
+    invalid_tokens = []
+    for token in raw_tokens:
+        value = str(token or "").strip()
+        if not value:
+            continue
+        try:
+            admin_ids.add(int(value))
+        except ValueError:
+            invalid_tokens.append(value)
+
+    if invalid_tokens:
+        logger.warning(
+            "Some TELEGRAM_ADMIN_IDS values are invalid and ignored: %s",
+            ", ".join(invalid_tokens),
+        )
+    return admin_ids
+
+ADMIN_TELEGRAM_IDS = _parse_admin_ids_from_env()
 
 WEBAPP_BASE_URL = str(
     os.getenv("WEBAPP_BASE_URL")
@@ -115,7 +138,7 @@ def _format_user_label(row: Optional[Dict[str, Any]]) -> str:
 def _is_admin_user(telegram_user_id: Optional[int]) -> bool:
     if telegram_user_id is None:
         return False
-    if ADMIN_TELEGRAM_ID and int(telegram_user_id) == int(ADMIN_TELEGRAM_ID):
+    if int(telegram_user_id) in ADMIN_TELEGRAM_IDS:
         return True
     try:
         return is_telegram_admin(int(telegram_user_id))
@@ -125,7 +148,7 @@ def _is_admin_user(telegram_user_id: Optional[int]) -> bool:
 
 def _ensure_admin_record_for_user(user) -> None:
     user_id = getattr(user, "id", None)
-    if not user_id or not ADMIN_TELEGRAM_ID or int(user_id) != int(ADMIN_TELEGRAM_ID):
+    if not user_id or int(user_id) not in ADMIN_TELEGRAM_IDS:
         return
     try:
         ensure_telegram_admin(
@@ -138,24 +161,22 @@ def _ensure_admin_record_for_user(user) -> None:
         logger.error("Failed to upsert main Telegram admin record: %s", error)
 
 def _build_pending_access_message(user_id: int) -> str:
-    if ADMIN_TELEGRAM_ID:
+    if ADMIN_TELEGRAM_IDS:
         return (
-            "Заявка на доступ принята и отправлена главному админу.\n"
+            "Заявка на доступ принята и отправлена администраторам.\n"
             "После одобрения вы сможете пользоваться ботом.\n\n"
             f"Ваш Telegram ID: {user_id}"
         )
     return (
-        "Заявка на доступ создана, но главный админ не настроен.\n"
-        "Добавьте TELEGRAM_ADMIN_ID в .env и перезапустите бота.\n\n"
+        "Заявка на доступ создана, но админы не настроены.\n"
+        "Добавьте TELEGRAM_ADMIN_IDS (или TELEGRAM_ADMIN_ID) в .env и перезапустите бота.\n\n"
         f"Ваш Telegram ID: {user_id}"
     )
 
 def _notify_main_admin_about_request(access_row: Dict[str, Any]) -> None:
-    if not ADMIN_TELEGRAM_ID:
+    if not ADMIN_TELEGRAM_IDS:
         return
     requester_id = int(access_row.get("telegram_user_id"))
-    if requester_id == int(ADMIN_TELEGRAM_ID):
-        return
     text = (
         "Новая заявка на доступ к боту\n\n"
         f"Пользователь: {_format_user_label(access_row)}\n"
@@ -163,10 +184,13 @@ def _notify_main_admin_about_request(access_row: Dict[str, Any]) -> None:
         f"Статус: {_plain(access_row.get('status'))}\n\n"
         f"Команды:\n/approve_user {requester_id}\n/reject_user {requester_id}"
     )
-    try:
-        bot.send_message(chat_id=ADMIN_TELEGRAM_ID, text=text)
-    except Exception as error:
-        logger.error("Failed to notify main admin about access request: %s", error)
+    for admin_id in sorted(ADMIN_TELEGRAM_IDS):
+        if requester_id == int(admin_id):
+            continue
+        try:
+            bot.send_message(chat_id=admin_id, text=text)
+        except Exception as error:
+            logger.error("Failed to notify admin %s about access request: %s", admin_id, error)
 
 def _parse_web_auth_payload(payload: str) -> Optional[tuple[str, str]]:
     text = str(payload or "").strip()
@@ -761,10 +785,10 @@ def handle_message(message):
 
 if __name__ == "__main__":
     init_db()
-    if ADMIN_TELEGRAM_ID:
-        logger.info("Configured Telegram admin id: %s", ADMIN_TELEGRAM_ID)
+    if ADMIN_TELEGRAM_IDS:
+        logger.info("Configured Telegram admin ids: %s", ", ".join(str(v) for v in sorted(ADMIN_TELEGRAM_IDS)))
     else:
-        logger.warning("TELEGRAM_ADMIN_ID is not configured. New access requests cannot be approved automatically.")
+        logger.warning("TELEGRAM_ADMIN_IDS is not configured. New access requests cannot be approved automatically.")
     if not WEBAPP_BASE_URL:
         logger.warning("WEBAPP_BASE_URL is not configured. Telegram web login callback links will be unavailable.")
     logger.info("Starting Multi-Client Bot...")
