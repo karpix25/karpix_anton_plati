@@ -237,7 +237,6 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="contextual">Только если уместно</SelectItem>
-                  <SelectItem value="prefer">Стараться вставить</SelectItem>
                   <SelectItem value="required">Обязательно вставить</SelectItem>
                 </SelectContent>
               </Select>
