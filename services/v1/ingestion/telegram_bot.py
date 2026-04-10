@@ -9,7 +9,7 @@ project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from telebot import TeleBot
+from telebot import TeleBot, types
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -177,6 +177,11 @@ def _notify_main_admin_about_request(access_row: Dict[str, Any]) -> None:
     if not ADMIN_TELEGRAM_IDS:
         return
     requester_id = int(access_row.get("telegram_user_id"))
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton(text="✅ Одобрить", callback_data=f"access:approve:{requester_id}"),
+        types.InlineKeyboardButton(text="⛔ Отклонить", callback_data=f"access:reject:{requester_id}"),
+    )
     text = (
         "Новая заявка на доступ к боту\n\n"
         f"Пользователь: {_format_user_label(access_row)}\n"
@@ -188,9 +193,30 @@ def _notify_main_admin_about_request(access_row: Dict[str, Any]) -> None:
         if requester_id == int(admin_id):
             continue
         try:
-            bot.send_message(chat_id=admin_id, text=text)
+            bot.send_message(chat_id=admin_id, text=text, reply_markup=keyboard)
         except Exception as error:
             logger.error("Failed to notify admin %s about access request: %s", admin_id, error)
+
+def _apply_user_access_action(user_id: int, admin_user_id: int, action: str) -> str:
+    if _is_admin_user(user_id):
+        return "Этот пользователь уже является администратором." if action == "approve" else "Нельзя отклонить администратора."
+
+    if action == "approve":
+        updated = approve_telegram_user(user_id, admin_user_id)
+        status = _plain(updated.get("status"))
+        try:
+            bot.send_message(chat_id=user_id, text="Ваша заявка одобрена. Доступ к боту открыт.")
+        except Exception as error:
+            logger.warning("Failed to notify approved user %s: %s", user_id, error)
+        return f"Пользователь {user_id} одобрен.\nСтатус: {status}"
+
+    updated = reject_telegram_user(user_id, admin_user_id)
+    status = _plain(updated.get("status"))
+    try:
+        bot.send_message(chat_id=user_id, text="Ваша заявка отклонена. Можно отправить /start для повторной заявки.")
+    except Exception as error:
+        logger.warning("Failed to notify rejected user %s: %s", user_id, error)
+    return f"Пользователь {user_id} отклонён.\nСтатус: {status}"
 
 def _parse_web_auth_payload(payload: str) -> Optional[tuple[str, str]]:
     text = str(payload or "").strip()
@@ -448,20 +474,8 @@ def handle_approve_user(message):
         _reply_in_same_thread(message, "telegram_id должен быть числом.")
         return
 
-    if _is_admin_user(user_id):
-        _reply_in_same_thread(message, "Этот пользователь уже является администратором.")
-        return
-
     admin_user_id = int(getattr(message.from_user, "id"))
-    updated = approve_telegram_user(user_id, admin_user_id)
-    _reply_in_same_thread(
-        message,
-        f"Пользователь {user_id} одобрен.\nСтатус: {_plain(updated.get('status'))}",
-    )
-    try:
-        bot.send_message(chat_id=user_id, text="Ваша заявка одобрена. Доступ к боту открыт.")
-    except Exception as error:
-        logger.warning("Failed to notify approved user %s: %s", user_id, error)
+    _reply_in_same_thread(message, _apply_user_access_action(user_id, admin_user_id, "approve"))
 
 
 @bot.message_handler(commands=['reject_user'])
@@ -480,20 +494,51 @@ def handle_reject_user(message):
         _reply_in_same_thread(message, "telegram_id должен быть числом.")
         return
 
-    if _is_admin_user(user_id):
-        _reply_in_same_thread(message, "Нельзя отклонить главного администратора.")
+    admin_user_id = int(getattr(message.from_user, "id"))
+    _reply_in_same_thread(message, _apply_user_access_action(user_id, admin_user_id, "reject"))
+
+
+@bot.callback_query_handler(func=lambda call: str(getattr(call, "data", "")).startswith("access:"))
+def handle_access_callback(call):
+    data = str(getattr(call, "data", "")).strip()
+    parts = data.split(":")
+    if len(parts) != 3:
+        bot.answer_callback_query(call.id, "Некорректные данные кнопки.", show_alert=True)
         return
 
-    admin_user_id = int(getattr(message.from_user, "id"))
-    updated = reject_telegram_user(user_id, admin_user_id)
-    _reply_in_same_thread(
-        message,
-        f"Пользователь {user_id} отклонён.\nСтатус: {_plain(updated.get('status'))}",
-    )
+    _, action, user_id_raw = parts
+    if action not in {"approve", "reject"}:
+        bot.answer_callback_query(call.id, "Неизвестное действие.", show_alert=True)
+        return
+
+    admin_user_id = int(getattr(call.from_user, "id", 0) or 0)
+    if not _is_admin_user(admin_user_id):
+        bot.answer_callback_query(call.id, "Эта кнопка доступна только администратору.", show_alert=True)
+        return
+
     try:
-        bot.send_message(chat_id=user_id, text="Ваша заявка отклонена. Можно отправить /start для повторной заявки.")
+        user_id = int(user_id_raw)
+    except ValueError:
+        bot.answer_callback_query(call.id, "Некорректный Telegram ID.", show_alert=True)
+        return
+
+    result_text = _apply_user_access_action(user_id, admin_user_id, action)
+    chat_id = getattr(getattr(call, "message", None), "chat", None)
+    message_id = getattr(getattr(call, "message", None), "message_id", None)
+
+    try:
+        if chat_id and message_id:
+            bot.edit_message_reply_markup(chat_id=chat_id.id, message_id=message_id, reply_markup=None)
     except Exception as error:
-        logger.warning("Failed to notify rejected user %s: %s", user_id, error)
+        logger.warning("Failed to clear inline keyboard for access callback: %s", error)
+
+    if chat_id:
+        try:
+            bot.send_message(chat_id=chat_id.id, text=result_text)
+        except Exception as error:
+            logger.warning("Failed to send callback action result message: %s", error)
+
+    bot.answer_callback_query(call.id, "Готово.")
 
 
 @bot.message_handler(commands=['list_users'])

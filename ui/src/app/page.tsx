@@ -250,6 +250,13 @@ export default function CuratorDashboard() {
   const handleStartTelegramAuth = async () => {
     setAuthError("");
     setIsStartingTelegramAuth(true);
+    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
+    if (!popup) {
+      setAuthError("Браузер заблокировал новую вкладку. Разрешите pop-up и повторите.");
+      setIsStartingTelegramAuth(false);
+      return;
+    }
+
     try {
       const returnTo =
         typeof window !== "undefined"
@@ -265,13 +272,14 @@ export default function CuratorDashboard() {
         throw new Error(payload?.error || "Failed to initialize Telegram auth");
       }
       const botUrl = String(payload.botUrl);
-      const popup = window.open(botUrl, "_blank", "noopener,noreferrer");
-      if (!popup) {
-        window.location.href = botUrl;
-        return;
-      }
+      popup.location.href = botUrl;
       setIsStartingTelegramAuth(false);
     } catch (error) {
+      try {
+        popup.close();
+      } catch (closeError) {
+        console.error("Failed to close auth popup:", closeError);
+      }
       console.error("Telegram auth start failed:", error);
       setAuthError(error instanceof Error ? error.message : "Не удалось открыть Telegram-бота.");
       setIsStartingTelegramAuth(false);
