@@ -25,10 +25,15 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
   draftSettings,
   setDraftSettings,
 }) => {
+  const toSafeNumber = (value: unknown, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
   const brollTimingMode = draftSettings.broll_timing_mode || "semantic_pause";
   const brollPacingProfile = draftSettings.broll_pacing_profile || "balanced";
-  const brollIntervalSeconds = draftSettings.broll_interval_seconds || 3;
-  const brollCoveragePercent = draftSettings.broll_coverage_percent || 35;
+  const brollIntervalSeconds = toSafeNumber(draftSettings.broll_interval_seconds, 3);
+  const brollCoveragePercent = toSafeNumber(draftSettings.broll_coverage_percent, 35);
   const brollGeneratorModel = draftSettings.broll_generator_model || "bytedance/v1-pro-text-to-video";
   const semanticRelevancePriority = draftSettings.broll_semantic_relevance_priority || "balanced";
   const productClipPolicy = draftSettings.broll_product_clip_policy || "contextual";

@@ -26,16 +26,21 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   subtitlePreviewRef,
   subtitlePreviewScale,
 }) => {
+  const toSafeNumber = (value: unknown, fallback: number) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
   const subtitlesEnabled = draftSettings.subtitles_enabled ?? true;
   const subtitleMode = draftSettings.subtitle_mode || "word_by_word";
   const subtitleStylePreset = draftSettings.subtitle_style_preset || "classic";
   const subtitleFontFamily = draftSettings.subtitle_font_family || "impact";
   const subtitleFontColor = (draftSettings.subtitle_font_color || "#FFFFFF").toUpperCase();
   const subtitleOutlineColor = (draftSettings.subtitle_outline_color || "#000000").toUpperCase();
-  const subtitleOutlineWidth = typeof draftSettings.subtitle_outline_width === "number" ? draftSettings.subtitle_outline_width : 4;
+  const subtitleOutlineWidth = toSafeNumber(draftSettings.subtitle_outline_width, 4);
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
-  const subtitleMarginPercent = typeof draftSettings.subtitle_margin_percent === "number" ? draftSettings.subtitle_margin_percent : 12;
-  const subtitleMarginV = typeof draftSettings.subtitle_margin_v === "number" ? draftSettings.subtitle_margin_v : 154;
+  const subtitleMarginPercent = toSafeNumber(draftSettings.subtitle_margin_percent, 12);
+  const subtitleMarginV = toSafeNumber(draftSettings.subtitle_margin_v, 154);
 
   const modePreview = SUBTITLE_MODE_OPTIONS[subtitleMode];
   const stylePreview = SUBTITLE_STYLE_PRESET_OPTIONS[subtitleStylePreset];

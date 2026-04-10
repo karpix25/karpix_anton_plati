@@ -103,5 +103,7 @@ export function getTotalGenerationCosts(scenarios: Scenario[]) {
 }
 
 export function formatUsd(value: number): string {
-  return `$${value.toFixed(3)}`;
+  const normalized = Number(value);
+  const safeValue = Number.isFinite(normalized) ? normalized : 0;
+  return `$${safeValue.toFixed(3)}`;
 }

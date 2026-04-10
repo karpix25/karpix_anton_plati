@@ -95,6 +95,11 @@ interface ScenariosScreenProps {
 }
 
 export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosScreenProps) {
+  const toSafeNumber = (value: unknown, fallback = 0) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
@@ -844,16 +849,16 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{currentBrollGeneratorLabel}</div>
                 <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{currentGeneratedPromptCount}</div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {formatUsd(currentPromptCostUsd)} по ${currentPromptUnitCostUsd.toFixed(3)} за генерацию
+                  {formatUsd(currentPromptCostUsd)} по ${toSafeNumber(currentPromptUnitCostUsd).toFixed(3)} за генерацию
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">HeyGen длительность</div>
-                <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{currentActualDurationSeconds.toFixed(1)}s</div>
+                <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{toSafeNumber(currentActualDurationSeconds).toFixed(1)}s</div>
                 <div className="mt-1 text-xs text-slate-500">{formatUsd(currentHeygenCostUsd)} по $1.00 за минуту</div>
                 {Math.abs(currentActualDurationSeconds - currentTranscriptDurationSeconds) > 0.35 ? (
                   <div className="mt-1 text-[11px] text-amber-600">
-                    transcript timestamps: {currentTranscriptDurationSeconds.toFixed(1)}s
+                    transcript timestamps: {toSafeNumber(currentTranscriptDurationSeconds).toFixed(1)}s
                   </div>
                 ) : null}
               </div>
@@ -1164,8 +1169,8 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                               className="grid grid-cols-[1.5fr_0.7fr_0.7fr] gap-3 border-b border-slate-100 px-3 py-2 text-xs text-slate-600 last:border-b-0"
                             >
                               <div className="font-medium text-slate-800">{item.punctuated_word || item.word}</div>
-                              <div>{item.start.toFixed(2)}s</div>
-                              <div>{item.end.toFixed(2)}s</div>
+                              <div>{toSafeNumber(item.start).toFixed(2)}s</div>
+                              <div>{toSafeNumber(item.end).toFixed(2)}s</div>
                             </div>
                           ))}
                         </div>
