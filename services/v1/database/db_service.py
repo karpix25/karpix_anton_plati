@@ -507,6 +507,9 @@ def init_db() -> None:
             avatar_name TEXT NOT NULL,
             folder_name TEXT,
             preview_image_url TEXT,
+            tts_provider TEXT DEFAULT 'minimax',
+            tts_voice_id TEXT,
+            elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY',
             is_active BOOLEAN DEFAULT TRUE,
             usage_count INTEGER DEFAULT 0,
             sort_order INTEGER DEFAULT 0,
@@ -633,6 +636,9 @@ def init_db() -> None:
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0",
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP",
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS gender TEXT",
+        "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'",
+        "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_voice_id TEXT",
+        "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS preview_image_url TEXT",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_look_id TEXT",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_prompt TEXT",
@@ -919,9 +925,9 @@ def replace_client_heygen_avatars(client_id: int, avatars: List[Dict[str, Any]])
         for avatar_index, avatar in enumerate(avatars or []):
             cursor.execute("""
                 INSERT INTO client_heygen_avatars (
-                    client_id, avatar_id, avatar_name, folder_name, preview_image_url, is_active, usage_count, sort_order, last_used_at, gender
+                    client_id, avatar_id, avatar_name, folder_name, preview_image_url, tts_provider, tts_voice_id, elevenlabs_voice_id, is_active, usage_count, sort_order, last_used_at, gender
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
             """, (
                 client_id,
@@ -929,6 +935,9 @@ def replace_client_heygen_avatars(client_id: int, avatars: List[Dict[str, Any]])
                 avatar.get("avatar_name") or avatar.get("avatar_id"),
                 avatar.get("folder_name"),
                 avatar.get("preview_image_url"),
+                avatar.get("tts_provider") if avatar.get("tts_provider") in {"minimax", "elevenlabs"} else "minimax",
+                avatar.get("tts_voice_id"),
+                avatar.get("elevenlabs_voice_id"),
                 avatar.get("is_active", True),
                 avatar.get("usage_count", 0),
                 avatar.get("sort_order", avatar_index),
@@ -1025,6 +1034,10 @@ def choose_next_client_avatar_variant(client_id: int) -> Optional[Dict[str, Any]
             "avatar_id": selected_avatar["avatar_id"],
             "avatar_name": selected_avatar["avatar_name"],
             "folder_name": selected_avatar.get("folder_name"),
+            "gender": selected_avatar.get("gender"),
+            "tts_provider": selected_avatar.get("tts_provider"),
+            "tts_voice_id": selected_avatar.get("tts_voice_id"),
+            "elevenlabs_voice_id": selected_avatar.get("elevenlabs_voice_id"),
             "look": selected_look,
         }
 

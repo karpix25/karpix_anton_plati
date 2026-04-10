@@ -413,6 +413,9 @@ export async function POST(request: Request) {
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
     await pool.query('ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
+    await pool.query("ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
+    await pool.query('ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
+    await pool.query("ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
     await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_request_text TEXT');
     await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_audio_duration_seconds NUMERIC(10,3)');
     const { text, scenarioId } = await request.json();
@@ -430,9 +433,15 @@ export async function POST(request: Request) {
     const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
     if (Number.isFinite(resolvedScenarioId)) {
       const { rows } = await pool.query<{ tts_provider: string | null; tts_voice_id: string | null; elevenlabs_voice_id: string | null }>(
-        `SELECT c.tts_provider, c.tts_voice_id, c.elevenlabs_voice_id
+        `SELECT
+           COALESCE(a.tts_provider, c.tts_provider) AS tts_provider,
+           COALESCE(a.tts_voice_id, c.tts_voice_id) AS tts_voice_id,
+           COALESCE(a.elevenlabs_voice_id, c.elevenlabs_voice_id) AS elevenlabs_voice_id
          FROM generated_scenarios gs
          LEFT JOIN clients c ON c.id = gs.client_id
+         LEFT JOIN client_heygen_avatars a
+           ON a.client_id = gs.client_id
+          AND a.avatar_id = gs.heygen_avatar_id
          WHERE gs.id = $1`,
         [resolvedScenarioId]
       );

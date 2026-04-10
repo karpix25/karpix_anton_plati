@@ -104,6 +104,17 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
         if selected_avatar_variant:
             avatar_id = selected_avatar_variant["avatar_id"]
             logger.info(f"[{job_id}] Selected client avatar rotation: avatar={selected_avatar_variant['avatar_name']} look={selected_avatar_variant.get('look', {}).get('look_name') if selected_avatar_variant.get('look') else 'default'}")
+    selected_tts_provider = tts_provider
+    selected_tts_voice_id = tts_voice_id
+    selected_elevenlabs_voice_id = elevenlabs_voice_id
+    if selected_avatar_variant:
+        avatar_tts_provider = selected_avatar_variant.get("tts_provider")
+        if avatar_tts_provider in {"minimax", "elevenlabs"}:
+            selected_tts_provider = avatar_tts_provider
+        if selected_tts_provider == "elevenlabs":
+            selected_elevenlabs_voice_id = selected_avatar_variant.get("elevenlabs_voice_id") or selected_elevenlabs_voice_id
+        else:
+            selected_tts_voice_id = selected_avatar_variant.get("tts_voice_id") or selected_tts_voice_id
 
     # Check if we should proceed to full generation
     # If it's NOT a manual trigger and auto_generate is OFF, we stop after analysis
@@ -222,16 +233,20 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
     
     # Phase 3 & 4: (Parallel) TTS and B-roll Planning
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        if tts_provider == "elevenlabs":
-            tts_future = executor.submit(text_to_speech_elevenlabs, script_text, elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID)
+        if selected_tts_provider == "elevenlabs":
+            tts_future = executor.submit(
+                text_to_speech_elevenlabs,
+                script_text,
+                selected_elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID,
+            )
         else:
-            tts_future = executor.submit(text_to_speech_minimax, script_text, tts_voice_id or None)
+            tts_future = executor.submit(text_to_speech_minimax, script_text, selected_tts_voice_id or None)
         editor_future = executor.submit(generate_broll_plan, scenario_json)
         
         try:
             audio_local_path = tts_future.result()
         except Exception as error:
-            notify_service_payment_issue(client_id, f"TTS/{tts_provider}", error)
+            notify_service_payment_issue(client_id, f"TTS/{selected_tts_provider}", error)
             raise
         try:
             broll_plan = editor_future.result()

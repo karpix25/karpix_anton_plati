@@ -11,6 +11,9 @@ async function ensureHeygenLookMotionColumns() {
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_error TEXT',
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_updated_at TIMESTAMP',
     'ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS gender TEXT',
+    "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'",
+    'ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_voice_id TEXT',
+    "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'",
   ];
 
   for (const statement of statements) {
@@ -80,8 +83,8 @@ export async function PUT(request: Request) {
       const avatar = avatars[avatarIndex];
       const avatarResult = await client.query(
         `INSERT INTO client_heygen_avatars (
-          client_id, avatar_id, avatar_name, folder_name, preview_image_url, is_active, usage_count, sort_order, gender
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          client_id, avatar_id, avatar_name, folder_name, preview_image_url, tts_provider, tts_voice_id, elevenlabs_voice_id, is_active, usage_count, sort_order, gender
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id`,
         [
           clientId,
@@ -89,6 +92,9 @@ export async function PUT(request: Request) {
           avatar.avatar_name,
           avatar.folder_name || null,
           avatar.preview_image_url || null,
+          avatar.tts_provider === 'elevenlabs' ? 'elevenlabs' : 'minimax',
+          avatar.tts_voice_id || null,
+          avatar.elevenlabs_voice_id || null,
           avatar.is_active ?? true,
           avatar.usage_count ?? 0,
           avatar.sort_order ?? avatarIndex,

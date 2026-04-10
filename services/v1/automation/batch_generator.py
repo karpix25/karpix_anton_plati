@@ -353,6 +353,17 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     # Get active avatar gender for Russian grammar agreement
     active_avatar = choose_next_client_avatar_variant(client_id)
     gender = active_avatar.get("gender", "female") if active_avatar else "female"
+    selected_tts_provider = tts_provider
+    selected_tts_voice_id = tts_voice_id
+    selected_elevenlabs_voice_id = elevenlabs_voice_id
+    if active_avatar:
+        avatar_tts_provider = active_avatar.get("tts_provider")
+        if avatar_tts_provider in {"minimax", "elevenlabs"}:
+            selected_tts_provider = avatar_tts_provider
+        if selected_tts_provider == "elevenlabs":
+            selected_elevenlabs_voice_id = active_avatar.get("elevenlabs_voice_id") or selected_elevenlabs_voice_id
+        else:
+            selected_tts_voice_id = active_avatar.get("tts_voice_id") or selected_tts_voice_id
     
     # In cluster mode, we use multiple references at once
     cluster_references = ranked_references if mode == "cluster" else []
@@ -517,12 +528,15 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
 
         if tts_script:
             try:
-                if tts_provider == "elevenlabs":
+                if selected_tts_provider == "elevenlabs":
                     tts_request_text = prepare_text_for_elevenlabs_tts(tts_script)
-                    tts_audio_path = text_to_speech_elevenlabs(tts_script, voice_id=elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID)
+                    tts_audio_path = text_to_speech_elevenlabs(
+                        tts_script,
+                        voice_id=selected_elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID,
+                    )
                 else:
                     tts_request_text = prepare_text_for_minimax_tts(tts_script)
-                    tts_audio_path = text_to_speech_minimax(tts_script, voice_id=tts_voice_id or None)
+                    tts_audio_path = text_to_speech_minimax(tts_script, voice_id=selected_tts_voice_id or None)
                 if tts_silence_trim_enabled is None:
                     tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
                 if tts_silence_trim_enabled:
@@ -582,7 +596,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 )
             except Exception as e:
                 logger.error(f"Failed to auto-generate TTS/timestamps/keywords for scenario {res_job_id}: {e}")
-                notify_service_payment_issue(client_id, f"TTS/{tts_provider}", e)
+                notify_service_payment_issue(client_id, f"TTS/{selected_tts_provider}", e)
 
         # Save to Database (New Table)
         try:
@@ -605,6 +619,10 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 tts_word_timestamps=tts_word_timestamps,
                 video_keyword_segments=video_keyword_segments,
                 video_generation_prompts=video_generation_prompts,
+                heygen_avatar_id=active_avatar.get("avatar_id") if active_avatar else None,
+                heygen_avatar_name=active_avatar.get("avatar_name") if active_avatar else None,
+                heygen_look_id=(active_avatar.get("look") or {}).get("look_id") if active_avatar else None,
+                heygen_look_name=(active_avatar.get("look") or {}).get("look_name") if active_avatar else None,
                 background_audio_tag="neutral",
             )
             logger.info(f"Successfully saved generated scenario {i+1} to scenarios table with job_id={res_job_id}")
@@ -629,6 +647,10 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
             "tts_word_timestamps": tts_word_timestamps,
             "video_keyword_segments": video_keyword_segments,
             "video_generation_prompts": video_generation_prompts,
+            "heygen_avatar_id": active_avatar.get("avatar_id") if active_avatar else None,
+            "heygen_avatar_name": active_avatar.get("avatar_name") if active_avatar else None,
+            "heygen_look_id": (active_avatar.get("look") or {}).get("look_id") if active_avatar else None,
+            "heygen_look_name": (active_avatar.get("look") or {}).get("look_name") if active_avatar else None,
             "background_audio_tag": "neutral",
         })
         

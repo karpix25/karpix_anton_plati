@@ -112,6 +112,7 @@ const HEYGEN_MOTION_TYPE_OPTIONS = [
   { value: "kling", label: "Kling" },
 ] as const;
 
+const DEFAULT_MINIMAX_VOICE_ID = "Russian_Engaging_Podcaster_v1";
 const DEFAULT_ELEVENLABS_VOICE_ID = "0ArNnoIAWKlT4WweaVMY";
 const ELEVENLABS_MODEL_ID = "eleven_v3";
 const DEFAULT_HEYGEN_MOTION_TYPE = "consistent";
@@ -221,6 +222,7 @@ const normalizeLook = (look: Partial<HeygenAvatarConfig["looks"][number]> | null
 const normalizeAvatar = (avatar: Partial<HeygenAvatarConfig> | null | undefined, avatarIndex: number): HeygenAvatarConfig => {
   const avatarId = safeTrim(avatar?.avatar_id);
   const avatarName = safeTrim(avatar?.avatar_name) || avatarId;
+  const provider = avatar?.tts_provider === "elevenlabs" ? "elevenlabs" : "minimax";
 
   return {
     id: avatar?.id,
@@ -228,6 +230,9 @@ const normalizeAvatar = (avatar: Partial<HeygenAvatarConfig> | null | undefined,
     avatar_name: avatarName,
     folder_name: safeTrim(avatar?.folder_name),
     preview_image_url: safeTrim(avatar?.preview_image_url),
+    tts_provider: provider,
+    tts_voice_id: safeTrim(avatar?.tts_voice_id) || DEFAULT_MINIMAX_VOICE_ID,
+    elevenlabs_voice_id: safeTrim(avatar?.elevenlabs_voice_id) || DEFAULT_ELEVENLABS_VOICE_ID,
     is_active: avatar?.is_active ?? true,
     usage_count: typeof avatar?.usage_count === "number" ? avatar.usage_count : 0,
     sort_order: typeof avatar?.sort_order === "number" ? avatar.sort_order : avatarIndex,
@@ -384,7 +389,6 @@ export function SettingsScreen({
   const subtitleOutlineColor = draftSettings.subtitle_outline_color || "#111111";
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
   const subtitleOutlineWidth = Number(draftSettings.subtitle_outline_width || 3);
-  const subtitleMarginDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_V[subtitleStylePreset] || 140;
   const subtitleMarginPercentDefault = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
   const ttsSilenceTrimMinSeconds = Number(draftSettings.tts_silence_trim_min_duration_seconds || 0.35);
   const ttsSilenceTrimThresholdDb = Number(draftSettings.tts_silence_trim_threshold_db ?? -45);
@@ -632,6 +636,9 @@ export function SettingsScreen({
           avatar_id: "",
           avatar_name: "",
           folder_name: "",
+          tts_provider: draftSettings.tts_provider || "minimax",
+          tts_voice_id: draftSettings.tts_voice_id || minimaxVoices[0]?.voice_id || DEFAULT_MINIMAX_VOICE_ID,
+          elevenlabs_voice_id: draftSettings.elevenlabs_voice_id || elevenlabsVoices[0]?.voice_id || DEFAULT_ELEVENLABS_VOICE_ID,
           is_active: true,
           sort_order: prev.length,
           looks: [],
@@ -2194,11 +2201,11 @@ export function SettingsScreen({
         </div>
         
         <div className="grid gap-6 md:grid-cols-3">
-            {[
+            {([
                 { id: "scenario", title: "Сценарий", rules: draftSettings.learned_rules_scenario },
                 { id: "visual", title: "Визуал (B-roll)", rules: draftSettings.learned_rules_visual },
                 { id: "video", title: "Видео (Prompts)", rules: draftSettings.learned_rules_video },
-            ].map((cat) => (
+            ] as Array<{ id: "scenario" | "visual" | "video"; title: string; rules: string | undefined }>).map((cat) => (
                 <div key={cat.id} className="flex flex-col gap-3 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-5 shadow-sm transition-all hover:border-[#d1d9e0]">
                     <div className="flex items-center justify-between">
                         <div className="font-bold text-foreground">{cat.title}</div>
@@ -2207,7 +2214,7 @@ export function SettingsScreen({
                             variant="ghost"
                             size="sm"
                             className="h-8 w-8 p-0 text-primary hover:bg-primary/10"
-                            onClick={() => handleOptimizePrompts(cat.id as any)}
+                            onClick={() => handleOptimizePrompts(cat.id)}
                             disabled={!selectedClientId || (optimizingCategory !== null && optimizingCategory !== cat.id)}
                             title="Пересчитать правила на основе фидбэка"
                         >
@@ -2262,6 +2269,18 @@ export function SettingsScreen({
                   ? Number.parseInt(selectedLookTabs[String(avatarIndex)] || "0", 10)
                   : 0;
                 const selectedLook = avatar.looks[selectedLookIndex];
+                const avatarTtsProvider = avatar.tts_provider || "minimax";
+                const avatarMiniMaxVoiceId =
+                  avatar.tts_voice_id || draftSettings.tts_voice_id || minimaxVoices[0]?.voice_id || DEFAULT_MINIMAX_VOICE_ID;
+                const avatarElevenLabsVoiceId =
+                  avatar.elevenlabs_voice_id ||
+                  draftSettings.elevenlabs_voice_id ||
+                  elevenlabsVoices[0]?.voice_id ||
+                  DEFAULT_ELEVENLABS_VOICE_ID;
+                const selectedAvatarMinimaxVoice = minimaxVoices.find((voice) => voice.voice_id === avatarMiniMaxVoiceId);
+                const selectedAvatarElevenLabsVoice = elevenlabsVoices.find(
+                  (voice) => voice.voice_id === avatarElevenLabsVoiceId
+                );
 
                 return (
                   <div
@@ -2410,6 +2429,68 @@ export function SettingsScreen({
                       placeholder="https://..."
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                      TTS provider для аватара
+                    </label>
+                    <Select
+                      value={avatarTtsProvider}
+                      onValueChange={(value: "minimax" | "elevenlabs") => updateAvatar(avatarIndex, "tts_provider", value)}
+                    >
+                      <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                        <SelectValue placeholder="Выберите провайдера" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="minimax">MiniMax</SelectItem>
+                        <SelectItem value="elevenlabs">ElevenLabs v3</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {avatarTtsProvider === "minimax" ? (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Голос MiniMax (аватар)
+                      </label>
+                      <Select
+                        value={avatarMiniMaxVoiceId}
+                        onValueChange={(value) => updateAvatar(avatarIndex, "tts_voice_id", value)}
+                      >
+                        <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                          <SelectValue placeholder="Выберите голос" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-96">
+                          {minimaxVoices.map((voice) => (
+                            <SelectItem key={`${voice.category}-${voice.voice_id}`} value={voice.voice_id}>
+                              {voice.voice_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                        Голос ElevenLabs (аватар)
+                      </label>
+                      <Select
+                        value={avatarElevenLabsVoiceId}
+                        onValueChange={(value) => updateAvatar(avatarIndex, "elevenlabs_voice_id", value)}
+                      >
+                        <SelectTrigger className="h-12 w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-left text-sm text-foreground focus:ring-2 focus:ring-primary/10">
+                          <SelectValue placeholder="Выберите голос" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-96">
+                          {elevenlabsVoices.map((voice) => (
+                            <SelectItem key={voice.voice_id} value={voice.voice_id}>
+                              {voice.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
                 <Button
@@ -2425,6 +2506,23 @@ export function SettingsScreen({
               </div>
 
               <div className="mt-5 rounded-2xl bg-white p-4">
+                <div className="mb-4 rounded-xl border border-[#edf2f6] bg-[#fbfcfd] px-4 py-3 text-xs text-muted-foreground">
+                  <div>
+                    <span className="font-semibold text-foreground">Озвучка этого аватара:</span>{" "}
+                    {avatarTtsProvider === "elevenlabs" ? "ElevenLabs v3" : "MiniMax"}
+                  </div>
+                  {avatarTtsProvider === "elevenlabs" ? (
+                    <div>
+                      <span className="font-semibold text-foreground">Voice:</span>{" "}
+                      {selectedAvatarElevenLabsVoice?.name || avatarElevenLabsVoiceId}
+                    </div>
+                  ) : (
+                    <div>
+                      <span className="font-semibold text-foreground">Voice:</span>{" "}
+                      {selectedAvatarMinimaxVoice?.voice_name || avatarMiniMaxVoiceId}
+                    </div>
+                  )}
+                </div>
                 <div className="mb-4 flex items-center justify-between">
                   <div>
                     <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Образы</div>
