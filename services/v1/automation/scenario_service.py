@@ -198,6 +198,17 @@ def _asset_visibility_guardrails() -> str:
     """
 
 
+def _spoken_numbers_guardrail() -> str:
+    return """
+    SPOKEN NUMBERS RULE:
+    - ALL numbers in the final Russian script must be written out in words, never as Arabic numerals.
+    - This applies to counts, prices, percentages, years, dates, times, ranges, ratios, durations, limits, and list numbers.
+    - Examples: "двадцать", "сто пятьдесят", "девяносто восемь процентов", "две тысячи двадцать шестой год", "от трех до пяти дней".
+    - Do not output forms like "20", "1500", "98%", "2026", "3-5 дней", even if the source used digits.
+    - If an exact number sounds unnatural in speech, rewrite it into a natural spoken form while preserving the meaning as closely as possible.
+    """
+
+
 def _split_sentences(text: str):
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
     if not cleaned:
@@ -353,6 +364,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - This is variation #{variation_index} out of {total_variations}. The wording can shift, but the script should still feel like the same winning reel.
     - Do NOT default to generic anti-pattern hooks or stock openers that were NOT present in the source.
     {_asset_visibility_guardrails()}
+    {_spoken_numbers_guardrail()}
 
     GENDER AGREEMENT (FOR RUSSIAN LANGUAGE):
     - The narrator's gender is: {gender}.
@@ -458,11 +470,12 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     7. If a destination hint is provided, relocate the script to that destination while keeping the same narrative engine and factual density.
     8. If the source is travel-led, keep the place, trip, and destination as the main narrative object.
     9. Adapt the product as the enabler of the travel action: paying, booking, reserving, accessing, or making the trip possible from the viewer's situation.
-    10. Make the script interesting because it contains information, comparisons, and proof, not empty adjectives.
-    11. When adding new facts, choose likely-true, real-world details instead of fabricated ones.
-    12. Write the product mention as a native recommendation from someone who actually used it in this scenario.
-    13. End with a natural CTA: soft recommendation, friendly prompt, or conversational invitation, not a hard sell.
-    14. Remove source-side ad integrations and rebuild that slot naturally around the target product only if it fits the scene.
+    10. Write all numbers only in spoken Russian words, never as digits.
+    11. Make the script interesting because it contains information, comparisons, and proof, not empty adjectives.
+    12. When adding new facts, choose likely-true, real-world details instead of fabricated ones.
+    13. Write the product mention as a native recommendation from someone who actually used it in this scenario.
+    14. End with a natural CTA: soft recommendation, friendly prompt, or conversational invitation, not a hard sell.
+    15. Remove source-side ad integrations and rebuild that slot naturally around the target product only if it fits the scene.
 
     SELF-CHECK BEFORE FINALIZING:
     - Is the script still realistically speakable within roughly the same duration?
@@ -473,6 +486,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Did I avoid vague filler and fake proof?
     - Are the added facts plausible and likely real?
     - Did I avoid suspiciously precise or invented claims?
+    - Did I rewrite every number, date, range, price, and percentage as spoken Russian words?
     - If this is a travel script, did I keep travel as the story and make the product the helper, not the replacement?
     - Does the product line sound like a human recommendation from experience, not like an inserted ad slogan?
     - Is the CTA soft, natural, and conversational?
@@ -591,6 +605,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     7. Не используйте указательные формулировки для внешних сайтов, приложений и товаров, которые зритель не увидит в кадре: нельзя "вот эти сайты", "первый сайт", "вот этот крем". Говорите только обобщенно: "есть сервис", "одна платформа", "несколько сайтов", "средство от комаров".
     8. Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
     9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
+    10. Все числа, даты, диапазоны, проценты, суммы и годы в итоговом сценарии пишите только словами, без арабских цифр.
 
     ВЕРНИТЕ JSON:
     {{
@@ -704,9 +719,10 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     6a. Внутренне определи доминирующий hook shape кластера и сохрани его в первом предложении нового сценария.
     7. Не использовать штампы "Думаешь...", "Думаете...", "А вот и нет!", "Забудьте!", "Прикол в том, что..." если таких открытий нет среди исходных референсов.
     7a. Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
-    8. Вариация №{variation_index} из {total_variations}.
-    9. Не используйте указательные формулировки для неподготовленных внешних сайтов, приложений и товаров: нельзя "вот эти сайты", "первый сайт", "второй сайт", "вот этот спрей". Если нужно упомянуть ресурс или предмет, описывайте его обобщенно и без визуального указания.
-    10. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
+    8. Все числа, даты, диапазоны, проценты, суммы и годы в итоговом сценарии пишите только словами, без арабских цифр.
+    9. Вариация №{variation_index} из {total_variations}.
+    10. Не используйте указательные формулировки для неподготовленных внешних сайтов, приложений и товаров: нельзя "вот эти сайты", "первый сайт", "второй сайт", "вот этот спрей". Если нужно упомянуть ресурс или предмет, описывайте его обобщенно и без визуального указания.
+    11. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
 
     OPENING REFERENCES TO FOLLOW STRUCTURALLY:
     {json.dumps(reference_openings, ensure_ascii=False, indent=2)}
@@ -788,6 +804,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     7. Avoid repetitive stock openers if they were not present in the source hook. Forbidden phrases unless present in the source opening: {json.dumps(banned_hook_phrases, ensure_ascii=False)}
     8. Do NOT use demonstrative references to third-party sites, apps, or consumer products that the viewer cannot literally see on screen. Forbidden examples: "вот эти сайты", "первый сайт", "вот этот крем". Use generic wording instead: "есть сервис", "одна платформа", "несколько сайтов", "крем с высоким SPF".
     9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
+    10. All numbers in the final Russian script must be written as words, never as digits.
 
     TOPIC CARD (The "What"):
     {json.dumps(topic_meta or topic_card, ensure_ascii=False, indent=2)}
@@ -821,6 +838,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     4. Ensure the hook matches the `hook_style` from the Structure Card and also preserves the real opening format from the source hook above.
     4a. The first sentence should preserve the same hook family as the source blueprint: question stays question, list stays list, direct statement stays direct statement.
     5. Ensure the product integration matches the `integration_style` but feels organic.
+    6. Convert every number, date, year, range, percentage, and amount into natural spoken Russian words.
 
     RETURN JSON:
     {{
