@@ -21,6 +21,10 @@ type ScenarioRow = {
   tts_audio_path: string | null;
   heygen_video_id: string | null;
   heygen_status: string | null;
+  heygen_avatar_id: string | null;
+  heygen_avatar_name: string | null;
+  heygen_look_id: string | null;
+  heygen_look_name: string | null;
 };
 
 type AvatarRow = {
@@ -154,7 +158,8 @@ async function uploadAudioAsset(filePath: string) {
 
 async function getScenario(scenarioId: number) {
   const { rows } = await pool.query<ScenarioRow>(
-    `SELECT id, client_id, tts_audio_path, heygen_video_id, heygen_status
+    `SELECT id, client_id, tts_audio_path, heygen_video_id, heygen_status,
+            heygen_avatar_id, heygen_avatar_name, heygen_look_id, heygen_look_name
      FROM generated_scenarios
      WHERE id = $1`,
     [scenarioId]
@@ -178,9 +183,62 @@ async function assertScenarioIsLatest(scenario: ScenarioRow) {
   }
 }
 
-async function selectAvatarVariant(clientId: number | null) {
+async function selectAvatarVariant(
+  clientId: number | null,
+  preferredAvatarId?: string | null,
+  preferredLookId?: string | null
+) {
   if (!clientId) {
     throw new Error("Scenario is not linked to a client");
+  }
+
+  if (preferredAvatarId) {
+    const preferredAvatarResult = await pool.query<AvatarRow>(
+      `SELECT id, avatar_id, avatar_name
+       FROM client_heygen_avatars
+       WHERE client_id = $1 AND avatar_id = $2 AND is_active = TRUE
+       LIMIT 1`,
+      [clientId, preferredAvatarId]
+    );
+
+    const preferredAvatar = preferredAvatarResult.rows[0] || null;
+    if (preferredAvatar) {
+      let preferredLook: LookRow | null = null;
+      if (preferredLookId) {
+        const preferredLookResult = await pool.query<LookRow>(
+          `SELECT id, look_id, look_name, motion_look_id, motion_status
+           FROM client_heygen_avatar_looks
+           WHERE client_avatar_id = $1 AND look_id = $2 AND is_active = TRUE
+           LIMIT 1`,
+          [preferredAvatar.id, preferredLookId]
+        );
+        preferredLook = preferredLookResult.rows[0] || null;
+      }
+
+      if (!preferredLook) {
+        const fallbackLookResult = await pool.query<LookRow>(
+          `SELECT id, look_id, look_name, motion_look_id, motion_status
+           FROM client_heygen_avatar_looks
+           WHERE client_avatar_id = $1 AND is_active = TRUE
+           ORDER BY
+             CASE
+               WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
+               ELSE 1
+             END ASC,
+             usage_count ASC,
+             COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
+             sort_order ASC,
+             created_at ASC
+           LIMIT 1`,
+          [preferredAvatar.id]
+        );
+        preferredLook = fallbackLookResult.rows[0] || null;
+      }
+
+      if (preferredLook) {
+        return { avatar: preferredAvatar, look: preferredLook, isReservedVariant: true };
+      }
+    }
   }
 
   const avatarResult = await pool.query<AvatarRow>(
@@ -214,7 +272,7 @@ async function selectAvatarVariant(clientId: number | null) {
     );
 
     if (lookResult.rows[0]) {
-      return { avatar, look: lookResult.rows[0] };
+      return { avatar, look: lookResult.rows[0], isReservedVariant: false };
     }
   }
 
@@ -403,7 +461,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { avatar, look } = await selectAvatarVariant(scenario.client_id);
+    const { avatar, look, isReservedVariant } = await selectAvatarVariant(
+      scenario.client_id,
+      scenario.heygen_avatar_id,
+      scenario.heygen_look_id
+    );
     const selectedTalkingPhoto = await resolveTalkingPhoto(look);
     const audioAssetId = await uploadAudioAsset(scenario.tts_audio_path);
     const resolvedLook = look && selectedTalkingPhoto
@@ -453,7 +515,9 @@ export async function POST(request: Request) {
       ]
     );
 
-    await markAvatarUsage(avatar.id, look?.id);
+    if (!isReservedVariant) {
+      await markAvatarUsage(avatar.id, look?.id);
+    }
 
     return NextResponse.json({
       status: "pending",

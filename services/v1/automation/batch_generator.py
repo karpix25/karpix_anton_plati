@@ -332,6 +332,30 @@ def get_reference_pool(niche="General", client_id=None, topic=None, angle=None):
         return get_references_by_angle(angle, client_id)
     return get_references_by_niche(niche, client_id)
 
+
+def _resolve_avatar_generation_context(
+    client_id: int | None,
+    default_tts_provider: str,
+    default_tts_voice_id: str | None,
+    default_elevenlabs_voice_id: str | None,
+) -> tuple[dict | None, str, str | None, str | None, str]:
+    active_avatar = choose_next_client_avatar_variant(client_id) if client_id else None
+    gender = active_avatar.get("gender", "female") if active_avatar else "female"
+    selected_tts_provider = default_tts_provider
+    selected_tts_voice_id = default_tts_voice_id
+    selected_elevenlabs_voice_id = default_elevenlabs_voice_id
+
+    if active_avatar:
+        avatar_tts_provider = active_avatar.get("tts_provider")
+        if avatar_tts_provider in {"minimax", "elevenlabs"}:
+            selected_tts_provider = avatar_tts_provider
+        if selected_tts_provider == "elevenlabs":
+            selected_elevenlabs_voice_id = active_avatar.get("elevenlabs_voice_id") or selected_elevenlabs_voice_id
+        else:
+            selected_tts_voice_id = active_avatar.get("tts_voice_id") or selected_tts_voice_id
+
+    return active_avatar, selected_tts_provider, selected_tts_voice_id, selected_elevenlabs_voice_id, gender
+
 def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angle=None, mode="rewrite", topic_id=None, structure_id=None, generation_source="manual"):
     """
     Main entry point for batch generation.
@@ -373,21 +397,6 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     # Get references
     ranked_references = get_reference_pool(niche=niche, client_id=client_id, topic=topic, angle=angle)
     
-    # Get active avatar gender for Russian grammar agreement
-    active_avatar = choose_next_client_avatar_variant(client_id)
-    gender = active_avatar.get("gender", "female") if active_avatar else "female"
-    selected_tts_provider = tts_provider
-    selected_tts_voice_id = tts_voice_id
-    selected_elevenlabs_voice_id = elevenlabs_voice_id
-    if active_avatar:
-        avatar_tts_provider = active_avatar.get("tts_provider")
-        if avatar_tts_provider in {"minimax", "elevenlabs"}:
-            selected_tts_provider = avatar_tts_provider
-        if selected_tts_provider == "elevenlabs":
-            selected_elevenlabs_voice_id = active_avatar.get("elevenlabs_voice_id") or selected_elevenlabs_voice_id
-        else:
-            selected_tts_voice_id = active_avatar.get("tts_voice_id") or selected_tts_voice_id
-    
     # In cluster mode, we use multiple references at once
     cluster_references = ranked_references if mode == "cluster" else []
     
@@ -404,6 +413,22 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
         ref = ranked_references[i % len(ranked_references)] if ranked_references else None
         if ref:
             logger.info(f"Generating scenario {i+1}/{count} using anchor reference: {ref['reels_url']}")
+
+        active_avatar, selected_tts_provider, selected_tts_voice_id, selected_elevenlabs_voice_id, gender = _resolve_avatar_generation_context(
+            client_id=client_id,
+            default_tts_provider=tts_provider,
+            default_tts_voice_id=tts_voice_id,
+            default_elevenlabs_voice_id=elevenlabs_voice_id,
+        )
+        if active_avatar:
+            logger.info(
+                "Reserved avatar for scenario %s/%s: avatar=%s look=%s gender=%s",
+                i + 1,
+                count,
+                active_avatar.get("avatar_name"),
+                (active_avatar.get("look") or {}).get("look_name") or "default",
+                gender,
+            )
 
         if mode == "mix":
             topic_card = None
