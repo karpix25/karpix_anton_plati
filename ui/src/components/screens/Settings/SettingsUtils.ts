@@ -74,6 +74,7 @@ export const normalizeSettings = (settings: Settings): Settings => {
   const silenceTrimMinSeconds = Number(settings.tts_silence_trim_min_duration_seconds);
   const silenceTrimThresholdDb = Number(settings.tts_silence_trim_threshold_db);
   const sentenceTrimMinGapSeconds = Number(settings.tts_sentence_trim_min_gap_seconds);
+  const sentenceTrimKeepGapSeconds = Number(settings.tts_sentence_trim_keep_gap_seconds);
 
   return {
     ...settings,
@@ -83,13 +84,17 @@ export const normalizeSettings = (settings: Settings): Settings => {
     subtitle_margin_percent:
       Number.isFinite(marginPercent) && marginPercent >= 0 ? marginPercent : fallbackMarginPercent,
     tts_silence_trim_min_duration_seconds:
-      Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds > 0 ? silenceTrimMinSeconds : 0.35,
+      Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds >= 0 ? silenceTrimMinSeconds : 0.35,
     tts_silence_trim_threshold_db:
       Number.isFinite(silenceTrimThresholdDb) ? silenceTrimThresholdDb : -45,
-    tts_silence_trim_enabled: false,
-    tts_sentence_trim_enabled: true,
+    tts_silence_trim_enabled:
+      typeof settings.tts_silence_trim_enabled === "boolean" ? settings.tts_silence_trim_enabled : true,
+    tts_sentence_trim_enabled:
+      typeof settings.tts_sentence_trim_enabled === "boolean" ? settings.tts_sentence_trim_enabled : false,
     tts_sentence_trim_min_gap_seconds:
       Number.isFinite(sentenceTrimMinGapSeconds) && sentenceTrimMinGapSeconds >= 0 ? sentenceTrimMinGapSeconds : 0.3,
+    tts_sentence_trim_keep_gap_seconds:
+      Number.isFinite(sentenceTrimKeepGapSeconds) && sentenceTrimKeepGapSeconds >= 0 ? sentenceTrimKeepGapSeconds : 0.1,
   };
 };
 

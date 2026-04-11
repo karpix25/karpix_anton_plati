@@ -5,6 +5,7 @@ import { BrandingSettings } from "./components/BrandingSettings";
 import { SubtitleSettings } from "./components/SubtitleSettings";
 import { AutomationSettings } from "./components/AutomationSettings";
 import { VideoLogicSettings } from "./components/VideoLogicSettings";
+import { SilenceHandlingSettings } from "./components/SilenceHandlingSettings";
 import { PromptEvolutionSettings } from "./components/PromptEvolutionSettings";
 import { HeygenSettings } from "./components/HeygenSettings";
 import { Button } from "@/components/ui/button";
@@ -192,6 +193,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                     <p className="text-sm text-slate-500 font-medium mt-1">Настройте частоту и приоритеты использования перебивок.</p>
                   </header>
                   <VideoLogicSettings 
+                    draftSettings={state.draftSettings}
+                    setDraftSettings={state.setDraftSettings}
+                  />
+                  <SilenceHandlingSettings
                     draftSettings={state.draftSettings}
                     setDraftSettings={state.setDraftSettings}
                   />

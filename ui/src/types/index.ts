@@ -28,6 +28,7 @@ export interface Client {
   tts_silence_trim_enabled?: boolean;
   tts_sentence_trim_enabled?: boolean;
   tts_sentence_trim_min_gap_seconds?: number;
+  tts_sentence_trim_keep_gap_seconds?: number;
   subtitles_enabled?: boolean;
   subtitle_mode?: "word_by_word" | "phrase_block";
   subtitle_style_preset?: "classic" | "impact" | "soft_box";
@@ -162,6 +163,7 @@ export interface Settings {
   tts_silence_trim_enabled: boolean;
   tts_sentence_trim_enabled: boolean;
   tts_sentence_trim_min_gap_seconds: number;
+  tts_sentence_trim_keep_gap_seconds: number;
   subtitles_enabled: boolean;
   subtitle_mode: SubtitleMode;
   subtitle_style_preset: SubtitleStylePreset;

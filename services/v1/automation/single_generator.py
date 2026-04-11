@@ -23,6 +23,7 @@ DEFAULT_SILENCE_TRIM_THRESHOLD_DB = float(os.getenv("TTS_SILENCE_TRIM_THRESHOLD_
 DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_GAP_SECONDS", "0.3"))
 DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.1"))
 SENTENCE_END_RE = re.compile(r'[.!?…]+["»”)]*$')
+SOFT_BOUNDARY_RE = re.compile(r'[,;:—-]+["»”)]*$')
 
 
 def _probe_audio_duration_seconds(file_path):
@@ -113,7 +114,7 @@ def _is_sentence_end(punctuated_word: str | None) -> bool:
         return False
     return bool(SENTENCE_END_RE.search(str(punctuated_word).strip()))
 
-def _build_sentence_removal_intervals(
+def _build_timing_safe_removal_intervals(
     words: list[dict],
     min_gap_seconds: float,
     keep_gap_seconds: float,
@@ -128,23 +129,44 @@ def _build_sentence_removal_intervals(
     for idx in range(len(words) - 1):
         current = words[idx]
         nxt = words[idx + 1]
-        if not _is_sentence_end(current.get("punctuated_word") or current.get("word")):
-            continue
         try:
+            start_time = float(current.get("start", 0))
             end_time = float(current.get("end", 0))
             next_start = float(nxt.get("start", 0))
+            next_end = float(nxt.get("end", 0))
         except (TypeError, ValueError):
             continue
         gap = next_start - end_time
         if gap < resolved_min_gap:
             continue
-        if gap <= resolved_keep_gap + 0.02:
+
+        boundary_word = (current.get("punctuated_word") or current.get("word") or "").strip()
+        is_sentence_end = _is_sentence_end(boundary_word)
+        is_soft_boundary = bool(SOFT_BOUNDARY_RE.search(boundary_word))
+
+        if is_sentence_end:
+            target_keep_gap = resolved_keep_gap
+        elif is_soft_boundary:
+            target_keep_gap = min(0.5, max(resolved_keep_gap + 0.05, resolved_keep_gap * 1.45))
+        else:
+            target_keep_gap = min(0.5, max(resolved_keep_gap + 0.1, resolved_keep_gap * 1.9))
+
+        previous_word_duration = max(0.04, min(0.6, end_time - start_time))
+        next_word_duration = max(0.04, min(0.6, next_end - next_start))
+        tail_guard = min(0.07, max(0.02, previous_word_duration * 0.12))
+        head_guard = min(0.07, max(0.02, next_word_duration * 0.12))
+        available_gap = gap - tail_guard - head_guard
+
+        if available_gap <= target_keep_gap + 0.03:
             continue
-        keep_tail = min(resolved_keep_gap * 0.5, gap)
-        keep_head = max(0.0, resolved_keep_gap - keep_tail)
+
+        extra_keep_gap = min(target_keep_gap, max(0.0, available_gap - 0.02))
+        tail_keep_ratio = 0.45 if is_sentence_end else 0.5
+        keep_tail = tail_guard + (extra_keep_gap * tail_keep_ratio)
+        keep_head = head_guard + (extra_keep_gap - (extra_keep_gap * tail_keep_ratio))
         remove_start = end_time + keep_tail
         remove_end = next_start - keep_head
-        if remove_end - remove_start >= 0.04:
+        if remove_end - remove_start >= 0.03:
             intervals.append((remove_start, remove_end))
     return intervals
 
@@ -169,7 +191,7 @@ def _trim_sentence_gaps(
     except (TypeError, ValueError):
         resolved_keep_gap = DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS
 
-    removal_intervals = _build_sentence_removal_intervals(words, resolved_min_gap, resolved_keep_gap)
+    removal_intervals = _build_timing_safe_removal_intervals(words, resolved_min_gap, resolved_keep_gap)
     if not removal_intervals:
         return file_path, words
 
@@ -327,6 +349,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         tts_silence_trim_enabled = None
         tts_sentence_trim_enabled = None
         tts_sentence_trim_min_gap_seconds = None
+        tts_sentence_trim_keep_gap_seconds = None
         learned_rules_scenario = None
         learned_rules_visual = None
         learned_rules_video = None
@@ -359,6 +382,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 tts_silence_trim_enabled = client_data.get("tts_silence_trim_enabled")
                 tts_sentence_trim_enabled = client_data.get("tts_sentence_trim_enabled")
                 tts_sentence_trim_min_gap_seconds = client_data.get("tts_sentence_trim_min_gap_seconds")
+                tts_sentence_trim_keep_gap_seconds = client_data.get("tts_sentence_trim_keep_gap_seconds")
                 learned_rules_scenario = client_data.get("learned_rules_scenario")
                 learned_rules_visual = client_data.get("learned_rules_visual")
                 learned_rules_video = client_data.get("learned_rules_video")
@@ -478,7 +502,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                         tts_audio_path,
                         deepgram_result.get("words", []),
                         tts_sentence_trim_min_gap_seconds,
-                        DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS,
+                        tts_sentence_trim_keep_gap_seconds,
                         True,
                     )
                     tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)

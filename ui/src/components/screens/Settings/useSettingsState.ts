@@ -539,11 +539,7 @@ export const useSettingsState = ({
   };
 
   const handleSaveSettings = () => {
-    onSave({
-      ...draftSettings,
-      tts_silence_trim_enabled: false,
-      tts_sentence_trim_enabled: true,
-    });
+    onSave(draftSettings);
   };
 
   return {

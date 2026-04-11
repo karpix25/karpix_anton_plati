@@ -153,6 +153,7 @@ export default function CuratorDashboard() {
       tts_silence_trim_enabled: selectedClient?.tts_silence_trim_enabled ?? true,
       tts_sentence_trim_enabled: selectedClient?.tts_sentence_trim_enabled ?? false,
       tts_sentence_trim_min_gap_seconds: Number(selectedClient?.tts_sentence_trim_min_gap_seconds ?? 0.3),
+      tts_sentence_trim_keep_gap_seconds: Number(selectedClient?.tts_sentence_trim_keep_gap_seconds ?? 0.1),
       subtitles_enabled: selectedClient?.subtitles_enabled || false,
       subtitle_mode: selectedClient?.subtitle_mode || "word_by_word",
       subtitle_style_preset: selectedClient?.subtitle_style_preset || "classic",
