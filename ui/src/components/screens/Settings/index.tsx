@@ -32,6 +32,7 @@ interface SettingsScreenProps {
   onSave: (settings: Settings) => void;
   onSaveHeygenAvatars: (avatars: HeygenAvatarConfig[]) => void;
   onDeleteProject: () => void;
+  canDeleteProject: boolean;
   onRefreshHeygenCatalog?: () => Promise<HeygenAvatarConfig[]>;
   onRefreshWorkspace?: () => void;
   isSaving: boolean;
@@ -68,17 +69,21 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
           </div>
           
           <div className="flex items-center gap-3">
-             <Button
-                variant="ghost"
-                className="h-11 rounded-xl px-4 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
-                onClick={state.handleDeleteProject}
-                disabled={props.isDeletingProject}
-              >
-                {props.isDeletingProject ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                Удалить проект
-              </Button>
+             {props.canDeleteProject ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    className="h-11 rounded-xl px-4 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
+                    onClick={state.handleDeleteProject}
+                    disabled={props.isDeletingProject}
+                  >
+                    {props.isDeletingProject ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                    Удалить проект
+                  </Button>
 
-              <div className="h-8 w-px bg-[#e5ebf0] mx-2" />
+                  <div className="mx-2 h-8 w-px bg-[#e5ebf0]" />
+                </>
+              ) : null}
 
               <Button
                 className="primary-gradient h-11 rounded-xl px-8 text-xs font-black uppercase tracking-widest text-white shadow-lg transition-all hover:shadow-xl hover:translate-y-[-1px] active:translate-y-[0px]"

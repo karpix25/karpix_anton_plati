@@ -1,4 +1,4 @@
-import { X, ExternalLink, FolderOpen, Palette, Grid3X3, Sparkles, LoaderCircle } from "lucide-react";
+import { X, ExternalLink, FolderOpen, Palette, Grid3X3, Sparkles, LoaderCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Reference, Client } from "@/types";
@@ -31,7 +31,10 @@ interface ReferenceModalProps {
   reference: Reference | null;
   selectedClient?: Client;
   onRewrite: (id: number) => void;
+  onDelete?: (id: number) => void;
+  canDelete?: boolean;
   isRewriting: boolean;
+  isDeleting?: boolean;
 }
 
 export function ReferenceModal({
@@ -40,7 +43,10 @@ export function ReferenceModal({
   reference,
   selectedClient,
   onRewrite,
-  isRewriting
+  onDelete,
+  canDelete = false,
+  isRewriting,
+  isDeleting = false,
 }: ReferenceModalProps) {
   if (!isOpen || !reference) return null;
   const coreThesis =
@@ -92,6 +98,21 @@ export function ReferenceModal({
           </div>
 
           <div className="flex items-center gap-2">
+            {canDelete ? (
+              <Button
+                variant="outline"
+                className="rounded-xl border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                onClick={() => onDelete?.(reference.id)}
+                disabled={isDeleting}
+              >
+                {isDeleting ? (
+                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Удалить
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               className="rounded-xl border-border bg-white"

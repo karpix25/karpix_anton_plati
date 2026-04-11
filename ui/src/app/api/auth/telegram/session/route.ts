@@ -1,23 +1,18 @@
 import { NextResponse } from "next/server";
-import { getTelegramSessionUser, TELEGRAM_SESSION_COOKIE } from "@/lib/server/telegram-auth";
+import {
+  extractTelegramSessionToken,
+  getTelegramSessionUser,
+  TELEGRAM_SESSION_COOKIE,
+} from "@/lib/server/telegram-auth";
 
 export async function GET(request: Request) {
   try {
-    const cookieHeader = request.headers.get("cookie") || "";
-    const sessionToken = cookieHeader
-      .split(";")
-      .map((chunk) => chunk.trim())
-      .find((chunk) => chunk.startsWith(`${TELEGRAM_SESSION_COOKIE}=`))
-      ?.split("=")
-      .slice(1)
-      .join("=")
-      .trim();
-
+    const sessionToken = extractTelegramSessionToken(request);
     if (!sessionToken) {
       return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
 
-    const user = await getTelegramSessionUser(decodeURIComponent(sessionToken));
+    const user = await getTelegramSessionUser(sessionToken);
     if (!user) {
       const response = NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
       response.cookies.set({

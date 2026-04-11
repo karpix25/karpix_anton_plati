@@ -6,6 +6,7 @@ interface SettingsScreenProps {
   settings: Settings;
   onSave: (settings: Settings) => void;
   onDeleteProject: () => void;
+  canDeleteProject: boolean;
   isSaving: boolean;
   isDeletingProject: boolean;
   selectedClientId: string;
@@ -27,6 +28,7 @@ export function SettingsScreen({
   settings,
   onSave,
   onDeleteProject,
+  canDeleteProject,
   isSaving,
   isDeletingProject,
   selectedClientId,
@@ -50,6 +52,7 @@ export function SettingsScreen({
       onSave={onSave}
       onSaveHeygenAvatars={onSaveHeygenAvatars}
       onDeleteProject={onDeleteProject}
+      canDeleteProject={canDeleteProject}
       onRefreshHeygenCatalog={onRefreshHeygenCatalog}
       onRefreshWorkspace={onRefreshWorkspace}
       isSaving={isSaving}

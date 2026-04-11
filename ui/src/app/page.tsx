@@ -22,6 +22,7 @@ type TelegramSessionUser = {
   firstName: string | null;
   lastName: string | null;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   expiresAt: string;
 };
 
@@ -105,6 +106,7 @@ export default function CuratorDashboard() {
     refreshWorkspace,
     saveSettingsMutation,
     deleteClientMutation,
+    deleteReferenceMutation,
     saveHeygenAvatarsMutation,
     batchMixMutation,
     singleRewriteMutation,
@@ -364,6 +366,25 @@ export default function CuratorDashboard() {
     });
   };
 
+  const handleDeleteReference = (referenceId: number) => {
+    const targetReference = references.find((ref) => ref.id === referenceId);
+    if (!targetReference) return;
+
+    const confirmed = window.confirm(
+      "Удалить этот референс? Связанные темы, паттерны и сценарии останутся, но потеряют ссылку на исходный материал."
+    );
+    if (!confirmed) return;
+
+    deleteReferenceMutation.mutate(referenceId, {
+      onSuccess: () => {
+        if (selectedReferenceId === referenceId) {
+          setIsReferenceModalOpen(false);
+          setSelectedReferenceId(null);
+        }
+      },
+    });
+  };
+
   const handleReferenceClick = (ref: Reference) => {
     setSelectedReferenceId(ref.id);
     setIsReferenceModalOpen(true);
@@ -456,6 +477,7 @@ export default function CuratorDashboard() {
               settings={clientSettings}
               onSave={handleSaveSettings}
               onDeleteProject={handleDeleteProject}
+              canDeleteProject={Boolean(authUser?.isSuperAdmin)}
               isSaving={saveSettingsMutation.isPending}
               isDeletingProject={deleteClientMutation.isPending}
               selectedClientId={activeClientId}
@@ -480,7 +502,10 @@ export default function CuratorDashboard() {
           reference={selectedReference}
           selectedClient={selectedClient}
           onRewrite={handleSingleRewrite}
+          onDelete={handleDeleteReference}
+          canDelete={Boolean(authUser?.isSuperAdmin)}
           isRewriting={singleRewriteMutation.isPending}
+          isDeleting={deleteReferenceMutation.isPending}
         />
       </div>
     </main>

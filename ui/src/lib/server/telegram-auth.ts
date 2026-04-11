@@ -33,8 +33,23 @@ export type TelegramSessionUser = {
   firstName: string | null;
   lastName: string | null;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   expiresAt: string;
 };
+
+function parseTelegramIds(rawValue: string) {
+  return rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => Number.parseInt(value, 10))
+    .filter((value) => Number.isFinite(value) && value > 0);
+}
+
+const SUPER_ADMIN_TELEGRAM_IDS = new Set<number>([
+  ...parseTelegramIds(String(process.env.TELEGRAM_SUPER_ADMIN_IDS || "")),
+  ...parseTelegramIds(String(process.env.TELEGRAM_SUPER_ADMIN_ID || "")),
+]);
 
 function randomId(length: number) {
   const bytes = crypto.randomBytes(length);
@@ -80,6 +95,24 @@ export function buildTelegramBotUrl(payload: string) {
     throw new Error("TELEGRAM_BOT_USERNAME is not configured");
   }
   return `https://t.me/${botUsername}?start=${payload}`;
+}
+
+export function extractTelegramSessionToken(request: Request) {
+  const cookieHeader = request.headers.get("cookie") || "";
+  const sessionToken = cookieHeader
+    .split(";")
+    .map((chunk) => chunk.trim())
+    .find((chunk) => chunk.startsWith(`${TELEGRAM_SESSION_COOKIE}=`))
+    ?.split("=")
+    .slice(1)
+    .join("=")
+    .trim();
+
+  return sessionToken ? decodeURIComponent(sessionToken) : null;
+}
+
+export function isTelegramSuperAdmin(telegramUserId: number) {
+  return SUPER_ADMIN_TELEGRAM_IDS.has(Number(telegramUserId));
 }
 
 export async function ensureTelegramAuthTables() {
@@ -299,8 +332,17 @@ export async function getTelegramSessionUser(rawToken: string): Promise<Telegram
     firstName: row.first_name,
     lastName: row.last_name,
     isAdmin: Boolean(row.is_admin),
+    isSuperAdmin: isTelegramSuperAdmin(Number(row.telegram_user_id)),
     expiresAt: expiresAt.toISOString(),
   };
+}
+
+export async function getTelegramSessionUserFromRequest(request: Request) {
+  const sessionToken = extractTelegramSessionToken(request);
+  if (!sessionToken) {
+    return null;
+  }
+  return getTelegramSessionUser(sessionToken);
 }
 
 export async function revokeTelegramSession(rawToken: string) {

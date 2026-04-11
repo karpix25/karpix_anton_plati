@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
+import { getTelegramSessionUserFromRequest } from '@/lib/server/telegram-auth';
 
 function normalizeProductMediaAssets(value: unknown) {
   const normalizeAsset = (asset: unknown) => {
@@ -417,6 +418,14 @@ export async function PUT(request: Request) {
 export async function DELETE(request: Request) {
   try {
     await ensureClientVoiceColumn();
+    const user = await getTelegramSessionUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!user.isSuperAdmin) {
+      return NextResponse.json({ error: "Only super admin can delete projects" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const rawId = searchParams.get("id");
     const clientId = Number(rawId);

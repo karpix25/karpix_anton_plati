@@ -169,6 +169,15 @@ export function useWorkspaceData(selectedClientId: string) {
     },
   });
 
+  const deleteReferenceMutation = useMutation({
+    mutationFn: async (referenceId: number) => {
+      await axios.delete(`${API_BASE}/references?id=${referenceId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["references", selectedClientId] });
+    },
+  });
+
   const saveHeygenAvatarsMutation = useMutation({
     mutationFn: async (avatars: HeygenAvatarConfig[]) => {
       await axios.put(`${API_BASE}/heygen/avatars`, {
@@ -241,6 +250,7 @@ export function useWorkspaceData(selectedClientId: string) {
     },
     saveSettingsMutation,
     deleteClientMutation,
+    deleteReferenceMutation,
     saveHeygenAvatarsMutation,
     batchRewriteMutation,
     batchMixMutation,

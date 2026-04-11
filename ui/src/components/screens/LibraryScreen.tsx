@@ -54,7 +54,7 @@ export function LibraryScreen({
         <div>
           <h2 className="text-4xl font-extrabold tracking-tight text-foreground">Библиотека (Темы и паттерны)</h2>
           <p className="max-w-lg text-muted-foreground">
-            Управляй загруженными из Telegram референсами, анализируй их темы и паттерны, открывай в детальном режиме и переписывай в новые сценарии.
+            Управляй загруженными из Telegram референсами, анализируй их темы и паттерны, открывай в детальном режиме, переписывай в новые сценарии и при необходимости удаляй.
           </p>
         </div>
         <Button
