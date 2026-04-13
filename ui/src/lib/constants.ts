@@ -35,6 +35,7 @@ export const defaultSettings: ClientSettings = {
   tts_sentence_trim_enabled: false,
   tts_sentence_trim_min_gap_seconds: 0.3,
   tts_sentence_trim_keep_gap_seconds: 0.1,
+  tts_pronunciation_overrides: [],
   subtitles_enabled: false,
   subtitle_mode: "word_by_word",
   subtitle_style_preset: "classic",

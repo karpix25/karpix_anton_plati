@@ -6,6 +6,7 @@ import { SubtitleSettings } from "./components/SubtitleSettings";
 import { AutomationSettings } from "./components/AutomationSettings";
 import { VideoLogicSettings } from "./components/VideoLogicSettings";
 import { SilenceHandlingSettings } from "./components/SilenceHandlingSettings";
+import { PronunciationSettings } from "./components/PronunciationSettings";
 import { PromptEvolutionSettings } from "./components/PromptEvolutionSettings";
 import { HeygenSettings } from "./components/HeygenSettings";
 import { Button } from "@/components/ui/button";
@@ -202,6 +203,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                     setDraftSettings={state.setDraftSettings}
                   />
                   <SilenceHandlingSettings
+                    draftSettings={state.draftSettings}
+                    setDraftSettings={state.setDraftSettings}
+                  />
+                  <PronunciationSettings
                     draftSettings={state.draftSettings}
                     setDraftSettings={state.setDraftSettings}
                   />

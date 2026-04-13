@@ -21,6 +21,13 @@ type PronunciationRule = {
   aliases?: string[];
 };
 
+type ElevenLabsReplacementRule = {
+  search: string;
+  replace: string;
+  case_sensitive?: boolean;
+  word_boundaries?: boolean;
+};
+
 type DeepgramWord = {
   word?: string;
   punctuated_word?: string;
@@ -68,6 +75,8 @@ const PRONUNCIATION_RULES: PronunciationRule[] = [
   { source: 'jet lag', target: 'джетлаг', aliases: ['Jet Lag', 'jetlag'] },
   { source: 'all inclusive', target: 'ол инклюзив', aliases: ['All Inclusive', 'all-inclusive'] },
 ];
+
+const WORD_BOUNDARY_CLASS = "A-Za-zА-Яа-яЁё0-9_";
 
 const RU_UNITS_MASC = ['', 'odin', 'dva', 'tri', 'chetyre', 'pyat', 'shest', 'sem', 'vosem', 'devyat'];
 const RU_UNITS_FEM = ['', 'odna', 'dve', 'tri', 'chetyre', 'pyat', 'shest', 'sem', 'vosem', 'devyat'];
@@ -215,6 +224,34 @@ function spellOutNumbersRu(text: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeElevenLabsOverrides(value: unknown): ElevenLabsReplacementRule[] {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return normalizeElevenLabsOverrides(parsed);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const search = String((item as Record<string, unknown>).search || "").trim();
+      const replace = String((item as Record<string, unknown>).replace || "").trim();
+      if (!search || !replace) return null;
+      return {
+        search,
+        replace,
+        case_sensitive: Boolean((item as Record<string, unknown>).case_sensitive),
+        word_boundaries: Boolean((item as Record<string, unknown>).word_boundaries),
+      } as ElevenLabsReplacementRule;
+    })
+    .filter((item): item is ElevenLabsReplacementRule => Boolean(item));
 }
 
 function buildPronunciationTone(text: string) {
@@ -372,6 +409,26 @@ function prepareElevenLabsText(text: string) {
     .trim();
 }
 
+function applyElevenLabsReplacements(text: string, rules: ElevenLabsReplacementRule[]) {
+  let resolved = text;
+
+  for (const rule of rules) {
+    const escapedSearch = escapeRegExp(rule.search);
+    const flags = `g${rule.case_sensitive ? "" : "i"}`;
+
+    if (rule.word_boundaries) {
+      const pattern = new RegExp(`(^|[^${WORD_BOUNDARY_CLASS}])(${escapedSearch})(?=$|[^${WORD_BOUNDARY_CLASS}])`, flags);
+      resolved = resolved.replace(pattern, (_match, prefix: string) => `${prefix}${rule.replace}`);
+      continue;
+    }
+
+    const pattern = new RegExp(escapedSearch, flags);
+    resolved = resolved.replace(pattern, rule.replace);
+  }
+
+  return resolved;
+}
+
 function runCommandCapture(command: string, args: string[]) {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(command, args, {
@@ -468,6 +525,7 @@ export async function POST(request: Request) {
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
     await pool.query('ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
+    await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_pronunciation_overrides JSONB DEFAULT '[]'::jsonb");
     await pool.query("ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
     await pool.query('ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
     await pool.query("ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
@@ -485,14 +543,21 @@ export async function POST(request: Request) {
     const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
     let selectedProvider = DEFAULT_TTS_PROVIDER;
     let selectedVoiceId = DEFAULT_MINIMAX_VOICE_ID;
+    let selectedPronunciationOverrides: ElevenLabsReplacementRule[] = [];
 
     const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
     if (Number.isFinite(resolvedScenarioId)) {
-      const { rows } = await pool.query<{ tts_provider: string | null; tts_voice_id: string | null; elevenlabs_voice_id: string | null }>(
+      const { rows } = await pool.query<{
+        tts_provider: string | null;
+        tts_voice_id: string | null;
+        elevenlabs_voice_id: string | null;
+        tts_pronunciation_overrides: unknown;
+      }>(
         `SELECT
            COALESCE(a.tts_provider, c.tts_provider) AS tts_provider,
            COALESCE(a.tts_voice_id, c.tts_voice_id) AS tts_voice_id,
-           COALESCE(a.elevenlabs_voice_id, c.elevenlabs_voice_id) AS elevenlabs_voice_id
+           COALESCE(a.elevenlabs_voice_id, c.elevenlabs_voice_id) AS elevenlabs_voice_id,
+           c.tts_pronunciation_overrides AS tts_pronunciation_overrides
          FROM generated_scenarios gs
          LEFT JOIN clients c ON c.id = gs.client_id
          LEFT JOIN client_heygen_avatars a
@@ -506,15 +571,19 @@ export async function POST(request: Request) {
         selectedProvider === "elevenlabs"
           ? rows[0]?.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID
           : rows[0]?.tts_voice_id || DEFAULT_MINIMAX_VOICE_ID;
+      selectedPronunciationOverrides = normalizeElevenLabsOverrides(rows[0]?.tts_pronunciation_overrides);
     }
 
     const normalizedText = selectedProvider === "elevenlabs" ? prepareElevenLabsText(rawText) : prepareMiniMaxText(rawText);
+    let requestText = normalizedText;
     let audioBuffer: Buffer | null = null;
 
     if (selectedProvider === "elevenlabs") {
       if (!ELEVENLABS_API_KEY || ELEVENLABS_API_KEY.includes('your_')) {
         return NextResponse.json({ error: 'ELEVENLABS_API_KEY is not configured in .env.local' }, { status: 500 });
       }
+
+      requestText = applyElevenLabsReplacements(normalizedText, selectedPronunciationOverrides);
 
       const response = await fetch(
         `https://api.elevenlabs.io/v1/text-to-speech/${selectedVoiceId || DEFAULT_ELEVENLABS_VOICE_ID}?output_format=${ELEVENLABS_OUTPUT_FORMAT}`,
@@ -526,7 +595,7 @@ export async function POST(request: Request) {
             "Accept": "audio/mpeg",
           },
           body: JSON.stringify({
-            text: normalizedText,
+            text: requestText,
             model_id: ELEVENLABS_TTS_MODEL,
           }),
         }
@@ -597,6 +666,7 @@ export async function POST(request: Request) {
       }
 
       audioBuffer = decodeAudioPayload(result.data.audio);
+      requestText = normalizedText;
     }
 
     if (audioBuffer) {
@@ -630,7 +700,7 @@ export async function POST(request: Request) {
                tts_audio_duration_seconds = $3,
                tts_word_timestamps = $4::jsonb
            WHERE id = $5`,
-          [filePath, normalizedText, audioDurationSeconds || null, timestampPayloadJson, resolvedScenarioId]
+          [filePath, requestText, audioDurationSeconds || null, timestampPayloadJson, resolvedScenarioId]
         );
       }
 

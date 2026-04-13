@@ -78,6 +78,7 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
     tts_provider = "minimax"
     tts_voice_id = None
     elevenlabs_voice_id = None
+    tts_pronunciation_overrides = None
     learned_rules_scenario = None
     learned_rules_visual = None
     learned_rules_video = None
@@ -94,6 +95,7 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
             tts_provider = client_data.get("tts_provider") or "minimax"
             tts_voice_id = client_data.get("tts_voice_id")
             elevenlabs_voice_id = client_data.get("elevenlabs_voice_id")
+            tts_pronunciation_overrides = client_data.get("tts_pronunciation_overrides")
             learned_rules_scenario = client_data.get("learned_rules_scenario")
             learned_rules_visual = client_data.get("learned_rules_visual")
             learned_rules_video = client_data.get("learned_rules_video")
@@ -244,6 +246,7 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
                 text_to_speech_elevenlabs,
                 script_text,
                 selected_elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID,
+                tts_pronunciation_overrides,
             )
         else:
             tts_future = executor.submit(text_to_speech_minimax, script_text, selected_tts_voice_id or None)

@@ -12,7 +12,7 @@ import { SettingsScreen } from "@/components/screens/SettingsScreen";
 import { GraphScreen } from "@/components/screens/GraphScreen";
 
 import { ReferenceModal } from "@/components/ReferenceModal";
-import { Screen, Reference, TopicCard, StructureCard, Settings, ProductMediaAsset } from "@/types";
+import { Screen, Reference, TopicCard, StructureCard, Settings, ProductMediaAsset, TtsPronunciationOverride } from "@/types";
 import { navItems } from "@/lib/constants";
 
 type AuthState = "loading" | "authenticated" | "unauthenticated";
@@ -65,6 +65,43 @@ const normalizeProductMediaAssets = (value: unknown) => {
     try {
       const parsed = JSON.parse(value);
       return normalizeProductMediaAssets(parsed);
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
+const normalizeTtsPronunciationOverrides = (value: unknown): TtsPronunciationOverride[] => {
+  const normalizeItem = (item: unknown): TtsPronunciationOverride | null => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return null;
+    }
+
+    const rule = item as Record<string, unknown>;
+    const search = typeof rule.search === "string" ? rule.search.trim() : "";
+    const replace = typeof rule.replace === "string" ? rule.replace.trim() : "";
+    if (!search || !replace) {
+      return null;
+    }
+
+    return {
+      search,
+      replace,
+      case_sensitive: Boolean(rule.case_sensitive),
+      word_boundaries: typeof rule.word_boundaries === "boolean" ? rule.word_boundaries : true,
+    };
+  };
+
+  if (Array.isArray(value)) {
+    return value.map(normalizeItem).filter((item): item is TtsPronunciationOverride => Boolean(item));
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return normalizeTtsPronunciationOverrides(parsed);
     } catch {
       return [];
     }
@@ -156,6 +193,7 @@ export default function CuratorDashboard() {
       tts_sentence_trim_enabled: selectedClient?.tts_sentence_trim_enabled ?? false,
       tts_sentence_trim_min_gap_seconds: Number(selectedClient?.tts_sentence_trim_min_gap_seconds ?? 0.3),
       tts_sentence_trim_keep_gap_seconds: Number(selectedClient?.tts_sentence_trim_keep_gap_seconds ?? 0.1),
+      tts_pronunciation_overrides: normalizeTtsPronunciationOverrides(selectedClient?.tts_pronunciation_overrides),
       subtitles_enabled: selectedClient?.subtitles_enabled || false,
       subtitle_mode: selectedClient?.subtitle_mode || "word_by_word",
       subtitle_style_preset: selectedClient?.subtitle_style_preset || "classic",

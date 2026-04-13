@@ -344,6 +344,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         tts_provider = "minimax"
         tts_voice_id = None
         elevenlabs_voice_id = None
+        tts_pronunciation_overrides = None
         tts_silence_trim_min_duration_seconds = None
         tts_silence_trim_threshold_db = None
         tts_silence_trim_enabled = None
@@ -377,6 +378,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 tts_provider = client_data.get("tts_provider") or "minimax"
                 tts_voice_id = client_data.get("tts_voice_id")
                 elevenlabs_voice_id = client_data.get("elevenlabs_voice_id")
+                tts_pronunciation_overrides = client_data.get("tts_pronunciation_overrides")
                 tts_silence_trim_min_duration_seconds = client_data.get("tts_silence_trim_min_duration_seconds")
                 tts_silence_trim_threshold_db = client_data.get("tts_silence_trim_threshold_db")
                 tts_silence_trim_enabled = client_data.get("tts_silence_trim_enabled")
@@ -476,10 +478,14 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         if tts_script:
             try:
                 if selected_tts_provider == "elevenlabs":
-                    tts_request_text = prepare_text_for_elevenlabs_tts(tts_script)
+                    tts_request_text = prepare_text_for_elevenlabs_tts(
+                        tts_script,
+                        pronunciation_overrides=tts_pronunciation_overrides,
+                    )
                     tts_audio_path = text_to_speech_elevenlabs(
                         tts_script,
                         voice_id=selected_elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID,
+                        pronunciation_overrides=tts_pronunciation_overrides,
                     )
                 else:
                     tts_request_text = prepare_text_for_minimax_tts(tts_script)

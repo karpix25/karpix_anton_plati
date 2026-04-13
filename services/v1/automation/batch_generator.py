@@ -385,6 +385,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     tts_provider = client.get("tts_provider") or "minimax"
     tts_voice_id = client.get("tts_voice_id")
     elevenlabs_voice_id = client.get("elevenlabs_voice_id")
+    tts_pronunciation_overrides = client.get("tts_pronunciation_overrides")
     tts_silence_trim_min_duration_seconds = client.get("tts_silence_trim_min_duration_seconds")
     tts_silence_trim_threshold_db = client.get("tts_silence_trim_threshold_db")
     tts_silence_trim_enabled = client.get("tts_silence_trim_enabled")
@@ -578,10 +579,14 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
         if tts_script:
             try:
                 if selected_tts_provider == "elevenlabs":
-                    tts_request_text = prepare_text_for_elevenlabs_tts(tts_script)
+                    tts_request_text = prepare_text_for_elevenlabs_tts(
+                        tts_script,
+                        pronunciation_overrides=tts_pronunciation_overrides,
+                    )
                     tts_audio_path = text_to_speech_elevenlabs(
                         tts_script,
                         voice_id=selected_elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID,
+                        pronunciation_overrides=tts_pronunciation_overrides,
                     )
                 else:
                     tts_request_text = prepare_text_for_minimax_tts(tts_script)

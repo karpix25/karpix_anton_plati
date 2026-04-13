@@ -29,6 +29,7 @@ export interface Client {
   tts_sentence_trim_enabled?: boolean;
   tts_sentence_trim_min_gap_seconds?: number;
   tts_sentence_trim_keep_gap_seconds?: number;
+  tts_pronunciation_overrides?: TtsPronunciationOverride[];
   subtitles_enabled?: boolean;
   subtitle_mode?: "word_by_word" | "phrase_block";
   subtitle_style_preset?: "classic" | "impact" | "soft_box";
@@ -54,6 +55,13 @@ export type SubtitleMode = "word_by_word" | "phrase_block";
 export type SubtitleStylePreset = "classic" | "impact" | "soft_box";
 export type SubtitleFontFamily = "pt_sans" | "rubik" | "montserrat" | "oswald" | "noto_sans";
 export type BackgroundAudioTag = "disturbing" | "inspiring" | "neutral" | "relax";
+
+export interface TtsPronunciationOverride {
+  search: string;
+  replace: string;
+  case_sensitive?: boolean;
+  word_boundaries?: boolean;
+}
 
 export interface PatternFramework {
   pattern_type?: string;
@@ -164,6 +172,7 @@ export interface Settings {
   tts_sentence_trim_enabled: boolean;
   tts_sentence_trim_min_gap_seconds: number;
   tts_sentence_trim_keep_gap_seconds: number;
+  tts_pronunciation_overrides: TtsPronunciationOverride[];
   subtitles_enabled: boolean;
   subtitle_mode: SubtitleMode;
   subtitle_style_preset: SubtitleStylePreset;

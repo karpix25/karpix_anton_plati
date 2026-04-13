@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import uuid
+import json
 
 import requests
 from dotenv import load_dotenv
@@ -50,8 +51,60 @@ EDITOR_CUE_TO_ELEVEN_TAGS = {
     "dramatic": "[dramatic]",
 }
 
+WORD_BOUNDARY_RE_CLASS = r"A-Za-zА-Яа-яЁё0-9_"
 
-def prepare_text_for_elevenlabs_tts(text):
+
+def normalize_elevenlabs_pronunciation_overrides(raw_overrides) -> list[dict]:
+    if isinstance(raw_overrides, str):
+        try:
+            parsed = json.loads(raw_overrides)
+            return normalize_elevenlabs_pronunciation_overrides(parsed)
+        except Exception:
+            return []
+
+    if not isinstance(raw_overrides, list):
+        return []
+
+    normalized: list[dict] = []
+    for rule in raw_overrides:
+        if not isinstance(rule, dict):
+            continue
+        search = str(rule.get("search") or "").strip()
+        replace = str(rule.get("replace") or "").strip()
+        if not search or not replace:
+            continue
+        normalized.append(
+            {
+                "search": search,
+                "replace": replace,
+                "case_sensitive": bool(rule.get("case_sensitive")),
+                "word_boundaries": bool(rule.get("word_boundaries", True)),
+            }
+        )
+    return normalized
+
+
+def apply_elevenlabs_replacements(text: str, rules: list[dict]) -> str:
+    resolved = text
+    for rule in rules:
+        search = rule.get("search")
+        replace = rule.get("replace")
+        if not search or not replace:
+            continue
+
+        escaped_search = re.escape(search)
+        flags = 0 if rule.get("case_sensitive") else re.IGNORECASE
+
+        if rule.get("word_boundaries"):
+            pattern = re.compile(rf"(^|[^{WORD_BOUNDARY_RE_CLASS}])({escaped_search})(?=$|[^{WORD_BOUNDARY_RE_CLASS}])", flags)
+            resolved = pattern.sub(lambda match: f"{match.group(1)}{replace}", resolved)
+        else:
+            pattern = re.compile(escaped_search, flags)
+            resolved = pattern.sub(lambda _match: str(replace), resolved)
+    return resolved
+
+
+def prepare_text_for_elevenlabs_tts(text, pronunciation_overrides=None):
     prepared = text or ""
 
     def replace_editor_cue(match):
@@ -64,17 +117,19 @@ def prepare_text_for_elevenlabs_tts(text):
         prepared = re.sub(re.escape(minimax_tag), eleven_tag, prepared, flags=re.IGNORECASE)
 
     prepared = MINIMAX_TAG_RE.sub("", prepared)
+    replacement_rules = normalize_elevenlabs_pronunciation_overrides(pronunciation_overrides)
+    prepared = apply_elevenlabs_replacements(prepared, replacement_rules)
     prepared = re.sub(r"\s+([,.;:!?])", r"\1", prepared)
     prepared = re.sub(r"\s+", " ", prepared).strip()
     return prepared
 
 
-def text_to_speech_elevenlabs(text, voice_id=DEFAULT_ELEVENLABS_VOICE_ID):
+def text_to_speech_elevenlabs(text, voice_id=DEFAULT_ELEVENLABS_VOICE_ID, pronunciation_overrides=None):
     api_key = os.getenv("ELEVENLABS_API_KEY")
     if not api_key or api_key.startswith("your_"):
         raise ValueError("ELEVENLABS_API_KEY is not configured in .env")
 
-    prepared_text = prepare_text_for_elevenlabs_tts(text)
+    prepared_text = prepare_text_for_elevenlabs_tts(text, pronunciation_overrides=pronunciation_overrides)
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format={ELEVENLABS_AUDIO_FORMAT}"
     headers = {
         "xi-api-key": api_key,

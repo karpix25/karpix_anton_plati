@@ -1,4 +1,4 @@
-import { HeygenAvatarConfig, ProductMediaAsset, Settings } from "@/types";
+import { HeygenAvatarConfig, ProductMediaAsset, Settings, TtsPronunciationOverride } from "@/types";
 import {
   DEFAULT_ELEVENLABS_VOICE_ID,
   DEFAULT_HEYGEN_MOTION_PROMPT,
@@ -78,6 +78,30 @@ export const normalizeSettings = (settings: Settings): Settings => {
   const pauseOptimizationEnabled =
     (typeof settings.tts_silence_trim_enabled === "boolean" && settings.tts_silence_trim_enabled) ||
     (typeof settings.tts_sentence_trim_enabled === "boolean" && settings.tts_sentence_trim_enabled);
+  const normalizePronunciationRule = (item: unknown): TtsPronunciationOverride | null => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return null;
+    }
+
+    const rule = item as Record<string, unknown>;
+    const search = safeTrim(rule.search);
+    const replace = safeTrim(rule.replace);
+    if (!search || !replace) {
+      return null;
+    }
+
+    return {
+      search,
+      replace,
+      case_sensitive: Boolean(rule.case_sensitive),
+      word_boundaries: typeof rule.word_boundaries === "boolean" ? rule.word_boundaries : true,
+    };
+  };
+  const normalizedPronunciationOverrides = Array.isArray(settings.tts_pronunciation_overrides)
+    ? settings.tts_pronunciation_overrides
+        .map((item) => normalizePronunciationRule(item))
+        .filter((item): item is TtsPronunciationOverride => Boolean(item))
+    : [];
 
   return {
     ...settings,
@@ -96,6 +120,7 @@ export const normalizeSettings = (settings: Settings): Settings => {
       Number.isFinite(sentenceTrimMinGapSeconds) && sentenceTrimMinGapSeconds >= 0 ? sentenceTrimMinGapSeconds : 0.3,
     tts_sentence_trim_keep_gap_seconds:
       Number.isFinite(sentenceTrimKeepGapSeconds) && sentenceTrimKeepGapSeconds >= 0 ? sentenceTrimKeepGapSeconds : 0.1,
+    tts_pronunciation_overrides: normalizedPronunciationOverrides,
   };
 };
 
