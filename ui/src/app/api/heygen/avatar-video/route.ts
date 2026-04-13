@@ -225,10 +225,10 @@ async function selectAvatarVariant(
                WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
                ELSE 1
              END ASC,
-             usage_count ASC,
              COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
              sort_order ASC,
-             created_at ASC
+             created_at ASC,
+             id ASC
            LIMIT 1`,
           [preferredAvatar.id]
         );
@@ -245,7 +245,7 @@ async function selectAvatarVariant(
     `SELECT id, avatar_id, avatar_name
      FROM client_heygen_avatars
      WHERE client_id = $1 AND is_active = TRUE
-     ORDER BY usage_count ASC, COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC, sort_order ASC, created_at ASC`,
+     ORDER BY COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC, sort_order ASC, created_at ASC, id ASC`,
     [clientId]
   );
 
@@ -263,10 +263,10 @@ async function selectAvatarVariant(
            WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
            ELSE 1
          END ASC,
-         usage_count ASC,
          COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
          sort_order ASC,
-         created_at ASC
+         created_at ASC,
+         id ASC
        LIMIT 1`,
       [avatar.id]
     );

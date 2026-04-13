@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Global connection pool
 _db_pool: Optional[ThreadedConnectionPool] = None
 INIT_DB_ADVISORY_LOCK_KEY = 2026033001
+AVATAR_RR_LOCK_BASE_KEY = 2026033100
 
 def get_pool() -> ThreadedConnectionPool:
     """Lazy initialization of the database connection pool."""
@@ -978,47 +979,51 @@ def replace_client_heygen_avatars(client_id: int, avatars: List[Dict[str, Any]])
 
 def choose_next_client_avatar_variant(client_id: int) -> Optional[Dict[str, Any]]:
     with DBConnection(use_dict_cursor=True) as cursor:
+        # Serialize avatar reservation per client to guarantee deterministic
+        # round-robin order even under concurrent generators/workers.
+        cursor.execute("SELECT pg_advisory_xact_lock(%s)", (AVATAR_RR_LOCK_BASE_KEY + int(client_id),))
+
         cursor.execute("""
             SELECT *
             FROM client_heygen_avatars
-            WHERE client_id = %s AND is_active = TRUE
-            ORDER BY usage_count ASC, COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC, sort_order ASC, created_at ASC
+            WHERE client_id = %s
+              AND is_active = TRUE
+              AND EXISTS (
+                SELECT 1
+                FROM client_heygen_avatar_looks l
+                WHERE l.client_avatar_id = client_heygen_avatars.id
+                  AND l.is_active = TRUE
+              )
+            ORDER BY
+              COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
+              sort_order ASC,
+              created_at ASC,
+              id ASC
+            LIMIT 1
         """, (client_id,))
-        avatar_rows = [dict(row) for row in cursor.fetchall()]
-
-        if not avatar_rows:
+        avatar_row = cursor.fetchone()
+        if not avatar_row:
             return None
+        selected_avatar = dict(avatar_row)
 
-        selected_avatar = None
-        selected_look = None
-
-        for avatar in avatar_rows:
-            cursor.execute("""
-                SELECT *
-                FROM client_heygen_avatar_looks
-                WHERE client_avatar_id = %s AND is_active = TRUE
-                ORDER BY
-                    CASE
-                        WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
-                        ELSE 1
-                    END ASC,
-                    usage_count ASC,
-                    COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
-                    sort_order ASC,
-                    created_at ASC
-            """, (avatar["id"],))
-            looks = [dict(row) for row in cursor.fetchall()]
-            if looks:
-                selected_avatar = avatar
-                motion_ready_looks = [
-                    look for look in looks
-                    if look.get("motion_look_id") and str(look.get("motion_status") or "").lower() in {"ready", "completed"}
-                ]
-                selected_look = random.choice(motion_ready_looks or looks)
-                break
-
-        if not selected_avatar:
-            return None
+        cursor.execute("""
+            SELECT *
+            FROM client_heygen_avatar_looks
+            WHERE client_avatar_id = %s
+              AND is_active = TRUE
+            ORDER BY
+                CASE
+                    WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
+                    ELSE 1
+                END ASC,
+                COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
+                sort_order ASC,
+                created_at ASC,
+                id ASC
+            LIMIT 1
+        """, (selected_avatar["id"],))
+        look_row = cursor.fetchone()
+        selected_look = dict(look_row) if look_row else None
 
         cursor.execute("""
             UPDATE client_heygen_avatars

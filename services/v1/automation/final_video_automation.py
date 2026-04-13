@@ -172,14 +172,49 @@ def _count_kie_status(scenario: Dict[str, Any]) -> Dict[str, int]:
 
 
 def process_scenario_stage(job: Dict[str, Any]) -> None:
-    results = run_batch_generation(count=1, client_id=int(job["client_id"]), mode="mix", generation_source="auto")
-    if not results:
-        raise RuntimeError("Scenario generation returned no results")
+    scenario = None
+    scenario_job_id = str(job.get("scenario_job_id") or "").strip()
+    raw_scenario_id = job.get("scenario_id")
+    resolved_scenario_id = int(raw_scenario_id) if raw_scenario_id else None
 
-    scenario_job_id = str(results[0]["job_id"])
-    scenario = get_generated_scenario_by_job_id(scenario_job_id)
+    # Retry-safe behavior: if this final_video_job already owns a scenario,
+    # reuse it and continue the pipeline instead of generating a brand-new one.
+    if resolved_scenario_id:
+        scenario = get_generated_scenario_by_id(resolved_scenario_id)
+        if scenario and not scenario_job_id:
+            scenario_job_id = str(scenario.get("job_id") or "").strip()
+
+    if not scenario and scenario_job_id:
+        scenario = get_generated_scenario_by_job_id(scenario_job_id)
+        if scenario and not resolved_scenario_id and scenario.get("id"):
+            resolved_scenario_id = int(scenario["id"])
+
     if not scenario:
-        raise RuntimeError(f"Generated scenario with job_id={scenario_job_id} was not found in DB")
+        results = run_batch_generation(count=1, client_id=int(job["client_id"]), mode="mix", generation_source="auto")
+        if not results:
+            raise RuntimeError("Scenario generation returned no results")
+
+        scenario_job_id = str(results[0]["job_id"])
+        scenario = get_generated_scenario_by_job_id(scenario_job_id)
+        if not scenario:
+            raise RuntimeError(f"Generated scenario with job_id={scenario_job_id} was not found in DB")
+        resolved_scenario_id = int(scenario["id"])
+    else:
+        logger.info(
+            "Reusing existing scenario for final_video_job=%s: scenario_id=%s scenario_job_id=%s",
+            job["id"],
+            resolved_scenario_id,
+            scenario_job_id or "n/a",
+        )
+
+    if not scenario_job_id:
+        scenario_job_id = str(scenario.get("job_id") or "").strip()
+    if not scenario_job_id:
+        raise RuntimeError(f"Scenario id={resolved_scenario_id} has empty job_id; cannot continue final video pipeline")
+    if not resolved_scenario_id and scenario.get("id"):
+        resolved_scenario_id = int(scenario["id"])
+    if not resolved_scenario_id:
+        raise RuntimeError(f"Scenario job_id={scenario_job_id} has empty id; cannot continue final video pipeline")
 
     submit_result = submit_saved_kie_tasks(scenario_job_id)
     next_stage = "waiting_kie" if submit_result.get("pending_count", 0) > 0 else "avatar_submit"
@@ -189,7 +224,7 @@ def process_scenario_stage(job: Dict[str, Any]) -> None:
         int(job["id"]),
         status="queued",
         current_stage=next_stage,
-        scenario_id=scenario["id"],
+        scenario_id=resolved_scenario_id,
         scenario_job_id=scenario_job_id,
         scheduled_for=next_schedule,
         lease_until=None,
