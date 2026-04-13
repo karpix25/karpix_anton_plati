@@ -80,7 +80,7 @@ export const PronunciationSettings: React.FC<PronunciationSettingsProps> = ({
           </div>
         ) : (
           rules.map((rule, index) => (
-            <div key={`${rule.search}-${index}`} className="rounded-xl border border-[#e5ebf0] bg-white p-4 shadow-sm">
+            <div key={index} className="rounded-xl border border-[#e5ebf0] bg-white p-4 shadow-sm">
               <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
