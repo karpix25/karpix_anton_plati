@@ -447,7 +447,7 @@ async function transcribeAudioWithDeepgram(audioBuffer: Buffer, contentType: str
       Authorization: `Token ${deepgramApiKey}`,
       "Content-Type": contentType || "audio/mpeg",
     },
-    body: audioBuffer,
+    body: new Uint8Array(audioBuffer),
   });
 
   if (!response.ok) {

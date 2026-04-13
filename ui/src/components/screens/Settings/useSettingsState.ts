@@ -222,21 +222,19 @@ export const useSettingsState = ({
 
   const addAvatar = () => {
     setAvatarConfigs((prev) => {
-      const next = [
-        ...prev,
-        {
-          avatar_id: "",
-          avatar_name: "",
-          folder_name: "",
-          gender: "female",
-          tts_provider: draftSettings.tts_provider || "minimax",
-          tts_voice_id: draftSettings.tts_voice_id || minimaxVoices[0]?.voice_id || DEFAULT_MINIMAX_VOICE_ID,
-          elevenlabs_voice_id: draftSettings.elevenlabs_voice_id || elevenlabsVoices[0]?.voice_id || DEFAULT_ELEVENLABS_VOICE_ID,
-          is_active: true,
-          sort_order: prev.length,
-          looks: [],
-        },
-      ];
+      const createdAvatar: HeygenAvatarConfig = {
+        avatar_id: "",
+        avatar_name: "",
+        folder_name: "",
+        gender: "female",
+        tts_provider: draftSettings.tts_provider || "minimax",
+        tts_voice_id: draftSettings.tts_voice_id || minimaxVoices[0]?.voice_id || DEFAULT_MINIMAX_VOICE_ID,
+        elevenlabs_voice_id: draftSettings.elevenlabs_voice_id || elevenlabsVoices[0]?.voice_id || DEFAULT_ELEVENLABS_VOICE_ID,
+        is_active: true,
+        sort_order: prev.length,
+        looks: [],
+      };
+      const next: HeygenAvatarConfig[] = [...prev, createdAvatar];
       const newAvatar = next[next.length - 1];
       const panelKey = getAvatarConfigKey(newAvatar, next.length - 1);
       setExpandedAvatarPanels((prevPanels) => ({ ...prevPanels, [panelKey]: true }));
