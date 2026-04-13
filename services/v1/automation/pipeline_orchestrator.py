@@ -6,7 +6,7 @@
 import logging
 import concurrent.futures
 from services.v1.automation.audit_service import get_transcript_audit
-from services.v1.automation.scenario_service import rewrite_reference_script
+from services.v1.automation.scenario_service import rewrite_reference_script, normalize_narrator_gender
 from services.v1.automation.ai_editor_service import generate_broll_plan
 from services.v1.providers.minimax_service import text_to_speech_minimax
 from services.v1.providers.elevenlabs_service import DEFAULT_ELEVENLABS_VOICE_ID, text_to_speech_elevenlabs
@@ -198,7 +198,13 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
             }
 
     # Phase 2: Scenario (Close rewrite of the original reference)
-    gender = selected_avatar_variant.get("gender", "female") if selected_avatar_variant else "female"
+    gender = normalize_narrator_gender(selected_avatar_variant.get("gender") if selected_avatar_variant else None)
+    logger.info(
+        "[%s] Narrator gender for scenario generation: %s (avatar=%s)",
+        job_id,
+        gender,
+        selected_avatar_variant.get("avatar_name") if selected_avatar_variant else "default",
+    )
     scenario_json = rewrite_reference_script(
         transcript,
         audit_json=audit_json,

@@ -21,6 +21,13 @@ async function ensureHeygenLookMotionColumns() {
   }
 }
 
+function normalizeAvatarGender(value: unknown): "male" | "female" {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (["male", "man", "m", "м", "муж", "мужской"].includes(normalized)) return "male";
+  if (["female", "woman", "f", "ж", "жен", "женский"].includes(normalized)) return "female";
+  return "female";
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get('clientId');
@@ -98,7 +105,7 @@ export async function PUT(request: Request) {
           avatar.is_active ?? true,
           avatar.usage_count ?? 0,
           avatar.sort_order ?? avatarIndex,
-          avatar.gender || null,
+          normalizeAvatarGender(avatar.gender),
         ]
       );
 

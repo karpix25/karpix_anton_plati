@@ -162,7 +162,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                    </div>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-3">
                    <div className="space-y-1.5">
                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Provider</label>
                       <Select
@@ -175,7 +175,22 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                         <SelectContent>
                            <SelectItem value="minimax">MiniMax (Dynamic)</SelectItem>
                            <SelectItem value="elevenlabs">ElevenLabs v3</SelectItem>
-                        </SelectContent>
+                         </SelectContent>
+                      </Select>
+                   </div>
+                   <div className="space-y-1.5">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Narrator Gender</label>
+                      <Select
+                        value={avatar.gender || "female"}
+                        onValueChange={(val: "male" | "female") => updateAvatar(avatarIndex, "gender", val)}
+                      >
+                         <SelectTrigger className="h-11 w-full rounded-xl border-none bg-slate-100 px-4 text-sm font-bold">
+                            <SelectValue />
+                         </SelectTrigger>
+                         <SelectContent>
+                            <SelectItem value="female">Female</SelectItem>
+                            <SelectItem value="male">Male</SelectItem>
+                         </SelectContent>
                       </Select>
                    </div>
                    <div className="space-y-1.5">

@@ -17,6 +17,7 @@ from services.v1.automation.scenario_service import (
     generate_from_topic_and_structure,
     find_unshowable_asset_reference_issues,
     prepare_for_tts,
+    normalize_narrator_gender,
 )
 from services.v1.automation.visual_keyword_service import extract_visual_keyword_segments
 from services.v1.automation.video_prompt_service import generate_seedance_prompts
@@ -340,7 +341,7 @@ def _resolve_avatar_generation_context(
     default_elevenlabs_voice_id: str | None,
 ) -> tuple[dict | None, str, str | None, str | None, str]:
     active_avatar = choose_next_client_avatar_variant(client_id) if client_id else None
-    gender = active_avatar.get("gender", "female") if active_avatar else "female"
+    gender = normalize_narrator_gender(active_avatar.get("gender") if active_avatar else None)
     selected_tts_provider = default_tts_provider
     selected_tts_voice_id = default_tts_voice_id
     selected_elevenlabs_voice_id = default_elevenlabs_voice_id
@@ -607,7 +608,9 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                     "transcript": deepgram_result.get("transcript", ""),
                     "words": deepgram_result.get("words", []),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "is_fallback": bool(deepgram_result.get("is_fallback", False)),
                 }
+                effective_words = deepgram_result.get("words", [])
                 if tts_sentence_trim_enabled and not deepgram_result.get("is_fallback"):
                     tts_audio_path, adjusted_words = _trim_sentence_gaps(
                         tts_audio_path,
@@ -618,11 +621,12 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                     )
                     tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
                     tts_word_timestamps["words"] = adjusted_words
+                    effective_words = adjusted_words
                 video_keyword_segments = extract_visual_keyword_segments(
                     scenario_text=script_text,
                     tts_text=tts_script,
                     transcript=deepgram_result.get("transcript", ""),
-                    words=deepgram_result.get("words", []),
+                    words=effective_words,
                     broll_interval_seconds=broll_interval_seconds,
                     broll_timing_mode=broll_timing_mode,
                     broll_pacing_profile=broll_pacing_profile,

@@ -120,6 +120,13 @@ export const normalizeLook = (look: Partial<HeygenAvatarConfig["looks"][number]>
   };
 };
 
+export const normalizeAvatarGender = (value: unknown): "male" | "female" => {
+  const normalized = safeTrim(value).toLowerCase();
+  if (["male", "man", "m", "м", "муж", "мужской"].includes(normalized)) return "male";
+  if (["female", "woman", "f", "ж", "жен", "женский"].includes(normalized)) return "female";
+  return "female";
+};
+
 export const normalizeAvatar = (avatar: Partial<HeygenAvatarConfig> | null | undefined, avatarIndex: number): HeygenAvatarConfig => {
   const avatarId = safeTrim(avatar?.avatar_id);
   const avatarName = safeTrim(avatar?.avatar_name) || avatarId;
@@ -131,6 +138,7 @@ export const normalizeAvatar = (avatar: Partial<HeygenAvatarConfig> | null | und
     avatar_name: avatarName,
     folder_name: safeTrim(avatar?.folder_name),
     preview_image_url: safeTrim(avatar?.preview_image_url),
+    gender: normalizeAvatarGender(avatar?.gender),
     tts_provider: provider,
     tts_voice_id: safeTrim(avatar?.tts_voice_id) || DEFAULT_MINIMAX_VOICE_ID,
     elevenlabs_voice_id: safeTrim(avatar?.elevenlabs_voice_id) || DEFAULT_ELEVENLABS_VOICE_ID,

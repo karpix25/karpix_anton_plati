@@ -388,7 +388,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 learned_rules_video = client_data.get("learned_rules_video")
                 
         # Only rewrite the scenario, bypassing the ingestion and transcription phases
-        from services.v1.automation.scenario_service import rewrite_reference_script, find_unshowable_asset_reference_issues
+        from services.v1.automation.scenario_service import (
+            rewrite_reference_script,
+            find_unshowable_asset_reference_issues,
+            normalize_narrator_gender,
+        )
         from services.v1.automation.notifier_service import notify_service_payment_issue
         import uuid
         
@@ -396,7 +400,13 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         
         # Get active avatar gender for Russian grammar agreement
         active_avatar = choose_next_client_avatar_variant(resolved_client_id)
-        gender = active_avatar.get("gender", "female") if active_avatar else "female"
+        gender = normalize_narrator_gender(active_avatar.get("gender") if active_avatar else None)
+        logger.info(
+            "Using narrator gender=%s for content_id=%s avatar=%s",
+            gender,
+            content_id,
+            active_avatar.get("avatar_name") if active_avatar else "default",
+        )
         selected_tts_provider = tts_provider
         selected_tts_voice_id = tts_voice_id
         selected_elevenlabs_voice_id = elevenlabs_voice_id
@@ -496,7 +506,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                     "transcript": deepgram_result.get("transcript", ""),
                     "words": deepgram_result.get("words", []),
                     "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "is_fallback": bool(deepgram_result.get("is_fallback", False)),
                 }
+                effective_words = deepgram_result.get("words", [])
                 if tts_sentence_trim_enabled and not deepgram_result.get("is_fallback"):
                     tts_audio_path, adjusted_words = _trim_sentence_gaps(
                         tts_audio_path,
@@ -507,11 +519,12 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                     )
                     tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
                     tts_word_timestamps["words"] = adjusted_words
+                    effective_words = adjusted_words
                 video_keyword_segments = extract_visual_keyword_segments(
                     scenario_text=script_text,
                     tts_text=tts_script,
                     transcript=deepgram_result.get("transcript", ""),
-                    words=deepgram_result.get("words", []),
+                    words=effective_words,
                     broll_interval_seconds=broll_interval_seconds,
                     broll_timing_mode=broll_timing_mode,
                     broll_pacing_profile=broll_pacing_profile,

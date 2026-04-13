@@ -21,6 +21,14 @@ type PronunciationRule = {
   aliases?: string[];
 };
 
+type DeepgramWord = {
+  word?: string;
+  punctuated_word?: string;
+  start?: number;
+  end?: number;
+  confidence?: number;
+};
+
 const PRONUNCIATION_RULES: PronunciationRule[] = [
   { source: 'Airbnb', target: 'Эйрбиэнби', aliases: ['airbnb'] },
   { source: 'Booking', target: 'Букинг', aliases: ['booking.com', 'Booking.com', 'booking'] },
@@ -408,6 +416,53 @@ async function probeDurationSeconds(filePath: string) {
   return Number.isFinite(duration) && duration > 0 ? duration : 0;
 }
 
+function normalizeDeepgramWords(words: DeepgramWord[] = []) {
+  return words
+    .filter((word) => typeof word.word === "string" && typeof word.start === "number" && typeof word.end === "number")
+    .map((word) => ({
+      word: word.word as string,
+      punctuated_word: word.punctuated_word || word.word || "",
+      start: Number((word.start as number).toFixed(2)),
+      end: Number((word.end as number).toFixed(2)),
+      confidence: typeof word.confidence === "number" ? Number(word.confidence.toFixed(3)) : null,
+    }))
+    .filter((word) => word.end > word.start);
+}
+
+async function transcribeAudioWithDeepgram(audioBuffer: Buffer, contentType: string) {
+  const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+  if (!deepgramApiKey || deepgramApiKey.includes("your_")) {
+    throw new Error("DEEPGRAM_API_KEY is not configured");
+  }
+
+  const deepgramUrl = new URL("https://api.deepgram.com/v1/listen");
+  deepgramUrl.searchParams.set("model", "nova-2");
+  deepgramUrl.searchParams.set("language", "ru");
+  deepgramUrl.searchParams.set("smart_format", "true");
+  deepgramUrl.searchParams.set("punctuate", "true");
+
+  const response = await fetch(deepgramUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${deepgramApiKey}`,
+      "Content-Type": contentType || "audio/mpeg",
+    },
+    body: audioBuffer,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Deepgram HTTP Error ${response.status}: ${errorText}`);
+  }
+
+  const result = await response.json();
+  const alternative = result?.results?.channels?.[0]?.alternatives?.[0];
+  return {
+    transcript: alternative?.transcript || "",
+    words: normalizeDeepgramWords(alternative?.words || []),
+  };
+}
+
 export async function POST(request: Request) {
   try {
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
@@ -418,6 +473,7 @@ export async function POST(request: Request) {
     await pool.query("ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
     await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_request_text TEXT');
     await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_audio_duration_seconds NUMERIC(10,3)');
+    await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_word_timestamps JSONB');
     const { text, scenarioId } = await request.json();
     const rawText = typeof text === 'string' ? text : '';
 
@@ -550,14 +606,31 @@ export async function POST(request: Request) {
         const filePath = path.join(targetDir, `scenario_${resolvedScenarioId}.mp3`);
         await writeFile(filePath, audioBuffer);
         const audioDurationSeconds = await probeDurationSeconds(filePath);
+        let timestampPayloadJson: string | null = null;
+
+        try {
+          const deepgramData = await transcribeAudioWithDeepgram(audioBuffer, "audio/mpeg");
+          timestampPayloadJson = JSON.stringify({
+            transcript: deepgramData.transcript || "",
+            words: deepgramData.words || [],
+            updated_at: new Date().toISOString(),
+            is_fallback: false,
+          });
+        } catch (deepgramError) {
+          console.warn(
+            `Deepgram timestamp refresh failed for scenario ${resolvedScenarioId}; subtitles will require re-analysis before assembly:`,
+            deepgramError
+          );
+        }
 
         await pool.query(
           `UPDATE generated_scenarios
            SET tts_audio_path = $1,
                tts_request_text = $2,
-               tts_audio_duration_seconds = $3
-           WHERE id = $4`,
-          [filePath, normalizedText, audioDurationSeconds || null, resolvedScenarioId]
+               tts_audio_duration_seconds = $3,
+               tts_word_timestamps = $4::jsonb
+           WHERE id = $5`,
+          [filePath, normalizedText, audioDurationSeconds || null, timestampPayloadJson, resolvedScenarioId]
         );
       }
 

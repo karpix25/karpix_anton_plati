@@ -13,6 +13,7 @@ export async function POST(request: Request) {
       transcript: transcript || '',
       words: Array.isArray(words) ? words : [],
       updated_at: new Date().toISOString(),
+      is_fallback: false,
     };
 
     await pool.query(

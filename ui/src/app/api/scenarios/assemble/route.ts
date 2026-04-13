@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import { spawn } from "child_process";
 import pool from "@/lib/db";
@@ -17,6 +17,7 @@ type ScenarioRow = {
   tts_audio_path: string | null;
   tts_word_timestamps:
     | {
+        transcript?: string;
         words?: Array<{
           word: string;
           punctuated_word?: string;
@@ -24,6 +25,8 @@ type ScenarioRow = {
           end: number;
           confidence?: number | null;
         }>;
+        updated_at?: string;
+        is_fallback?: boolean;
       }
     | null;
   heygen_video_url: string | null;
@@ -54,6 +57,22 @@ type ScenarioRow = {
         }>;
       }
     | null;
+};
+
+type TimestampWord = {
+  word: string;
+  punctuated_word?: string;
+  start: number;
+  end: number;
+  confidence?: number | null;
+};
+
+type DeepgramWord = {
+  word?: string;
+  punctuated_word?: string;
+  start?: number;
+  end?: number;
+  confidence?: number;
 };
 
 type TimelineSegment = {
@@ -338,6 +357,128 @@ async function probeDurationSeconds(filePath: string) {
   return Number.isFinite(duration) && duration > 0 ? duration : 0;
 }
 
+function normalizeTimestampWords(words: TimestampWord[] | DeepgramWord[] = []): TimestampWord[] {
+  return words
+    .filter((word) => typeof word?.word === "string" && typeof word?.start === "number" && typeof word?.end === "number")
+    .map((word) => ({
+      word: String(word.word || ""),
+      punctuated_word: String(word.punctuated_word || word.word || ""),
+      start: Number((word.start as number).toFixed(2)),
+      end: Number((word.end as number).toFixed(2)),
+      confidence: typeof word.confidence === "number" ? Number(word.confidence.toFixed(3)) : null,
+    }))
+    .filter((word) => word.end > word.start);
+}
+
+function getMaxWordEnd(words: TimestampWord[]): number {
+  return words.reduce((acc, word) => Math.max(acc, Number(word.end || 0)), 0);
+}
+
+function hasReliableTimestamps(words: TimestampWord[], audioDuration: number): boolean {
+  if (!words.length || !Number.isFinite(audioDuration) || audioDuration <= 0) return false;
+  if (words.length < 3) return false;
+
+  const maxWordEnd = getMaxWordEnd(words);
+  const delta = Math.abs(audioDuration - maxWordEnd);
+  const allowedDelta = Math.max(0.65, Math.min(2.2, audioDuration * 0.06));
+  const confidenceCount = words.filter((word) => typeof word.confidence === "number").length;
+  const confidenceShare = confidenceCount / words.length;
+
+  return delta <= allowedDelta && confidenceShare >= 0.35;
+}
+
+async function transcribeAudioWithDeepgramFromFile(filePath: string): Promise<{ transcript: string; words: TimestampWord[] }> {
+  const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
+  if (!deepgramApiKey || deepgramApiKey.includes("your_")) {
+    throw new Error("DEEPGRAM_API_KEY is not configured");
+  }
+
+  const audioBuffer = await readFile(filePath);
+  const deepgramUrl = new URL("https://api.deepgram.com/v1/listen");
+  deepgramUrl.searchParams.set("model", "nova-2");
+  deepgramUrl.searchParams.set("language", "ru");
+  deepgramUrl.searchParams.set("smart_format", "true");
+  deepgramUrl.searchParams.set("punctuate", "true");
+
+  const response = await fetch(deepgramUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Token ${deepgramApiKey}`,
+      "Content-Type": "audio/mpeg",
+    },
+    body: audioBuffer,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Deepgram HTTP Error ${response.status}: ${errorText}`);
+  }
+
+  const result = await response.json();
+  const alternative = result?.results?.channels?.[0]?.alternatives?.[0];
+  return {
+    transcript: alternative?.transcript || "",
+    words: normalizeTimestampWords(alternative?.words || []),
+  };
+}
+
+async function refreshScenarioTimestamps(
+  scenarioId: number,
+  audioPath: string,
+  audioDuration: number
+): Promise<TimestampWord[]> {
+  const refreshed = await transcribeAudioWithDeepgramFromFile(audioPath);
+  if (!hasReliableTimestamps(refreshed.words, audioDuration)) {
+    throw new Error("Deepgram returned low-confidence or inconsistent timestamps");
+  }
+
+  await pool.query(
+    `UPDATE generated_scenarios
+     SET tts_word_timestamps = $1::jsonb
+     WHERE id = $2`,
+    [
+      JSON.stringify({
+        transcript: refreshed.transcript || "",
+        words: refreshed.words || [],
+        updated_at: new Date().toISOString(),
+        is_fallback: false,
+      }),
+      scenarioId,
+    ]
+  );
+
+  return refreshed.words;
+}
+
+async function resolveAccurateSubtitleWords(
+  scenario: ScenarioRow,
+  scenarioId: number,
+  audioPath: string,
+  audioDuration: number
+): Promise<TimestampWord[]> {
+  const subtitlesEnabled = scenario.subtitles_enabled ?? false;
+  const storedWords = normalizeTimestampWords((scenario.tts_word_timestamps?.words || []) as TimestampWord[]);
+  const storedIsFallback = Boolean(scenario.tts_word_timestamps?.is_fallback);
+
+  if (!subtitlesEnabled) {
+    return storedWords;
+  }
+
+  if (!storedIsFallback && hasReliableTimestamps(storedWords, audioDuration)) {
+    return storedWords;
+  }
+
+  try {
+    return await refreshScenarioTimestamps(scenarioId, audioPath, audioDuration);
+  } catch (error) {
+    const details = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Не удалось получить точные таймкоды для субтитров (scenarioId=${scenarioId}): ${details}. ` +
+      `Сборка остановлена, чтобы не выпустить рассинхрон.`
+    );
+  }
+}
+
 function resolvePromptSource(
   item: ScenarioPromptItem
 ) {
@@ -401,7 +542,7 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
   }
 
   const beforeGaps = prompts.length;
-  prompts = ensureMinimumAvatarGaps(prompts, totalDuration);
+  prompts = ensureMinimumAvatarGaps(prompts);
   if (beforeGaps !== prompts.length) {
     console.log(
       `[montage] Avatar gaps: ${beforeGaps} → ${prompts.length} prompts`
@@ -491,8 +632,7 @@ function normalizePromptWindows(
 }
 
 function ensureMinimumAvatarGaps(
-  prompts: Array<{ start: number; end: number; assetType: string | null; source: string | null }>,
-  totalDuration: number
+  prompts: Array<{ start: number; end: number; assetType: string | null; source: string | null }>
 ) {
   if (prompts.length <= 1) return prompts;
 
@@ -675,7 +815,13 @@ async function buildMontage(scenarioId: number) {
   }
 
   const audioDuration = await probeDurationSeconds(ttsAudioPath);
-  const timelineDuration = getTotalDurationSeconds(scenario);
+  const subtitleWords = await resolveAccurateSubtitleWords(
+    scenario,
+    scenarioId,
+    ttsAudioPath,
+    audioDuration
+  );
+  const timelineDuration = Math.max(getTotalDurationSeconds(scenario), getMaxWordEnd(subtitleWords));
   const totalDuration = Math.max(audioDuration, timelineDuration);
   if (totalDuration <= 0) {
     throw new Error("Timeline data is missing");
@@ -775,7 +921,7 @@ async function buildMontage(scenarioId: number) {
       subtitle_margin_v: Number(scenario.subtitle_margin_v || 140),
       subtitle_margin_percent: Number(scenario.subtitle_margin_percent ?? Math.round((Number(scenario.subtitle_margin_v || 140) / 1280) * 100)),
     },
-    words: scenario.tts_word_timestamps?.words || [],
+    words: subtitleWords,
     totalDuration: audioDuration > 0 ? audioDuration : totalDuration,
     workdir,
   });

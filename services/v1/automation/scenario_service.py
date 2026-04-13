@@ -76,6 +76,23 @@ def _transcript_meta(audit_json, transcript_meta=None):
     return audit_json.get("transcript_meta", {}) or {}
 
 
+def normalize_narrator_gender(gender, default="female") -> str:
+    raw = str(gender or "").strip().lower().replace("ё", "е")
+    if not raw:
+        return default
+
+    male_aliases = {"male", "man", "m", "м", "муж", "мужской"}
+    female_aliases = {"female", "woman", "f", "ж", "жен", "женский"}
+
+    if raw in male_aliases or raw.startswith("male") or raw.startswith("муж"):
+        return "male"
+    if raw in female_aliases or raw.startswith("female") or raw.startswith("жен"):
+        return "female"
+
+    logger.warning("Unknown narrator gender '%s', fallback to '%s'", gender, default)
+    return default
+
+
 def _resolve_duration_targets(
     source_duration_seconds=None,
     source_wpm=None,
@@ -297,6 +314,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     The structure, pacing, theme, and dramatic arc should stay almost identical.
     Only details, wording, examples, and product-specific information should shift.
     """
+    gender = normalize_narrator_gender(gender)
     product_context = target_product_info or f"Сервис в нише: {niche}"
     voice_context = brand_voice or "Естественный, разговорный, без канцелярита"
     audience_context = target_audience or "Люди, которым важны быстрые и понятные решения"
@@ -531,6 +549,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     Generates a NEW scenario by "Mirroring" the viral DNA of the source video 
     into a script for the target product.
     """
+    gender = normalize_narrator_gender(gender)
     atoms = audit_json.get("atoms", {})
     strategy = audit_json.get("reference_strategy", {})
     hunt = audit_json.get("hunt_ladder", {})
@@ -632,6 +651,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     Generates a scenario from a cluster of similar references instead of a single audit.
     This keeps the resulting script much closer to a chosen topic and angle.
     """
+    gender = normalize_narrator_gender(gender)
     if not reference_audits:
         raise ValueError("reference_audits must contain at least one audit")
 
@@ -754,6 +774,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     """
     Generates a new scenario by combining a reusable topic card and a reusable structure card.
     """
+    gender = normalize_narrator_gender(gender)
     product_context = target_product_info or f"Сервис в нише: {niche}"
     voice_context = brand_voice or "Естественный, разговорный, уверенный"
     audience_context = target_audience or "Люди, которым важно удобно путешествовать и платить за границей"

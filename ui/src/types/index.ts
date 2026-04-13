@@ -329,6 +329,7 @@ export interface HeygenAvatarConfig {
   avatar_name: string;
   folder_name?: string;
   preview_image_url?: string;
+  gender?: "male" | "female";
   tts_provider?: "minimax" | "elevenlabs";
   tts_voice_id?: string;
   elevenlabs_voice_id?: string;
