@@ -18,6 +18,7 @@ Overall direction: natural presenter energy, realistic body life, gentle ambient
 type ScenarioRow = {
   id: number;
   client_id: number | null;
+  generation_source: string | null;
   tts_audio_path: string | null;
   heygen_video_id: string | null;
   heygen_status: string | null;
@@ -46,6 +47,8 @@ type SelectedTalkingPhoto = {
   talkingPhotoName: string;
   usedMotionLook: boolean;
 };
+
+const AVATAR_RR_LOCK_BASE_KEY = 2026033100;
 
 function isInternalAutomationRequest(request: Request) {
   const expectedToken = process.env.AUTOMATION_INTERNAL_TOKEN?.trim();
@@ -158,7 +161,7 @@ async function uploadAudioAsset(filePath: string) {
 
 async function getScenario(scenarioId: number) {
   const { rows } = await pool.query<ScenarioRow>(
-    `SELECT id, client_id, tts_audio_path, heygen_video_id, heygen_status,
+    `SELECT id, client_id, generation_source, tts_audio_path, heygen_video_id, heygen_status,
             heygen_avatar_id, heygen_avatar_name, heygen_look_id, heygen_look_name
      FROM generated_scenarios
      WHERE id = $1`,
@@ -183,8 +186,17 @@ async function assertScenarioIsLatest(scenario: ScenarioRow) {
   }
 }
 
+function canBypassLatestScenarioGuard(request: Request, scenario: ScenarioRow) {
+  if (isInternalAutomationRequest(request)) {
+    return true;
+  }
+
+  return String(scenario.generation_source || "").toLowerCase() === "auto";
+}
+
 async function selectAvatarVariant(
   clientId: number | null,
+  scenarioId: number,
   preferredAvatarId?: string | null,
   preferredLookId?: string | null
 ) {
@@ -241,42 +253,101 @@ async function selectAvatarVariant(
     }
   }
 
-  const avatarResult = await pool.query<AvatarRow>(
-    `SELECT id, avatar_id, avatar_name
-     FROM client_heygen_avatars
-     WHERE client_id = $1 AND is_active = TRUE
-     ORDER BY COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC, sort_order ASC, created_at ASC, id ASC`,
-    [clientId]
-  );
+  const dbClient = await pool.connect();
+  try {
+    await dbClient.query("BEGIN");
+    await dbClient.query("SELECT pg_advisory_xact_lock($1)", [AVATAR_RR_LOCK_BASE_KEY + Number(clientId)]);
 
-  if (avatarResult.rows.length === 0) {
-    throw new Error("No active HeyGen avatar is configured for this client");
-  }
-
-  for (const avatar of avatarResult.rows) {
-    const lookResult = await pool.query<LookRow>(
-      `SELECT id, look_id, look_name, motion_look_id, motion_status
-       FROM client_heygen_avatar_looks
-       WHERE client_avatar_id = $1 AND is_active = TRUE
+    const avatarResult = await dbClient.query<AvatarRow>(
+      `SELECT a.id, a.avatar_id, a.avatar_name
+       FROM client_heygen_avatars a
+       LEFT JOIN (
+         SELECT heygen_avatar_id, COUNT(*)::INT AS today_count
+         FROM generated_scenarios
+         WHERE client_id = $1
+           AND heygen_avatar_id IS NOT NULL
+           AND DATE_TRUNC('day', created_at) = DATE_TRUNC('day', CURRENT_TIMESTAMP)
+         GROUP BY heygen_avatar_id
+       ) daily_usage ON daily_usage.heygen_avatar_id = a.avatar_id
+       WHERE a.client_id = $1 AND a.is_active = TRUE
        ORDER BY
-         CASE
-           WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
-           ELSE 1
-         END ASC,
-         COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
-         sort_order ASC,
-         created_at ASC,
-         id ASC
-       LIMIT 1`,
-      [avatar.id]
+         COALESCE(daily_usage.today_count, 0) ASC,
+         COALESCE(a.last_used_at, TIMESTAMP '1970-01-01') ASC,
+         a.sort_order ASC,
+         a.created_at ASC,
+         a.id ASC`,
+      [clientId]
     );
 
-    if (lookResult.rows[0]) {
-      return { avatar, look: lookResult.rows[0], isReservedVariant: false };
+    if (avatarResult.rows.length === 0) {
+      throw new Error("No active HeyGen avatar is configured for this client");
     }
-  }
 
-  throw new Error("No active HeyGen look is configured for the active avatar pool");
+    let selectedAvatar: AvatarRow | null = null;
+    let selectedLook: LookRow | null = null;
+
+    for (const avatar of avatarResult.rows) {
+      const lookResult = await dbClient.query<LookRow>(
+        `SELECT id, look_id, look_name, motion_look_id, motion_status
+         FROM client_heygen_avatar_looks
+         WHERE client_avatar_id = $1 AND is_active = TRUE
+         ORDER BY
+           CASE
+             WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
+             ELSE 1
+           END ASC,
+           COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
+           sort_order ASC,
+           created_at ASC,
+           id ASC
+         LIMIT 1`,
+        [avatar.id]
+      );
+
+      if (lookResult.rows[0]) {
+        selectedAvatar = avatar;
+        selectedLook = lookResult.rows[0];
+        break;
+      }
+    }
+
+    if (!selectedAvatar || !selectedLook) {
+      throw new Error("No active HeyGen look is configured for the active avatar pool");
+    }
+
+    // Reserve selected variant on scenario to keep retries idempotent and avoid
+    // concurrent jobs collapsing to a single avatar.
+    await dbClient.query(
+      `UPDATE generated_scenarios
+       SET heygen_avatar_id = $1,
+           heygen_avatar_name = $2,
+           heygen_look_id = $3,
+           heygen_look_name = $4
+       WHERE id = $5`,
+      [selectedAvatar.avatar_id, selectedAvatar.avatar_name, selectedLook.look_id, selectedLook.look_name, scenarioId]
+    );
+
+    await dbClient.query(
+      `UPDATE client_heygen_avatars
+       SET usage_count = usage_count + 1, last_used_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [selectedAvatar.id]
+    );
+    await dbClient.query(
+      `UPDATE client_heygen_avatar_looks
+       SET usage_count = usage_count + 1, last_used_at = CURRENT_TIMESTAMP
+       WHERE id = $1`,
+      [selectedLook.id]
+    );
+
+    await dbClient.query("COMMIT");
+    return { avatar: selectedAvatar, look: selectedLook, isReservedVariant: false, usageMarked: true };
+  } catch (error) {
+    await dbClient.query("ROLLBACK");
+    throw error;
+  } finally {
+    dbClient.release();
+  }
 }
 
 function buildVideoPayload(avatar: AvatarRow, look: LookRow | null, audioAssetId: string) {
@@ -451,7 +522,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
     }
 
-    if (!isInternalAutomationRequest(request)) {
+    if (!canBypassLatestScenarioGuard(request, scenario)) {
       await assertScenarioIsLatest(scenario);
     }
 
@@ -462,8 +533,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const { avatar, look, isReservedVariant } = await selectAvatarVariant(
+    const { avatar, look, isReservedVariant, usageMarked } = await selectAvatarVariant(
       scenario.client_id,
+      resolvedScenarioId,
       scenario.heygen_avatar_id,
       scenario.heygen_look_id
     );
@@ -516,7 +588,7 @@ export async function POST(request: Request) {
       ]
     );
 
-    if (!isReservedVariant) {
+    if (!isReservedVariant && !usageMarked) {
       await markAvatarUsage(avatar.id, look?.id);
     }
 

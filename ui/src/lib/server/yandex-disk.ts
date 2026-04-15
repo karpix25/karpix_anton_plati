@@ -197,11 +197,12 @@ export async function uploadFinalVideoToYandexDisk(params: {
 }) {
   const avatarFolder = sanitizeFolderName(params.avatarFolderName) || "Unknown avatar";
   const projectFolder = sanitizeFolderName(params.projectName) || "Unknown project";
+  const avatarProjectFolder = sanitizeFolderName(`${avatarFolder}_${projectFolder}`) || `${avatarFolder}_${projectFolder}`;
   
   const rootPath = toDiskPath(ROOT_VIDEO_FOLDER);
   const automationPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER);
-  const projectPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, projectFolder);
-  const avatarGroupPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, projectFolder, avatarFolder);
+  const projectPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarProjectFolder);
+  const avatarGroupPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarProjectFolder, avatarFolder);
   const filePath = `${avatarGroupPath}/${sanitizeFileName(params.fileName)}`;
 
   await ensureFolderExists(rootPath);
