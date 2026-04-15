@@ -24,6 +24,30 @@ DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_G
 DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.1"))
 SENTENCE_END_RE = re.compile(r'[.!?…]+["»”)]*$')
 SOFT_BOUNDARY_RE = re.compile(r'[,;:—-]+["»”)]*$')
+SCRIPT_MIN_WORD_COUNT = 8
+
+
+def _extract_valid_script_text(scenario: dict | None) -> str:
+    if not isinstance(scenario, dict):
+        return ""
+    raw_script = scenario.get("script")
+    if not isinstance(raw_script, str):
+        return ""
+    cleaned = re.sub(r"\s+", " ", raw_script).strip()
+    if not cleaned:
+        return ""
+
+    lowered = cleaned.lower()
+    if lowered in {"null", "none", "n/a", "nan"}:
+        return ""
+    if lowered.startswith("error ") or lowered.startswith("failed "):
+        return ""
+
+    words = re.findall(r"[A-Za-zА-Яа-яЁё0-9]+", cleaned)
+    if len(words) < SCRIPT_MIN_WORD_COUNT:
+        return ""
+
+    return cleaned
 
 
 def _probe_audio_duration_seconds(file_path):
@@ -445,13 +469,13 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         from services.v1.automation.visual_keyword_service import extract_visual_keyword_segments
         from services.v1.automation.video_prompt_service import generate_seedance_prompts
 
-        script_text = scenario_json.get("script", "")
-        if script_text.strip().lower().startswith("error generating"):
+        script_text = _extract_valid_script_text(scenario_json)
+        if not script_text:
             logger.error(
-                "Skipping save for single scenario %s because generator returned placeholder error script",
+                "Skipping save for single scenario %s because generator returned empty/invalid script payload",
                 res_job_id,
             )
-            return {"status": "error", "message": "Scenario generation failed", "job_id": res_job_id}
+            return {"status": "error", "message": "Scenario generation returned invalid script", "job_id": res_job_id}
 
         asset_reference_issues = find_unshowable_asset_reference_issues(script_text)
         if asset_reference_issues:

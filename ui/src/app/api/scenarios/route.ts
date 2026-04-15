@@ -86,7 +86,8 @@ export async function GET(request: Request) {
       whereClauses.push(`niche = $${values.length}`);
     }
 
-    whereClauses.push(`COALESCE(scenario_json->>'script', '') NOT ILIKE 'Error generating%'`);
+    whereClauses.push(`COALESCE(TRIM(scenario_json->>'script'), '') <> ''`);
+    whereClauses.push(`COALESCE(scenario_json->>'script', '') NOT ILIKE 'Error %'`);
 
     const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const query = `SELECT * FROM generated_scenarios ${whereSql} ORDER BY created_at DESC`;

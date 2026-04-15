@@ -56,6 +56,30 @@ DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_G
 DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.1"))
 SENTENCE_END_RE = re.compile(r'[.!?…]+["»”)]*$')
 SOFT_BOUNDARY_RE = re.compile(r'[,;:—-]+["»”)]*$')
+SCRIPT_MIN_WORD_COUNT = 8
+
+
+def _extract_valid_script_text(scenario: dict | None) -> str:
+    if not isinstance(scenario, dict):
+        return ""
+    raw_script = scenario.get("script")
+    if not isinstance(raw_script, str):
+        return ""
+    cleaned = re.sub(r"\s+", " ", raw_script).strip()
+    if not cleaned:
+        return ""
+
+    lowered = cleaned.lower()
+    if lowered in {"null", "none", "n/a", "nan"}:
+        return ""
+    if lowered.startswith("error ") or lowered.startswith("failed "):
+        return ""
+
+    words = re.findall(r"[A-Za-zА-Яа-яЁё0-9]+", cleaned)
+    if len(words) < SCRIPT_MIN_WORD_COUNT:
+        return ""
+
+    return cleaned
 
 
 def _probe_audio_duration_seconds(file_path):
@@ -549,8 +573,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
             res_job_id = f"{base_job_id}_v{i+1}_{uuid.uuid4().hex[:4]}"
 
         # Optimize for TTS
-        script_text = scenario.get("script", "")
-        is_error_placeholder = script_text.strip().lower().startswith("error generating")
+        script_text = _extract_valid_script_text(scenario)
         asset_reference_issues = find_unshowable_asset_reference_issues(script_text)
         tts_script = prepare_for_tts(script_text) if script_text else ""
         tts_audio_path = None
@@ -561,9 +584,9 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
         tts_request_text = None
         tts_audio_duration_seconds = None
 
-        if is_error_placeholder:
+        if not script_text:
             logger.error(
-                "Skipping save for scenario %s because generator returned placeholder error script",
+                "Skipping save for scenario %s because generator returned empty/invalid script payload",
                 res_job_id,
             )
             continue
