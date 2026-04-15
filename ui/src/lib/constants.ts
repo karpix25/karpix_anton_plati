@@ -16,7 +16,7 @@ export const defaultSettings: ClientSettings = {
   target_duration_min_seconds: 50,
   target_duration_max_seconds: 50,
   broll_interval_seconds: 3,
-  broll_timing_mode: "semantic_pause",
+  broll_timing_mode: "coverage_percent",
   broll_pacing_profile: "balanced",
   broll_pause_threshold_seconds: 0.45,
   broll_coverage_percent: 35,

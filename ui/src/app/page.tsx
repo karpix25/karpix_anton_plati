@@ -174,7 +174,7 @@ export default function CuratorDashboard() {
       target_duration_min_seconds: Math.min(targetDurationMinSeconds, targetDurationMaxSeconds),
       target_duration_max_seconds: Math.max(targetDurationMinSeconds, targetDurationMaxSeconds),
       broll_interval_seconds: selectedClient?.broll_interval_seconds || 3,
-      broll_timing_mode: selectedClient?.broll_timing_mode || "semantic_pause",
+      broll_timing_mode: selectedClient?.broll_timing_mode || "coverage_percent",
       broll_pacing_profile: selectedClient?.broll_pacing_profile || "balanced",
       broll_pause_threshold_seconds: selectedClient?.broll_pause_threshold_seconds || 0.45,
       broll_coverage_percent: selectedClient?.broll_coverage_percent || 35,

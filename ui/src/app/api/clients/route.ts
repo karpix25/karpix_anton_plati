@@ -124,7 +124,7 @@ async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS monthly_final_video_limit INTEGER DEFAULT 30");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_min_seconds INTEGER DEFAULT 50");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_max_seconds INTEGER DEFAULT 50");
-  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_timing_mode TEXT DEFAULT 'semantic_pause'");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_timing_mode TEXT DEFAULT 'coverage_percent'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_pacing_profile TEXT DEFAULT 'balanced'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_pause_threshold_seconds NUMERIC(3,2) DEFAULT 0.45");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_coverage_percent NUMERIC(4,1) DEFAULT 35.0");
@@ -287,7 +287,7 @@ export async function POST(request: Request) {
         resolvedTargetDurationMinSeconds,
         resolvedTargetDurationMaxSeconds,
         broll_interval_seconds || 3,
-        broll_timing_mode || 'semantic_pause',
+        broll_timing_mode || 'coverage_percent',
         broll_pacing_profile || 'balanced',
         broll_pause_threshold_seconds || 0.45,
         broll_coverage_percent || 35,
@@ -442,7 +442,7 @@ export async function PUT(request: Request) {
         resolvedTargetDurationMinSeconds,
         resolvedTargetDurationMaxSeconds,
         broll_interval_seconds || 3,
-        broll_timing_mode || 'semantic_pause',
+        broll_timing_mode || 'coverage_percent',
         broll_pacing_profile || 'balanced',
         broll_pause_threshold_seconds || 0.45,
         broll_coverage_percent || 35,

@@ -10,7 +10,6 @@ import {
 import {
   PACING_LABELS,
   BROLL_PACING_OPTIONS,
-  BROLL_TIMING_MODE_OPTIONS,
   BROLL_GENERATOR_OPTIONS,
   SEMANTIC_RELEVANCE_OPTIONS,
   PRODUCT_CLIP_POLICY_OPTIONS,
@@ -30,15 +29,12 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
     return Number.isFinite(parsed) ? parsed : fallback;
   };
 
-  const brollTimingMode = draftSettings.broll_timing_mode || "semantic_pause";
   const brollPacingProfile = draftSettings.broll_pacing_profile || "balanced";
-  const brollIntervalSeconds = toSafeNumber(draftSettings.broll_interval_seconds, 3);
   const brollCoveragePercent = toSafeNumber(draftSettings.broll_coverage_percent, 35);
   const brollGeneratorModel = draftSettings.broll_generator_model || "bytedance/v1-pro-text-to-video";
   const semanticRelevancePriority = draftSettings.broll_semantic_relevance_priority || "balanced";
   const productClipPolicy = draftSettings.broll_product_clip_policy || "contextual";
 
-  const modePreview = BROLL_TIMING_MODE_OPTIONS[brollTimingMode];
   const pacingPreview = BROLL_PACING_OPTIONS[brollPacingProfile];
   const generatorPreview = BROLL_GENERATOR_OPTIONS[brollGeneratorModel];
   const relevancePreview = SEMANTIC_RELEVANCE_OPTIONS[semanticRelevancePriority];
@@ -56,33 +52,12 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
           </p>
         </div>
         <div className="rounded-full bg-white border border-[#e5ebf0] px-4 py-1.5 text-[11px] font-bold text-primary shadow-sm uppercase tracking-wider">
-           {PACING_LABELS[brollPacingProfile].title} / {brollTimingMode === "fixed" ? "Fixed" : brollTimingMode === "coverage_percent" ? "Coverage" : "Semantic"}
+           {PACING_LABELS[brollPacingProfile].title} / Coverage
         </div>
       </div>
 
       <div className="grid gap-6">
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Режим тайминга
-            </label>
-            <Select
-              value={brollTimingMode}
-              onValueChange={(value: Settings["broll_timing_mode"]) =>
-                setDraftSettings((prev) => ({ ...prev, broll_timing_mode: value }))
-              }
-            >
-              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="semantic_pause">По паузам и смыслу</SelectItem>
-                <SelectItem value="coverage_percent">По проценту покрытия</SelectItem>
-                <SelectItem value="fixed">Фиксированный интервал</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                Генератор видео (T2V)
@@ -114,141 +89,106 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
              <span className="font-bold text-foreground">Как это работает:</span>
            </div>
            <p className="text-muted-foreground leading-relaxed pl-4">
-             {brollTimingMode === "semantic_pause" 
-               ? "LLM анализирует смысл текста и расставляет видео там, где они лучше всего иллюстрируют сказанное."
-               : brollTimingMode === "coverage_percent"
-               ? "Система старается заполнить ролик перебивками так, чтобы они занимали определённую долю времени."
-               : "Жёсткий ритм: ровно через каждые несколько секунд аватар сменяется видео-футажом."
-             }
+             Система работает от целевого покрытия: старается заполнить ролик перебивками так, чтобы они занимали заданную долю времени.
            </p>
            <p className="text-muted-foreground leading-relaxed pl-4 font-medium italic">
              {generatorPreview.description}
            </p>
         </div>
 
-        {brollTimingMode !== "fixed" && (
-          <div className="grid gap-6 md:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Ритм монтажа (Темп)
-              </label>
-              <Select
-                value={brollPacingProfile}
-                onValueChange={(value: Settings["broll_pacing_profile"]) =>
-                  setDraftSettings((prev) => ({ ...prev, broll_pacing_profile: value }))
-                }
-              >
-                <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="calm">Спокойно</SelectItem>
-                  <SelectItem value="balanced">Сбалансированно</SelectItem>
-                  <SelectItem value="dynamic">Динамично</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-[10px] text-slate-400 font-medium px-1">{pacingPreview.title}: {pacingPreview.description}</p>
-            </div>
-
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Целевое покрытие</div>
-                <div className="text-[11px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full">
-                  {brollCoveragePercent.toFixed(0)}%
-                </div>
-              </div>
-              <input
-                type="range"
-                min={15}
-                max={100}
-                step={1}
-                value={brollCoveragePercent}
-                onChange={(event) =>
-                  setDraftSettings((prev) => ({ ...prev, broll_coverage_percent: Number(event.target.value) }))
-                }
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                <span>Мало</span>
-                <span>35% (Стандарт)</span>
-                <span>Много</span>
-              </div>
-            </div>
+        <div className="grid gap-6 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Ритм монтажа (Темп)
+            </label>
+            <Select
+              value={brollPacingProfile}
+              onValueChange={(value: Settings["broll_pacing_profile"]) =>
+                setDraftSettings((prev) => ({ ...prev, broll_pacing_profile: value }))
+              }
+            >
+              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="calm">Спокойно</SelectItem>
+                <SelectItem value="balanced">Сбалансированно</SelectItem>
+                <SelectItem value="dynamic">Динамично</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-400 font-medium px-1">{pacingPreview.title}: {pacingPreview.description}</p>
           </div>
-        )}
 
-        {brollTimingMode === "fixed" && (
-           <div className="space-y-4">
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Интервал перебивок</div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Целевое покрытие</div>
               <div className="text-[11px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full">
-                {brollIntervalSeconds.toFixed(1)} сек
+                {brollCoveragePercent.toFixed(0)}%
               </div>
             </div>
             <input
               type="range"
-              min={2}
-              max={5}
-              step={0.1}
-              value={brollIntervalSeconds}
+              min={15}
+              max={100}
+              step={1}
+              value={brollCoveragePercent}
               onChange={(event) =>
-                setDraftSettings((prev) => ({ ...prev, broll_interval_seconds: Number(event.target.value) }))
+                setDraftSettings((prev) => ({ ...prev, broll_coverage_percent: Number(event.target.value) }))
               }
               className="w-full accent-primary"
             />
             <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-              <span>Быстро (2.0с)</span>
-              <span>Медленно (5.0с)</span>
+              <span>Мало</span>
+              <span>35% (Стандарт)</span>
+              <span>Много</span>
             </div>
           </div>
-        )}
+        </div>
 
-        {brollTimingMode === "semantic_pause" && (
-          <div className="grid gap-6 md:grid-cols-2 pt-2">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Приоритет точности
-              </label>
-              <Select
-                value={semanticRelevancePriority}
-                onValueChange={(value: Settings["broll_semantic_relevance_priority"]) =>
-                  setDraftSettings((prev) => ({ ...prev, broll_semantic_relevance_priority: value }))
-                }
-              >
-                <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="precision">Максимально в тему</SelectItem>
-                  <SelectItem value="balanced">Баланс</SelectItem>
-                  <SelectItem value="dynamic">Больше динамики</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-[10px] text-slate-400 font-medium px-1">{relevancePreview.description}</p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Product Clip Policy
-              </label>
-              <Select
-                value={productClipPolicy}
-                onValueChange={(value: Settings["broll_product_clip_policy"]) =>
-                  setDraftSettings((prev) => ({ ...prev, broll_product_clip_policy: value }))
-                }
-              >
-                <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="contextual">Только если уместно</SelectItem>
-                  <SelectItem value="required">Обязательно вставить</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-[10px] text-slate-400 font-medium px-1">{policyPreview.description}</p>
-            </div>
+        <div className="grid gap-6 md:grid-cols-2 pt-2">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Приоритет точности
+            </label>
+            <Select
+              value={semanticRelevancePriority}
+              onValueChange={(value: Settings["broll_semantic_relevance_priority"]) =>
+                setDraftSettings((prev) => ({ ...prev, broll_semantic_relevance_priority: value }))
+              }
+            >
+              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="precision">Максимально в тему</SelectItem>
+                <SelectItem value="balanced">Баланс</SelectItem>
+                <SelectItem value="dynamic">Больше динамики</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-400 font-medium px-1">{relevancePreview.description}</p>
           </div>
-        )}
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Product Clip Policy
+            </label>
+            <Select
+              value={productClipPolicy}
+              onValueChange={(value: Settings["broll_product_clip_policy"]) =>
+                setDraftSettings((prev) => ({ ...prev, broll_product_clip_policy: value }))
+              }
+            >
+              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="contextual">Только если уместно</SelectItem>
+                <SelectItem value="required">Обязательно вставить</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-slate-400 font-medium px-1">{policyPreview.description}</p>
+          </div>
+        </div>
       </div>
     </div>
   );

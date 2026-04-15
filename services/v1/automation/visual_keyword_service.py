@@ -42,7 +42,7 @@ class VisualSegment(TypedDict, total=False):
 @dataclass
 class GenerationConfig:
     interval: float = 3.0
-    timing_mode: str = "semantic_pause"
+    timing_mode: str = "coverage_percent"
     pacing_profile: str = "balanced"
     pause_threshold: float = 0.45
     coverage_percent: float = 35.0
@@ -208,11 +208,8 @@ class TimingEngine:
         return min(candidates, key=lambda b: (abs(b["time"] - target_time) + (0.8 if b["time"] > max_time else 0.0) - (b.get("strength", 0.0) * 0.3)))
 
     def build_slots(self, words: List[Word]) -> List[TimingSlot]:
-        if self.config.timing_mode == "fixed":
-            return self._build_fixed_slots(words)
-        if self.config.timing_mode == "coverage_percent":
-            return self._build_coverage_slots(words)
-        return self._build_semantic_slots(words)
+        # Timing mode is intentionally unified to coverage-based selection.
+        return self._build_coverage_slots(words)
 
     def _build_fixed_slots(self, words: List[Word]) -> List[TimingSlot]:
         interval = self.config.interval
@@ -533,7 +530,7 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
     try:
         config = GenerationConfig(
             interval=float(kwargs.get("broll_interval_seconds") or 3.5),
-            timing_mode=kwargs.get("broll_timing_mode", "semantic_pause"),
+            timing_mode="coverage_percent",
             pacing_profile=kwargs.get("broll_pacing_profile", "balanced"),
             pause_threshold=float(kwargs.get("broll_pause_threshold_seconds") or 0.45),
             coverage_percent=float(kwargs.get("broll_coverage_percent") or 35.0),
