@@ -13,7 +13,7 @@ KIE_CREATE_TASK_URL = "https://api.kie.ai/api/v1/jobs/createTask"
 KIE_RECORD_INFO_URL = "https://api.kie.ai/api/v1/jobs/recordInfo"
 KIE_VEO_GENERATE_URL = "https://api.kie.ai/api/v1/veo/generate"
 KIE_VEO_RECORD_INFO_URL = "https://api.kie.ai/api/v1/veo/record-info"
-DEFAULT_KIE_MODEL = "bytedance/v1-pro-text-to-video"
+DEFAULT_KIE_MODEL = "veo3_lite"
 SEEDANCE_15_PRO_MODEL = "bytedance/seedance-1.5-pro"
 GROK_IMAGINE_TEXT_TO_VIDEO_MODEL = "grok-imagine/text-to-video"
 VEO3_QUALITY = "veo3"
@@ -425,7 +425,18 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: s
             })
             continue
 
-        if item.get("task_id") or item.get("video_url"):
+        has_video = bool(item.get("video_url"))
+        has_task_id = bool(item.get("task_id"))
+        task_state = str(item.get("task_state") or "").lower()
+        submission_status = str(item.get("submission_status") or "").lower()
+        failed_task = task_state == "fail" or submission_status == "failed"
+
+        if has_video:
+            enriched_prompts.append(item)
+            continue
+
+        # Allow retry for failed tasks even when stale task_id is still present.
+        if has_task_id and not failed_task:
             enriched_prompts.append(item)
             continue
 

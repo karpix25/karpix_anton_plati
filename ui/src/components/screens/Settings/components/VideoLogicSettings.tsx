@@ -31,7 +31,7 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
 
   const brollPacingProfile = draftSettings.broll_pacing_profile || "balanced";
   const brollCoveragePercent = toSafeNumber(draftSettings.broll_coverage_percent, 35);
-  const brollGeneratorModel = draftSettings.broll_generator_model || "bytedance/v1-pro-text-to-video";
+  const brollGeneratorModel = draftSettings.broll_generator_model || "veo3_lite";
   const semanticRelevancePriority = draftSettings.broll_semantic_relevance_priority || "balanced";
   const productClipPolicy = draftSettings.broll_product_clip_policy || "contextual";
 

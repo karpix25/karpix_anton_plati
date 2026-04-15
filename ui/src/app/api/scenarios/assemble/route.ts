@@ -32,6 +32,7 @@ type ScenarioRow = {
   heygen_video_url: string | null;
   heygen_avatar_id: string | null;
   heygen_avatar_name: string | null;
+  resolved_avatar_name: string | null;
   client_name: string | null;
   background_audio_tag: BackgroundAudioTag | null;
   subtitles_enabled: boolean | null;
@@ -307,6 +308,7 @@ async function getScenario(scenarioId: number) {
         gs.heygen_video_url,
         gs.heygen_avatar_id,
         gs.heygen_avatar_name,
+        a.avatar_name AS resolved_avatar_name,
         c.name as client_name,
         gs.background_audio_tag,
         gs.video_generation_prompts,
@@ -322,6 +324,9 @@ async function getScenario(scenarioId: number) {
         c.subtitle_margin_percent
      FROM generated_scenarios gs
      LEFT JOIN clients c ON c.id = gs.client_id
+     LEFT JOIN client_heygen_avatars a
+       ON a.client_id = gs.client_id
+      AND a.avatar_id = gs.heygen_avatar_id
      WHERE gs.id = $1`,
     [scenarioId]
   );
@@ -975,7 +980,11 @@ async function buildMontage(scenarioId: number) {
 
   return {
     outputPath,
-    avatarName: scenario.heygen_avatar_name || scenario.heygen_avatar_id || `avatar-${scenarioId}`,
+    avatarName:
+      scenario.resolved_avatar_name ||
+      scenario.heygen_avatar_name ||
+      scenario.heygen_avatar_id ||
+      `avatar-${scenarioId}`,
     clientName: scenario.client_name,
     backgroundAudioName: backgroundAudioTrack.name,
     backgroundAudioPath: backgroundAudioTrack.diskPath,

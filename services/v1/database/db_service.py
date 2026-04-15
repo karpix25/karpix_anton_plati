@@ -340,13 +340,13 @@ def init_db() -> None:
             monthly_limit INTEGER DEFAULT 30, target_duration_seconds INTEGER DEFAULT 50,
             target_duration_min_seconds INTEGER DEFAULT 50, target_duration_max_seconds INTEGER DEFAULT 50,
             broll_interval_seconds NUMERIC(4,1) DEFAULT 3.0,
-            broll_timing_mode TEXT DEFAULT 'semantic_pause',
+            broll_timing_mode TEXT DEFAULT 'coverage_percent',
             broll_pacing_profile TEXT DEFAULT 'balanced',
             broll_pause_threshold_seconds NUMERIC(3,2) DEFAULT 0.45,
             broll_coverage_percent NUMERIC(4,1) DEFAULT 35.0,
             broll_semantic_relevance_priority TEXT DEFAULT 'balanced',
             broll_product_clip_policy TEXT DEFAULT 'contextual',
-            broll_generator_model TEXT DEFAULT 'bytedance/v1-pro-text-to-video',
+            broll_generator_model TEXT DEFAULT 'veo3_lite',
             product_media_assets JSONB DEFAULT '[]'::jsonb, product_keyword TEXT, product_video_url TEXT, tts_provider TEXT DEFAULT 'minimax', tts_voice_id TEXT,
             elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY',
             tts_silence_trim_min_duration_seconds NUMERIC(4,2) DEFAULT 0.35,
@@ -546,13 +546,14 @@ def init_db() -> None:
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_min_seconds INTEGER DEFAULT 50",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_max_seconds INTEGER DEFAULT 50",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_interval_seconds NUMERIC(4,1) DEFAULT 3.0",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_timing_mode TEXT DEFAULT 'semantic_pause'",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_timing_mode TEXT DEFAULT 'coverage_percent'",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_pacing_profile TEXT DEFAULT 'balanced'",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_pause_threshold_seconds NUMERIC(3,2) DEFAULT 0.45",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_coverage_percent NUMERIC(4,1) DEFAULT 35.0",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_semantic_relevance_priority TEXT DEFAULT 'balanced'",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_product_clip_policy TEXT DEFAULT 'contextual'",
-        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_generator_model TEXT DEFAULT 'bytedance/v1-pro-text-to-video'",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_generator_model TEXT DEFAULT 'veo3_lite'",
+        "CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_keyword TEXT",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_video_url TEXT",
@@ -696,6 +697,25 @@ def init_db() -> None:
             cursor.execute("SELECT pg_advisory_xact_lock(%s)", (INIT_DB_ADVISORY_LOCK_KEY,))
             for sql in tables:
                 cursor.execute(sql)
+            cursor.execute("ALTER TABLE clients ALTER COLUMN broll_generator_model SET DEFAULT 'veo3_lite'")
+            cursor.execute(
+                """
+                INSERT INTO app_migrations(name)
+                VALUES (%s)
+                ON CONFLICT (name) DO NOTHING
+                RETURNING name
+                """,
+                ("2026_04_15_backfill_broll_generator_model_veo3_lite",),
+            )
+            migration_row = cursor.fetchone()
+            if migration_row:
+                cursor.execute(
+                    """
+                    UPDATE clients
+                    SET broll_generator_model = 'veo3_lite'
+                    WHERE broll_generator_model IS DISTINCT FROM 'veo3_lite'
+                    """
+                )
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Init DB failed: {e}")
@@ -984,23 +1004,32 @@ def choose_next_client_avatar_variant(client_id: int) -> Optional[Dict[str, Any]
         cursor.execute("SELECT pg_advisory_xact_lock(%s)", (AVATAR_RR_LOCK_BASE_KEY + int(client_id),))
 
         cursor.execute("""
-            SELECT *
-            FROM client_heygen_avatars
-            WHERE client_id = %s
-              AND is_active = TRUE
+            SELECT a.*
+            FROM client_heygen_avatars a
+            LEFT JOIN (
+                SELECT heygen_avatar_id, COUNT(*)::INT AS today_count
+                FROM generated_scenarios
+                WHERE client_id = %s
+                  AND heygen_avatar_id IS NOT NULL
+                  AND DATE_TRUNC('day', created_at) = DATE_TRUNC('day', CURRENT_TIMESTAMP)
+                GROUP BY heygen_avatar_id
+            ) today_usage ON today_usage.heygen_avatar_id = a.avatar_id
+            WHERE a.client_id = %s
+              AND a.is_active = TRUE
               AND EXISTS (
                 SELECT 1
                 FROM client_heygen_avatar_looks l
-                WHERE l.client_avatar_id = client_heygen_avatars.id
+                WHERE l.client_avatar_id = a.id
                   AND l.is_active = TRUE
               )
             ORDER BY
-              COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
-              sort_order ASC,
-              created_at ASC,
-              id ASC
+              COALESCE(today_usage.today_count, 0) ASC,
+              COALESCE(a.last_used_at, TIMESTAMP '1970-01-01') ASC,
+              a.sort_order ASC,
+              a.created_at ASC,
+              a.id ASC
             LIMIT 1
-        """, (client_id,))
+        """, (client_id, client_id))
         avatar_row = cursor.fetchone()
         if not avatar_row:
             return None

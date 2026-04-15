@@ -135,7 +135,13 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     );
 
   const hasStartableVideoPrompts = (prompts: ScenarioVideoPromptItem[]) =>
-    prompts.some((item) => !item.use_ready_asset && !!item.prompt_json && !item.task_id && !item.video_url);
+    prompts.some((item) => {
+      if (item.use_ready_asset || !item.prompt_json || item.video_url) return false;
+      const taskState = (item.task_state || "").toLowerCase();
+      const submissionStatus = (item.submission_status || "").toLowerCase();
+      const failed = taskState === "fail" || submissionStatus === "failed";
+      return !item.task_id || failed;
+    });
 
   const getVideoStatusLabel = (item: ScenarioVideoPromptItem) => {
     if (item.use_ready_asset) return "готовый файл";
@@ -503,7 +509,13 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       ? "Seedance 1.5 Pro"
       : currentBrollGeneratorModel === "grok-imagine/text-to-video"
         ? "Grok Imagine T2V"
-        : "KIE V1 Pro";
+        : currentBrollGeneratorModel === "veo3"
+          ? "Veo 3.1 Quality"
+          : currentBrollGeneratorModel === "veo3_fast"
+            ? "Veo 3.1 Fast"
+            : currentBrollGeneratorModel === "veo3_lite"
+              ? "Veo 3.1 Lite"
+              : "KIE V1 Pro";
   const currentPromptUnitCostUsd = getBrollGenerationUnitCostUsd(currentBrollGeneratorModel);
   const currentPromptCostUsd = currentGeneratedPromptCount * currentPromptUnitCostUsd;
   const currentHeygenCostUsd = (currentActualDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
@@ -1301,7 +1313,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                         </div>
                       </div>
                       <div className="rounded-xl border border-white/80 bg-white p-4 text-xs text-slate-600">
-                        Prompt-ы сохраняются автоматически, но в генератор видео теперь отправляются только по кнопке. Повторный запуск отправит только те сегменты, у которых ещё нет `task_id`.
+                        Prompt-ы сохраняются автоматически, но в генератор видео отправляются по кнопке. Повторный запуск отправит сегменты без `task_id` и сегменты со статусом `failed`.
                       </div>
                       {generatedVideoPrompts.length ? (
                         <div className="space-y-3">

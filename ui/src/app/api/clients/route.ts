@@ -99,6 +99,7 @@ function normalizeTtsPronunciationOverrides(value: unknown): TtsPronunciationOve
 }
 
 async function ensureClientVoiceColumn() {
+  await pool.query("CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
   await pool.query('ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
@@ -130,7 +131,22 @@ async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_coverage_percent NUMERIC(4,1) DEFAULT 35.0");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_semantic_relevance_priority TEXT DEFAULT 'balanced'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_product_clip_policy TEXT DEFAULT 'contextual'");
-  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_generator_model TEXT DEFAULT 'bytedance/v1-pro-text-to-video'");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_generator_model TEXT DEFAULT 'veo3_lite'");
+  await pool.query("ALTER TABLE clients ALTER COLUMN broll_generator_model SET DEFAULT 'veo3_lite'");
+  const migrationRes = await pool.query(
+    `INSERT INTO app_migrations(name)
+     VALUES ($1)
+     ON CONFLICT (name) DO NOTHING
+     RETURNING name`,
+    ["2026_04_15_backfill_broll_generator_model_veo3_lite"]
+  );
+  if (migrationRes.rowCount) {
+    await pool.query(
+      `UPDATE clients
+       SET broll_generator_model = 'veo3_lite'
+       WHERE broll_generator_model IS DISTINCT FROM 'veo3_lite'`
+    );
+  }
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb");
 }
 
@@ -293,7 +309,7 @@ export async function POST(request: Request) {
         broll_coverage_percent || 35,
         broll_semantic_relevance_priority || 'balanced',
         broll_product_clip_policy || 'contextual',
-        broll_generator_model || 'bytedance/v1-pro-text-to-video',
+        broll_generator_model || 'veo3_lite',
         JSON.stringify(normalizedAssets),
         product_keyword || null,
         product_video_url || null,
@@ -448,7 +464,7 @@ export async function PUT(request: Request) {
         broll_coverage_percent || 35,
         broll_semantic_relevance_priority || 'balanced',
         broll_product_clip_policy || 'contextual',
-        broll_generator_model || 'bytedance/v1-pro-text-to-video',
+        broll_generator_model || 'veo3_lite',
         JSON.stringify(normalizedAssets),
         product_keyword || null,
         product_video_url || null,

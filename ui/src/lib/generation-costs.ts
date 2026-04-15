@@ -27,7 +27,7 @@ export function getScenarioBrollGeneratorModel(scenario?: Scenario | null): Brol
   ) {
     return rawModel;
   }
-  return "bytedance/v1-pro-text-to-video";
+  return "veo3_lite";
 }
 
 export function getBrollGenerationUnitCostUsd(model: BrollGeneratorModel): number {

@@ -22,7 +22,7 @@ export const defaultSettings: ClientSettings = {
   broll_coverage_percent: 35,
   broll_semantic_relevance_priority: "balanced",
   broll_product_clip_policy: "contextual",
-  broll_generator_model: "bytedance/v1-pro-text-to-video",
+  broll_generator_model: "veo3_lite",
   product_media_assets: [],
   product_keyword: "",
   product_video_url: "",
