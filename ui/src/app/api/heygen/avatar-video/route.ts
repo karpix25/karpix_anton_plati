@@ -300,6 +300,7 @@ function buildVideoPayload(avatar: AvatarRow, look: LookRow | null, audioAssetId
       width: 720,
       height: 1280,
     },
+    aspect_ratio: "9:16",
     video_inputs: [
       {
         character,
