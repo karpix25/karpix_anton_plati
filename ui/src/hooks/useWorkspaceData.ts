@@ -204,10 +204,19 @@ export function useWorkspaceData(selectedClientId: string) {
   });
 
   const batchMixMutation = useMutation({
-    mutationFn: async ({ topicId, structureId }: { topicId?: number, structureId?: number }) => {
+    mutationFn: async ({
+      topicId,
+      structureId,
+      count = 1,
+    }: {
+      topicId?: number;
+      structureId?: number;
+      count?: number;
+    }) => {
       await axios.post(`${API_BASE}/generate`, {
         clientId: Number(selectedClientId),
         mode: "mix",
+        count,
         topicId,
         structureId
       });

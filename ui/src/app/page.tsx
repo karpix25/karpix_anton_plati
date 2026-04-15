@@ -381,11 +381,19 @@ export default function CuratorDashboard() {
   const handleGenerateMix = () => {
     if (selectedTopic && selectedStructure) {
       batchMixMutation.mutate({ 
+        count: 1,
         topicId: selectedTopic.id, 
         structureId: selectedStructure.id 
       });
       alert("Генерация микса запущена! Проверьте вкладку 'Сценарии' через минуту.");
     }
+  };
+
+  const handleGenerateRandomMixBatch = () => {
+    batchMixMutation.mutate({
+      count: 4,
+    });
+    alert("Запущена генерация 4 рандомных сценариев. Проверьте вкладку 'Сценарии' через минуту.");
   };
 
   const handleSingleRewrite = (id: number) => {
@@ -499,7 +507,7 @@ export default function CuratorDashboard() {
               setSelectedStructure={setSelectedStructure}
               isGenerating={batchMixMutation.isPending}
               onGenerate={handleGenerateMix}
-              selectedClient={selectedClient}
+              onGenerateRandomBatch={handleGenerateRandomMixBatch}
             />
           )}
 

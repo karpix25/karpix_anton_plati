@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { Palette, Grid3X3, Zap, LoaderCircle, Search, X, ChevronRight, Check } from "lucide-react";
+import { Palette, Grid3X3, Zap, LoaderCircle, Search, X, ChevronRight, Check, Shuffle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { TopicCard, StructureCard, Client } from "@/types";
+import { TopicCard, StructureCard } from "@/types";
 import { normalizePlaceholderText } from "@/lib/utils";
 
 const TRANSLATIONS: Record<string, string> = {
@@ -28,8 +28,8 @@ interface GeneratorScreenProps {
   selectedStructure: StructureCard | null;
   setSelectedStructure: (structure: StructureCard | null) => void;
   onGenerate: () => void;
+  onGenerateRandomBatch: () => void;
   isGenerating: boolean;
-  selectedClient?: Client;
 }
 
 export function GeneratorScreen({
@@ -40,8 +40,8 @@ export function GeneratorScreen({
   selectedStructure,
   setSelectedStructure,
   onGenerate,
-  isGenerating,
-  selectedClient
+  onGenerateRandomBatch,
+  isGenerating
 }: GeneratorScreenProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Все");
@@ -140,18 +140,33 @@ export function GeneratorScreen({
             Выбери одну тему и один паттерн, чтобы создать совершенно новый сценарий.
           </p>
         </div>
-        <Button
-          className="primary-gradient h-12 rounded-xl px-8 font-bold text-white shadow-lg"
-          onClick={onGenerate}
-          disabled={!selectedTopic || !selectedStructure || isGenerating}
-        >
-          {isGenerating ? (
-            <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Zap className="mr-2 h-4 w-4" />
-          )}
-          Сгенерировать микс
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button
+            variant="outline"
+            className="h-12 rounded-xl px-6 font-bold"
+            onClick={onGenerateRandomBatch}
+            disabled={isGenerating || !topicCards.length || !structureCards.length}
+          >
+            {isGenerating ? (
+              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Shuffle className="mr-2 h-4 w-4" />
+            )}
+            4 рандомных
+          </Button>
+          <Button
+            className="primary-gradient h-12 rounded-xl px-8 font-bold text-white shadow-lg"
+            onClick={onGenerate}
+            disabled={!selectedTopic || !selectedStructure || isGenerating}
+          >
+            {isGenerating ? (
+              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Zap className="mr-2 h-4 w-4" />
+            )}
+            Сгенерировать микс
+          </Button>
+        </div>
       </div>
 
       <section className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_350px]">
