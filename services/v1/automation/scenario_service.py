@@ -6,6 +6,7 @@ import os
 import json
 import logging
 import re
+import ast
 from openai import OpenAI
 
 # Set up logging
@@ -27,28 +28,137 @@ def _openrouter_client():
         api_key=api_key
     )
 
+def _clean_markdown_json(content: str) -> str:
+    value = (content or "").strip()
+    if "```json" in value:
+        value = value.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in value:
+        value = value.split("```", 1)[1].split("```", 1)[0].strip()
+    return value
+
+
+def _extract_json_object(text: str) -> str | None:
+    value = (text or "").strip()
+    start = value.find("{")
+    if start < 0:
+        return None
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for idx in range(start, len(value)):
+        ch = value[idx]
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return value[start : idx + 1]
+    return None
+
+
+def _try_parse_json_payload(raw_content: str):
+    cleaned = _clean_markdown_json(raw_content)
+    candidates = [cleaned]
+
+    extracted = _extract_json_object(cleaned)
+    if extracted and extracted not in candidates:
+        candidates.append(extracted)
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            return json.loads(candidate)
+        except Exception:
+            pass
+
+        try:
+            parsed = ast.literal_eval(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+
+        normalized = candidate.replace("“", '"').replace("”", '"').replace("’", "'")
+        normalized = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_\-]*)(\s*:)', r'\1"\2"\3', normalized)
+        normalized = normalized.replace("None", "null").replace("True", "true").replace("False", "false")
+        try:
+            parsed = ast.literal_eval(normalized)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+        if "'" in normalized and '"' not in normalized:
+            normalized = normalized.replace("'", '"')
+        try:
+            return json.loads(normalized)
+        except Exception:
+            pass
+
+    raise ValueError("Could not parse model response as valid JSON object")
+
+
+def _repair_json_with_model(client: OpenAI, raw_content: str):
+    repair_prompt = f"""
+Convert the following text to a strict valid JSON object.
+Rules:
+- Return only JSON.
+- No markdown fences.
+- Keep the same semantics.
+
+TEXT:
+{raw_content}
+"""
+    repaired = client.chat.completions.create(
+        model="google/gemini-2.5-flash",
+        messages=[{"role": "user", "content": repair_prompt}],
+        response_format={"type": "json_object"},
+    )
+    repaired_content = repaired.choices[0].message.content
+    return _try_parse_json_payload(repaired_content)
+
+
 def _chat_json(prompt):
     client = _openrouter_client()
-    try:
-        response = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"}
-        )
-        content = response.choices[0].message.content
-        
-        # Clean up response if it has JSON markdown
-        if "```json" in content:
-            content = content.split("```json")[-1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[-1].split("```")[0].strip()
-            
-        return json.loads(content)
-    except Exception as e:
-        logger.error(f"Error in _chat_json: {e}")
-        # Print for visibility
-        print(f"FAILED TO PARSE JSON: {e}")
-        raise e
+    last_error = None
+
+    for attempt in range(1, 3):
+        try:
+            response = client.chat.completions.create(
+                model="google/gemini-2.5-flash",
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            try:
+                return _try_parse_json_payload(content)
+            except Exception as parse_error:
+                logger.warning("JSON parse failed in _chat_json (attempt %s): %s", attempt, parse_error)
+                logger.warning("Raw model response preview: %s", (content or "").replace("\n", " ")[:400])
+                try:
+                    return _repair_json_with_model(client, content)
+                except Exception as repair_error:
+                    last_error = repair_error
+                    logger.warning("JSON repair failed in _chat_json (attempt %s): %s", attempt, repair_error)
+        except Exception as request_error:
+            last_error = request_error
+            logger.error("OpenRouter request failed in _chat_json (attempt %s): %s", attempt, request_error)
+
+    logger.error("Error in _chat_json after retries: %s", last_error)
+    print(f"FAILED TO PARSE JSON: {last_error}")
+    raise last_error
 
 def _chat_text(prompt: str) -> str:
     client = _openrouter_client()
