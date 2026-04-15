@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -29,6 +29,8 @@ const TRANSLATIONS: Record<string, string> = {
 
 const t = (text: string) => TRANSLATIONS[text] || text;
 const HEYGEN_PENDING_STATUSES = new Set(["pending", "waiting", "processing", "queued", "in_progress", "rendering"]);
+const AUTO_BUILD_POLL_INTERVAL_MS = 5000;
+const AUTO_BUILD_TIMEOUT_MS = 18 * 60 * 1000;
 
 const isPendingHeygenStatus = (status: string | null | undefined) =>
   HEYGEN_PENDING_STATUSES.has(String(status || "").toLowerCase());
@@ -41,6 +43,8 @@ const isPendingKiePrompt = (item: ScenarioVideoPromptItem) => {
   if (["failed", "skipped", "not_applicable"].includes(submissionStatus)) return false;
   return true;
 };
+
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 const formatAngle = (angle: string | undefined) => {
   if (!angle) return "—";
@@ -124,11 +128,14 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [isPollingVideoStatus, setIsPollingVideoStatus] = useState(false);
   const [actualAudioDurationSeconds, setActualAudioDurationSeconds] = useState<number | null>(null);
   const [scenarioSearchQuery, setScenarioSearchQuery] = useState("");
+  const [isAssemblingAll, setIsAssemblingAll] = useState(false);
+  const [assembleAllStep, setAssembleAllStep] = useState("");
   const [feedbackRating, setFeedbackRating] = useState<"like" | "dislike" | null>(null);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackCategories, setFeedbackCategories] = useState<string[]>([]);
   const [isSavingFeedback, setIsSavingFeedback] = useState(false);
   const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const scenariosRef = useRef<Scenario[]>(scenarios);
 
   const hasPendingVideoPrompts = (prompts: ScenarioVideoPromptItem[]) =>
     prompts.some(isPendingKiePrompt);
@@ -153,6 +160,10 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     }
     return item.submission_status || "ожидание";
   };
+
+  useEffect(() => {
+    scenariosRef.current = scenarios;
+  }, [scenarios]);
 
   useEffect(() => {
     return () => {
@@ -445,6 +456,124 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       alert(error instanceof Error ? error.message : "Не удалось собрать монтаж.");
     } finally {
       setIsAssemblingMontage(false);
+    }
+  };
+
+  const handleAssembleAll = async () => {
+    if (!selectedScenario?.id) return;
+    if (!selectedScenario?.tts_audio_path) {
+      alert("Сначала нужна озвучка (TTS).");
+      return;
+    }
+
+    setIsAssemblingAll(true);
+    setAssembleAllStep("Стартуем полный пайплайн...");
+
+    try {
+      let currentScenario: Scenario | null = selectedScenario;
+      const scenarioId = selectedScenario.id;
+      const deadline = Date.now() + AUTO_BUILD_TIMEOUT_MS;
+
+      const refreshCurrentScenario = async () => {
+        await Promise.resolve(onRefresh());
+        const fresh = scenariosRef.current.find((item) => item.id === scenarioId) || null;
+        if (fresh) {
+          currentScenario = fresh;
+          setSelectedScenario(fresh);
+          setGeneratedVideoPrompts(fresh.video_generation_prompts?.prompts || []);
+        }
+        return fresh;
+      };
+
+      const initialPrompts = currentScenario?.video_generation_prompts?.prompts || [];
+      if (initialPrompts.length && hasStartableVideoPrompts(initialPrompts)) {
+        setAssembleAllStep("Запускаем генерацию видео-перебивок...");
+        const submitResponse = await fetch("/api/kie/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenarioId }),
+        });
+        const submitPayload = await submitResponse.json().catch(() => null);
+        if (!submitResponse.ok) {
+          throw new Error(submitPayload?.error || "Не удалось запустить KIE генерацию.");
+        }
+        await refreshCurrentScenario();
+      }
+
+      const heygenStatus = String(currentScenario?.heygen_status || "").toLowerCase();
+      if (!currentScenario?.heygen_video_url && !isPendingHeygenStatus(heygenStatus)) {
+        setAssembleAllStep("Запускаем рендер аватара...");
+        const heygenResponse = await fetch("/api/heygen/avatar-video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenarioId }),
+        });
+        const heygenPayload = await heygenResponse.json().catch(() => null);
+        if (!heygenResponse.ok) {
+          throw new Error(heygenPayload?.error || "Не удалось запустить HeyGen.");
+        }
+        await refreshCurrentScenario();
+      }
+
+      while (Date.now() < deadline) {
+        const prompts = currentScenario?.video_generation_prompts?.prompts || [];
+        const kiePending = hasPendingVideoPrompts(prompts);
+        const hasHeygenVideo = Boolean(currentScenario?.heygen_video_url);
+        const currentHeygenStatus = String(currentScenario?.heygen_status || "").toLowerCase();
+        const heygenPending = isPendingHeygenStatus(currentHeygenStatus);
+        const heygenFailed = currentHeygenStatus === "failed";
+
+        if (heygenFailed) {
+          throw new Error(currentScenario?.heygen_error || "HeyGen завершился с ошибкой.");
+        }
+
+        if (!kiePending && hasHeygenVideo) {
+          break;
+        }
+
+        setAssembleAllStep("Ждём готовности KIE и HeyGen...");
+
+        if (kiePending && currentScenario?.job_id) {
+          await fetch("/api/kie/poll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jobId: currentScenario.job_id }),
+          });
+        }
+
+        if (heygenPending && currentScenario?.id) {
+          await fetch(`/api/heygen/avatar-video?scenarioId=${currentScenario.id}`, {
+            cache: "no-store",
+          });
+        }
+
+        await sleep(AUTO_BUILD_POLL_INTERVAL_MS);
+        await refreshCurrentScenario();
+      }
+
+      if (!currentScenario?.heygen_video_url) {
+        throw new Error("HeyGen не отдал готовое видео в отведённое время.");
+      }
+
+      setAssembleAllStep("Собираем финальный монтаж...");
+      const assembleResponse = await fetch("/api/scenarios/assemble", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenarioId }),
+      });
+      const assemblePayload = await assembleResponse.json().catch(() => null);
+      if (!assembleResponse.ok) {
+        throw new Error(assemblePayload?.error || "Не удалось собрать монтаж.");
+      }
+
+      await refreshCurrentScenario();
+      setAssembleAllStep("Готово");
+    } catch (error) {
+      console.error("Assemble all error:", error);
+      alert(error instanceof Error ? error.message : "Не удалось выполнить полный пайплайн.");
+    } finally {
+      setIsAssemblingAll(false);
+      window.setTimeout(() => setAssembleAllStep(""), 1000);
     }
   };
 
@@ -1023,28 +1152,59 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                     <div className="text-xs font-bold uppercase tracking-widest text-slate-600">
                       Финальный монтаж
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-[10px] font-bold border-slate-300 text-slate-700 hover:bg-slate-100"
-                      onClick={handleAssembleMontage}
-                      disabled={
-                        isAssemblingMontage ||
-                        !selectedScenario?.tts_audio_path ||
-                        !selectedScenario?.heygen_video_url ||
-                        (selectedScenario?.montage_status || "").toLowerCase() === "processing"
-                      }
-                    >
-                      {isAssemblingMontage || (selectedScenario?.montage_status || "").toLowerCase() === "processing" ? (
-                        <>
-                          <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-                          Сборка...
-                        </>
-                      ) : (
-                        <>Собрать монтаж</>
-                      )}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-bold border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                        onClick={handleAssembleAll}
+                        disabled={
+                          isAssemblingAll ||
+                          isAssemblingMontage ||
+                          isSubmittingVideoPrompts ||
+                          isStartingHeygen ||
+                          !selectedScenario?.tts_audio_path ||
+                          (selectedScenario?.montage_status || "").toLowerCase() === "processing"
+                        }
+                      >
+                        {isAssemblingAll ? (
+                          <>
+                            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                            Собираем всё...
+                          </>
+                        ) : (
+                          <>Собрать всё</>
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-[10px] font-bold border-slate-300 text-slate-700 hover:bg-slate-100"
+                        onClick={handleAssembleMontage}
+                        disabled={
+                          isAssemblingAll ||
+                          isAssemblingMontage ||
+                          !selectedScenario?.tts_audio_path ||
+                          !selectedScenario?.heygen_video_url ||
+                          (selectedScenario?.montage_status || "").toLowerCase() === "processing"
+                        }
+                      >
+                        {isAssemblingMontage || (selectedScenario?.montage_status || "").toLowerCase() === "processing" ? (
+                          <>
+                            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                            Сборка...
+                          </>
+                        ) : (
+                          <>Собрать монтаж</>
+                        )}
+                      </Button>
+                    </div>
                   </div>
+                  {assembleAllStep ? (
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-xs text-indigo-900">
+                      {assembleAllStep}
+                    </div>
+                  ) : null}
                   <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                     <div className="space-y-2">
                       <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
