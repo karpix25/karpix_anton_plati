@@ -28,6 +28,19 @@ const TRANSLATIONS: Record<string, string> = {
 };
 
 const t = (text: string) => TRANSLATIONS[text] || text;
+const HEYGEN_PENDING_STATUSES = new Set(["pending", "waiting", "processing", "queued", "in_progress", "rendering"]);
+
+const isPendingHeygenStatus = (status: string | null | undefined) =>
+  HEYGEN_PENDING_STATUSES.has(String(status || "").toLowerCase());
+
+const isPendingKiePrompt = (item: ScenarioVideoPromptItem) => {
+  if (item.use_ready_asset || !item.task_id || item.video_url) return false;
+  const taskState = String(item.task_state || "").toLowerCase();
+  const submissionStatus = String(item.submission_status || "").toLowerCase();
+  if (["success", "fail"].includes(taskState)) return false;
+  if (["failed", "skipped", "not_applicable"].includes(submissionStatus)) return false;
+  return true;
+};
 
 const formatAngle = (angle: string | undefined) => {
   if (!angle) return "—";
@@ -51,12 +64,7 @@ const getScenarioVideoSummary = (scenario: Scenario) => {
   const readyToStartCount = generatedPrompts.filter(
     (item) => !item.video_url && !item.task_id && item.prompt_json
   ).length;
-  const pendingCount = generatedPrompts.filter(
-    (item) =>
-      !item.video_url &&
-      !["success", "fail"].includes(item.task_state || "") &&
-      ["submitted", "completed", "unknown"].includes(item.submission_status || "submitted")
-  ).length;
+  const pendingCount = generatedPrompts.filter(isPendingKiePrompt).length;
 
   if (pendingCount > 0) {
     return { label: `Генерация ${successCount}/${generatedPrompts.length}`, tone: "pending" as const };
@@ -82,7 +90,7 @@ const getHeygenStatusMeta = (scenario: Scenario) => {
   if (status === "failed") {
     return { label: "Avatar ошибка", tone: "failed" as const };
   }
-  if (["pending", "waiting", "processing"].includes(status)) {
+  if (isPendingHeygenStatus(status)) {
     return { label: "Avatar рендер", tone: "pending" as const };
   }
   return { label: "—", tone: "idle" as const };
@@ -123,14 +131,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [feedbackSaved, setFeedbackSaved] = useState(false);
 
   const hasPendingVideoPrompts = (prompts: ScenarioVideoPromptItem[]) =>
-    prompts.some(
-      (item) =>
-        !item.use_ready_asset &&
-        !!item.task_id &&
-        !item.video_url &&
-        !["success", "fail"].includes(item.task_state || "") &&
-        ["submitted", "completed", "unknown"].includes(item.submission_status || "submitted")
-    );
+    prompts.some(isPendingKiePrompt);
 
   const hasStartableVideoPrompts = (prompts: ScenarioVideoPromptItem[]) =>
     prompts.some((item) => {
@@ -225,8 +226,24 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     }
   }, [scenarios, selectedScenario]);
 
+  const pendingKieJobIds = useMemo(() => {
+    const ids = scenarios
+      .filter((scenario) => !!scenario.job_id && hasPendingVideoPrompts(scenario.video_generation_prompts?.prompts || []))
+      .map((scenario) => String(scenario.job_id));
+    return Array.from(new Set(ids));
+  }, [scenarios]);
+
+  const pendingHeygenScenarioIds = useMemo(
+    () =>
+      scenarios
+        .filter((scenario) => !!scenario.id && !!scenario.heygen_video_id && isPendingHeygenStatus(scenario.heygen_status))
+        .map((scenario) => scenario.id),
+    [scenarios]
+  );
+
   useEffect(() => {
-    if (!selectedScenario?.job_id || !generatedVideoPrompts.length || !hasPendingVideoPrompts(generatedVideoPrompts)) {
+    if (!pendingKieJobIds.length) {
+      setIsPollingVideoStatus(false);
       return;
     }
 
@@ -236,11 +253,19 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       if (cancelled) return;
       setIsPollingVideoStatus(true);
       try {
-        await fetch("/api/kie/poll", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId: selectedScenario.job_id }),
-        });
+        await Promise.all(
+          pendingKieJobIds.map(async (jobId) => {
+            const response = await fetch("/api/kie/poll", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ jobId }),
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => null);
+              console.error("KIE polling response error:", payload?.error || response.statusText);
+            }
+          })
+        );
         await Promise.resolve(onRefresh());
       } catch (error) {
         console.error("KIE polling error:", error);
@@ -258,15 +283,10 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [selectedScenario?.job_id, generatedVideoPrompts, onRefresh]);
+  }, [pendingKieJobIds, onRefresh]);
 
   useEffect(() => {
-    if (!selectedScenario?.id || !selectedScenario.heygen_video_id) {
-      return;
-    }
-
-    const status = (selectedScenario.heygen_status || "").toLowerCase();
-    if (!["pending", "waiting", "processing"].includes(status)) {
+    if (!pendingHeygenScenarioIds.length) {
       return;
     }
 
@@ -275,9 +295,17 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     const pollHeygenStatus = async () => {
       if (cancelled) return;
       try {
-        await fetch(`/api/heygen/avatar-video?scenarioId=${selectedScenario.id}`, {
-          cache: "no-store",
-        });
+        await Promise.all(
+          pendingHeygenScenarioIds.map(async (scenarioId) => {
+            const response = await fetch(`/api/heygen/avatar-video?scenarioId=${scenarioId}`, {
+              cache: "no-store",
+            });
+            if (!response.ok) {
+              const payload = await response.json().catch(() => null);
+              console.error("HeyGen polling response error:", payload?.error || response.statusText);
+            }
+          })
+        );
         await Promise.resolve(onRefresh());
       } catch (error) {
         console.error("HeyGen polling error:", error);
@@ -291,7 +319,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [onRefresh, selectedScenario?.heygen_status, selectedScenario?.heygen_video_id, selectedScenario?.id]);
+  }, [onRefresh, pendingHeygenScenarioIds]);
 
   const handleGenerateAudio = async (text: string, scenarioId: number) => {
     if (!text) return;
@@ -937,10 +965,10 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       disabled={
                         isStartingHeygen ||
                         !selectedScenario?.tts_audio_path ||
-                        ["pending", "waiting", "processing"].includes((selectedScenario?.heygen_status || "").toLowerCase())
+                        isPendingHeygenStatus(selectedScenario?.heygen_status)
                       }
                     >
-                      {isStartingHeygen || ["pending", "waiting", "processing"].includes((selectedScenario?.heygen_status || "").toLowerCase()) ? (
+                      {isStartingHeygen || isPendingHeygenStatus(selectedScenario?.heygen_status) ? (
                         <>
                           <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                           Рендер...
