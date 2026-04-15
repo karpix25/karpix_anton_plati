@@ -19,6 +19,7 @@ GROK_IMAGINE_TEXT_TO_VIDEO_MODEL = "grok-imagine/text-to-video"
 VEO3_QUALITY = "veo3"
 VEO3_FAST = "veo3_fast"
 VEO3_LITE = "veo3_lite"
+KIE_RETRYABLE_ERROR_CODES = {500}
 SUPPORTED_KIE_MODELS = {
     DEFAULT_KIE_MODEL,
     SEEDANCE_15_PRO_MODEL,
@@ -32,6 +33,14 @@ VEO3_MODELS = {VEO3_QUALITY, VEO3_FAST, VEO3_LITE}
 
 def _get_api_key() -> str | None:
     return os.getenv("KIE_API_KEY") or os.getenv("KIE_AI_API_KEY")
+
+
+def _get_max_internal_retry_attempts() -> int:
+    return max(0, int(os.getenv("KIE_INTERNAL_RETRY_ATTEMPTS", "3")))
+
+
+def _get_internal_retry_delay_seconds() -> float:
+    return max(0.0, float(os.getenv("KIE_INTERNAL_RETRY_DELAY_SECONDS", "1.5")))
 
 
 def normalize_kie_model(value: str | None) -> str:
@@ -70,6 +79,19 @@ def _extract_error_message(payload: Any) -> str | None:
         if code and str(code) not in {"0", "200", "success"}:
             return f"KIE returned code={code}"
     return None
+
+
+def _to_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_retryable_internal_error(error_code: int | None, error_message: str | None) -> bool:
+    if error_code in KIE_RETRYABLE_ERROR_CODES:
+        return True
+    return "internal error" in str(error_message or "").lower()
 
 
 def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
@@ -576,6 +598,8 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
         return item
 
     model = item.get("provider_model") or (item.get("request_payload") or {}).get("model")
+    retry_attempts = max(0, _to_int(item.get("retry_attempts")) or 0)
+    max_retry_attempts = max(0, _to_int(item.get("max_retry_attempts")) or _get_max_internal_retry_attempts())
 
     try:
         response_payload = get_kie_task_details(str(item["task_id"]), model=model)
@@ -586,6 +610,41 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
             task_state, result_urls, fail_msg = _parse_veo3_task_state(data)
         else:
             task_state, result_urls, fail_msg = _parse_market_task_state(data)
+        error_code = _to_int(data.get("errorCode"))
+
+        if (
+            task_state == "fail"
+            and item.get("prompt_json")
+            and retry_attempts < max_retry_attempts
+            and _is_retryable_internal_error(error_code, fail_msg)
+        ):
+            next_attempt = retry_attempts + 1
+            logger.warning(
+                "KIE task failed with retryable internal error. task_id=%s model=%s error_code=%s "
+                "attempt=%s/%s fail=%s",
+                item.get("task_id"), model, error_code, next_attempt, max_retry_attempts, fail_msg,
+            )
+            retry_delay = _get_internal_retry_delay_seconds()
+            if retry_delay > 0:
+                time.sleep(retry_delay)
+            submission = submit_kie_video_task(item["prompt_json"], model=model)
+            retry_error = submission.get("error")
+            if retry_error:
+                logger.warning(
+                    "KIE retry submission failed immediately. previous_task_id=%s attempt=%s/%s error=%s",
+                    item.get("task_id"), next_attempt, max_retry_attempts, retry_error,
+                )
+            else:
+                logger.info(
+                    "KIE retry submission accepted. previous_task_id=%s new_task_id=%s attempt=%s/%s",
+                    item.get("task_id"), submission.get("task_id"), next_attempt, max_retry_attempts,
+                )
+            return {
+                **item,
+                **submission,
+                "retry_attempts": next_attempt,
+                "max_retry_attempts": max_retry_attempts,
+            }
 
         logger.info(
             "KIE task refresh: task_id=%s model=%s state=%s urls=%d fail=%s",
@@ -607,6 +666,8 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
             "update_time": data.get("updateTime"),
             "complete_time": data.get("completeTime"),
             "error": fail_msg,
+            "retry_attempts": retry_attempts,
+            "max_retry_attempts": max_retry_attempts,
         }
     except Exception as error:
         error_str = str(error)
@@ -625,6 +686,8 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
                 "task_id": None,  # Clear so retry logic can re-submit
                 "task_state": "fail",
                 "error": error_str,
+                "retry_attempts": retry_attempts,
+                "max_retry_attempts": max_retry_attempts,
             }
         return {
             **item,
@@ -632,6 +695,8 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
             "provider_model": item.get("provider_model"),
             "submission_status": item.get("submission_status", "submitted"),
             "error": error_str,
+            "retry_attempts": retry_attempts,
+            "max_retry_attempts": max_retry_attempts,
         }
 
 
