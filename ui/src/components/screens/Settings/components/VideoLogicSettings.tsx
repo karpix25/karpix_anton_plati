@@ -11,7 +11,6 @@ import {
   PACING_LABELS,
   BROLL_PACING_OPTIONS,
   BROLL_GENERATOR_OPTIONS,
-  SEMANTIC_RELEVANCE_OPTIONS,
   PRODUCT_CLIP_POLICY_OPTIONS,
 } from "../SettingsConstants";
 
@@ -32,12 +31,10 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
   const brollPacingProfile = draftSettings.broll_pacing_profile || "balanced";
   const brollCoveragePercent = toSafeNumber(draftSettings.broll_coverage_percent, 35);
   const brollGeneratorModel = draftSettings.broll_generator_model || "veo3_lite";
-  const semanticRelevancePriority = draftSettings.broll_semantic_relevance_priority || "balanced";
   const productClipPolicy = draftSettings.broll_product_clip_policy || "contextual";
 
   const pacingPreview = BROLL_PACING_OPTIONS[brollPacingProfile];
   const generatorPreview = BROLL_GENERATOR_OPTIONS[brollGeneratorModel];
-  const relevancePreview = SEMANTIC_RELEVANCE_OPTIONS[semanticRelevancePriority];
   const policyPreview = PRODUCT_CLIP_POLICY_OPTIONS[productClipPolicy];
 
   return (
@@ -146,28 +143,6 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 pt-2">
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Приоритет точности
-            </label>
-            <Select
-              value={semanticRelevancePriority}
-              onValueChange={(value: Settings["broll_semantic_relevance_priority"]) =>
-                setDraftSettings((prev) => ({ ...prev, broll_semantic_relevance_priority: value }))
-              }
-            >
-              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="precision">Максимально в тему</SelectItem>
-                <SelectItem value="balanced">Баланс</SelectItem>
-                <SelectItem value="dynamic">Больше динамики</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[10px] text-slate-400 font-medium px-1">{relevancePreview.description}</p>
-          </div>
-
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               Product Clip Policy

@@ -116,8 +116,6 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [isPollingVideoStatus, setIsPollingVideoStatus] = useState(false);
   const [actualAudioDurationSeconds, setActualAudioDurationSeconds] = useState<number | null>(null);
   const [scenarioSearchQuery, setScenarioSearchQuery] = useState("");
-  const latestScenarioId = scenarios[0]?.id ?? null;
-  const isLatestScenario = !!selectedScenario && selectedScenario.id === latestScenarioId;
   const [feedbackRating, setFeedbackRating] = useState<"like" | "dislike" | null>(null);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackCategories, setFeedbackCategories] = useState<string[]>([]);
@@ -938,7 +936,6 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       onClick={handleGenerateHeygenVideo}
                       disabled={
                         isStartingHeygen ||
-                        !isLatestScenario ||
                         !selectedScenario?.tts_audio_path ||
                         ["pending", "waiting", "processing"].includes((selectedScenario?.heygen_status || "").toLowerCase())
                       }
@@ -954,9 +951,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                     </Button>
                   </div>
                   <div className="rounded-xl border border-white/70 bg-white p-4 text-xs text-slate-600">
-                    {isLatestScenario
-                      ? "Запуск доступен только для самой новой строки таблицы. Видео сохраняется в БД и затем показывается прямо под оригинальным скриптом."
-                      : "HeyGen-рендер выключен для этой строки. Разрешена только самая новая запись в таблице."}
+                    Запуск доступен для любой строки с готовой озвучкой. Видео сохраняется в БД и показывается прямо под оригинальным скриптом.
                   </div>
                   {(selectedScenario?.heygen_avatar_name || selectedScenario?.heygen_look_name || selectedScenario?.heygen_status) ? (
                     <div className="flex flex-wrap gap-2">

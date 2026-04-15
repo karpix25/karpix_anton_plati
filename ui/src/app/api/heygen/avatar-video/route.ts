@@ -18,7 +18,6 @@ Overall direction: natural presenter energy, realistic body life, gentle ambient
 type ScenarioRow = {
   id: number;
   client_id: number | null;
-  generation_source: string | null;
   tts_audio_path: string | null;
   heygen_video_id: string | null;
   heygen_status: string | null;
@@ -49,14 +48,6 @@ type SelectedTalkingPhoto = {
 };
 
 const AVATAR_RR_LOCK_BASE_KEY = 2026033100;
-
-function isInternalAutomationRequest(request: Request) {
-  const expectedToken = process.env.AUTOMATION_INTERNAL_TOKEN?.trim();
-  if (!expectedToken) {
-    return false;
-  }
-  return request.headers.get("x-automation-token") === expectedToken;
-}
 
 function getHeygenApiKey() {
   const apiKey = process.env.HEYGEN_API_KEY;
@@ -161,7 +152,7 @@ async function uploadAudioAsset(filePath: string) {
 
 async function getScenario(scenarioId: number) {
   const { rows } = await pool.query<ScenarioRow>(
-    `SELECT id, client_id, generation_source, tts_audio_path, heygen_video_id, heygen_status,
+    `SELECT id, client_id, tts_audio_path, heygen_video_id, heygen_status,
             heygen_avatar_id, heygen_avatar_name, heygen_look_id, heygen_look_name
      FROM generated_scenarios
      WHERE id = $1`,
@@ -169,29 +160,6 @@ async function getScenario(scenarioId: number) {
   );
 
   return rows[0] || null;
-}
-
-async function assertScenarioIsLatest(scenario: ScenarioRow) {
-  const { rows } = await pool.query<{ id: number }>(
-    `SELECT id
-     FROM generated_scenarios
-     WHERE client_id IS NOT DISTINCT FROM $1
-     ORDER BY created_at DESC, id DESC
-     LIMIT 1`,
-    [scenario.client_id]
-  );
-
-  if (!rows[0] || rows[0].id !== scenario.id) {
-    throw new Error("Avatar render is allowed only for the latest scenario in the table");
-  }
-}
-
-function canBypassLatestScenarioGuard(request: Request, scenario: ScenarioRow) {
-  if (isInternalAutomationRequest(request)) {
-    return true;
-  }
-
-  return String(scenario.generation_source || "").toLowerCase() === "auto";
 }
 
 async function selectAvatarVariant(
@@ -522,10 +490,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
     }
 
-    if (!canBypassLatestScenarioGuard(request, scenario)) {
-      await assertScenarioIsLatest(scenario);
-    }
-
     if (!scenario.tts_audio_path || !existsSync(scenario.tts_audio_path)) {
       return NextResponse.json(
         { error: "TTS audio file is missing. Generate or regenerate the audio first." },
@@ -606,8 +570,7 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("HeyGen avatar video POST error:", error);
     const message = error instanceof Error ? error.message : "Internal Server Error";
-    const status = message.includes("latest scenario") ? 409 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
 
