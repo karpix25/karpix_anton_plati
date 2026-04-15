@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { RefreshCw, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -115,6 +115,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [generatedVideoPrompts, setGeneratedVideoPrompts] = useState<ScenarioVideoPromptItem[]>([]);
   const [isPollingVideoStatus, setIsPollingVideoStatus] = useState(false);
   const [actualAudioDurationSeconds, setActualAudioDurationSeconds] = useState<number | null>(null);
+  const [scenarioSearchQuery, setScenarioSearchQuery] = useState("");
   const latestScenarioId = scenarios[0]?.id ?? null;
   const isLatestScenario = !!selectedScenario && selectedScenario.id === latestScenarioId;
   const [feedbackRating, setFeedbackRating] = useState<"like" | "dislike" | null>(null);
@@ -507,6 +508,21 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const currentPromptCostUsd = currentGeneratedPromptCount * currentPromptUnitCostUsd;
   const currentHeygenCostUsd = (currentActualDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
   const currentTotalCostUsd = currentPromptCostUsd + currentHeygenCostUsd;
+  const normalizedScenarioSearchQuery = scenarioSearchQuery.trim().toLowerCase();
+  const filteredScenarios = useMemo(() => {
+    if (!normalizedScenarioSearchQuery) {
+      return scenarios;
+    }
+
+    return scenarios.filter((scenario) => {
+      const scriptText = String(scenario.scenario_json?.script || "");
+      const ttsText = String(scenario.tts_script || "");
+      return (
+        scriptText.toLowerCase().includes(normalizedScenarioSearchQuery) ||
+        ttsText.toLowerCase().includes(normalizedScenarioSearchQuery)
+      );
+    });
+  }, [normalizedScenarioSearchQuery, scenarios]);
   const effectiveMontageUrl =
     selectedScenario?.montage_video_path && selectedScenario?.id
       ? `/api/scenarios/montage?scenarioId=${selectedScenario.id}`
@@ -534,7 +550,18 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       <div className="rounded-xl bg-white p-4 shadow-sm">
         <div className="mb-4">
           <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            {scenarios.length} записей
+            {normalizedScenarioSearchQuery
+              ? `${filteredScenarios.length} из ${scenarios.length} записей`
+              : `${scenarios.length} записей`}
+          </div>
+          <div className="mt-3">
+            <input
+              type="text"
+              value={scenarioSearchQuery}
+              onChange={(event) => setScenarioSearchQuery(event.target.value)}
+              placeholder="Поиск по тексту сценария: слово или фраза"
+              className="h-10 w-full rounded-xl border border-[#e5ebf0] bg-[#fbfcfd] px-4 text-sm text-foreground outline-none transition focus:border-primary/30 focus:bg-white"
+            />
           </div>
         </div>
 
@@ -545,132 +572,138 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
             ))}
           </div>
         ) : scenarios.length ? (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Название / Скрипт</TableHead>
-                <TableHead>Режим</TableHead>
-                <TableHead>Источник</TableHead>
-                <TableHead>Тема</TableHead>
-                <TableHead>Паттерн</TableHead>
-                <TableHead className="text-center">TTS</TableHead>
-                <TableHead className="text-center">Видео</TableHead>
-                <TableHead className="text-right">Стоимость</TableHead>
-                <TableHead>Дата</TableHead>
-                <TableHead className="w-[80px] text-right">Скрипт</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {scenarios.map((sc) => (
-                <TableRow key={sc.id}>
-                  <TableCell className="max-w-[200px] font-medium text-foreground">
-                    <div className="line-clamp-2">{sc.topic || sc.scenario_json?.script?.slice(0, 50) + "..."}</div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
-                      {sc.mode === "rewrite" ? "Рерайт" : "Микс"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        sc.generation_source === "auto"
-                          ? "border-amber-200 bg-amber-50 text-amber-700"
-                          : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      }
-                    >
-                      {sc.generation_source === "auto" ? "Авто" : "Ручн"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-xs font-bold text-slate-700">{sc.topic || "—"}</span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-[10px] text-slate-500 italic">{formatAngle(sc.angle)}</span>
-                  </TableCell>
-                  <TableCell className="text-center">
-                  {sc.tts_script ? (
-                      <Badge className="bg-emerald-500/10 text-emerald-600 border-none hover:bg-emerald-500/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-                        OK
-                      </Badge>
-                    ) : (
-                      <span className="text-[10px] text-slate-300">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {(() => {
-                      const avatarSummary = getHeygenStatusMeta(sc);
-                      if (avatarSummary.tone === "pending") {
-                        return (
-                          <Badge className="border-none bg-sky-500/10 text-sky-700 hover:bg-sky-500/20">
-                            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-                            {avatarSummary.label}
-                          </Badge>
-                        );
-                      }
-                      if (avatarSummary.tone === "success") {
-                        return (
-                          <Badge className="border-none bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20">
-                            {avatarSummary.label}
-                          </Badge>
-                        );
-                      }
-                      if (avatarSummary.tone === "failed") {
-                        return (
-                          <Badge className="border-none bg-amber-500/10 text-amber-700 hover:bg-amber-500/20">
-                            {avatarSummary.label}
-                          </Badge>
-                        );
-                      }
-
-                      const videoSummary = getScenarioVideoSummary(sc);
-                      if (videoSummary.tone === "pending") {
-                        return (
-                          <Badge className="border-none bg-sky-500/10 text-sky-700 hover:bg-sky-500/20">
-                            <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
-                            {videoSummary.label}
-                          </Badge>
-                        );
-                      }
-                      if (videoSummary.tone === "success") {
-                        return (
-                          <Badge className="border-none bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20">
-                            {videoSummary.label}
-                          </Badge>
-                        );
-                      }
-                      if (videoSummary.tone === "failed") {
-                        return (
-                          <Badge className="border-none bg-amber-500/10 text-amber-700 hover:bg-amber-500/20">
-                            {videoSummary.label}
-                          </Badge>
-                        );
-                      }
-                      return <span className="text-[10px] text-slate-300">—</span>;
-                    })()}
-                  </TableCell>
-                  <TableCell className="text-right whitespace-nowrap text-xs font-bold text-slate-700">
-                    {formatUsd(getScenarioGenerationCosts(sc).totalCostUsd)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">
-                    {sc.created_at ? new Date(sc.created_at).toLocaleDateString("ru-RU") : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => setSelectedScenario(sc)}
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
+          filteredScenarios.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Название / Скрипт</TableHead>
+                  <TableHead>Режим</TableHead>
+                  <TableHead>Источник</TableHead>
+                  <TableHead>Тема</TableHead>
+                  <TableHead>Паттерн</TableHead>
+                  <TableHead className="text-center">TTS</TableHead>
+                  <TableHead className="text-center">Видео</TableHead>
+                  <TableHead className="text-right">Стоимость</TableHead>
+                  <TableHead>Дата</TableHead>
+                  <TableHead className="w-[80px] text-right">Скрипт</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredScenarios.map((sc) => (
+                  <TableRow key={sc.id}>
+                    <TableCell className="max-w-[200px] font-medium text-foreground">
+                      <div className="line-clamp-2">{sc.topic || sc.scenario_json?.script?.slice(0, 50) + "..."}</div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+                        {sc.mode === "rewrite" ? "Рерайт" : "Микс"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          sc.generation_source === "auto"
+                            ? "border-amber-200 bg-amber-50 text-amber-700"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        }
+                      >
+                        {sc.generation_source === "auto" ? "Авто" : "Ручн"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-xs font-bold text-slate-700">{sc.topic || "—"}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-[10px] text-slate-500 italic">{formatAngle(sc.angle)}</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                    {sc.tts_script ? (
+                        <Badge className="bg-emerald-500/10 text-emerald-600 border-none hover:bg-emerald-500/20">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                          OK
+                        </Badge>
+                      ) : (
+                        <span className="text-[10px] text-slate-300">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      {(() => {
+                        const avatarSummary = getHeygenStatusMeta(sc);
+                        if (avatarSummary.tone === "pending") {
+                          return (
+                            <Badge className="border-none bg-sky-500/10 text-sky-700 hover:bg-sky-500/20">
+                              <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                              {avatarSummary.label}
+                            </Badge>
+                          );
+                        }
+                        if (avatarSummary.tone === "success") {
+                          return (
+                            <Badge className="border-none bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20">
+                              {avatarSummary.label}
+                            </Badge>
+                          );
+                        }
+                        if (avatarSummary.tone === "failed") {
+                          return (
+                            <Badge className="border-none bg-amber-500/10 text-amber-700 hover:bg-amber-500/20">
+                              {avatarSummary.label}
+                            </Badge>
+                          );
+                        }
+
+                        const videoSummary = getScenarioVideoSummary(sc);
+                        if (videoSummary.tone === "pending") {
+                          return (
+                            <Badge className="border-none bg-sky-500/10 text-sky-700 hover:bg-sky-500/20">
+                              <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                              {videoSummary.label}
+                            </Badge>
+                          );
+                        }
+                        if (videoSummary.tone === "success") {
+                          return (
+                            <Badge className="border-none bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20">
+                              {videoSummary.label}
+                            </Badge>
+                          );
+                        }
+                        if (videoSummary.tone === "failed") {
+                          return (
+                            <Badge className="border-none bg-amber-500/10 text-amber-700 hover:bg-amber-500/20">
+                              {videoSummary.label}
+                            </Badge>
+                          );
+                        }
+                        return <span className="text-[10px] text-slate-300">—</span>;
+                      })()}
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap text-xs font-bold text-slate-700">
+                      {formatUsd(getScenarioGenerationCosts(sc).totalCostUsd)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
+                      {sc.created_at ? new Date(sc.created_at).toLocaleDateString("ru-RU") : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0"
+                        onClick={() => setSelectedScenario(sc)}
+                      >
+                        <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border bg-white p-10 text-center text-sm text-muted-foreground">
+              По запросу ничего не найдено. Попробуйте другое слово или фразу из текста сценария.
+            </div>
+          )
         ) : (
           <div className="rounded-2xl border border-dashed border-border bg-white p-10 text-center text-sm text-muted-foreground">
             Сценарии пока не сгенерированы. Перейдите в Генератор, чтобы создать свою первую подборку.
