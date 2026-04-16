@@ -184,7 +184,7 @@ export async function GET() {
           COUNT(*) FILTER (
             WHERE DATE_TRUNC(
               'day',
-              ((COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
+              COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at)
             ) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
           )::int AS daily_final_video_count,
           COUNT(*)::int AS monthly_final_video_count
@@ -192,7 +192,7 @@ export async function GET() {
         WHERE montage_status = 'completed'
           AND DATE_TRUNC(
             'month',
-            ((COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
+            COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at)
           ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
         GROUP BY client_id
       ) stats ON stats.client_id = c.id
