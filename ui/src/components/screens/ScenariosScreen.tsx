@@ -31,6 +31,15 @@ const t = (text: string) => TRANSLATIONS[text] || text;
 const HEYGEN_PENDING_STATUSES = new Set(["pending", "waiting", "processing", "queued", "in_progress", "rendering"]);
 const AUTO_BUILD_POLL_INTERVAL_MS = 5000;
 const AUTO_BUILD_TIMEOUT_MS = 18 * 60 * 1000;
+const MOSCOW_TIME_ZONE = "Europe/Moscow";
+const MOSCOW_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
+  timeZone: MOSCOW_TIME_ZONE,
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
 
 type FeedbackOptimizationStatus = {
   tone: "success" | "warning" | "error";
@@ -50,6 +59,13 @@ const isPendingKiePrompt = (item: ScenarioVideoPromptItem) => {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const formatScenarioDateTimeMsk = (value: string | null | undefined) => {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return `${MOSCOW_DATE_TIME_FORMATTER.format(parsed)} МСК`;
+};
 
 const formatAngle = (angle: string | undefined) => {
   if (!angle) return "—";
@@ -758,7 +774,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                   <TableHead className="text-center">TTS</TableHead>
                   <TableHead className="text-center">Видео</TableHead>
                   <TableHead className="text-right">Стоимость</TableHead>
-                  <TableHead>Дата</TableHead>
+                  <TableHead>Дата/время</TableHead>
                   <TableHead className="w-[80px] text-right">Скрипт</TableHead>
                 </TableRow>
               </TableHeader>
@@ -856,8 +872,8 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                     <TableCell className="text-right whitespace-nowrap text-xs font-bold text-slate-700">
                       {formatUsd(getScenarioGenerationCosts(sc).totalCostUsd)}
                     </TableCell>
-                    <TableCell className="text-muted-foreground whitespace-nowrap">
-                      {sc.created_at ? new Date(sc.created_at).toLocaleDateString("ru-RU") : "—"}
+                    <TableCell className="text-muted-foreground whitespace-nowrap text-xs">
+                      {formatScenarioDateTimeMsk(sc.created_at)}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
@@ -895,7 +911,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                 </Badge>
                 <div className="h-1 w-1 rounded-full bg-slate-300" />
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  {selectedScenario?.created_at ? new Date(selectedScenario.created_at).toLocaleDateString("ru-RU") : ""}
+                  {formatScenarioDateTimeMsk(selectedScenario?.created_at)}
                 </span>
               </div>
               <DialogTitle className="text-3xl font-black tracking-tight text-slate-900 leading-tight">
