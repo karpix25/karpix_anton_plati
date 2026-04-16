@@ -57,11 +57,11 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Статистика</div>
             <div className="space-y-2 text-xs font-semibold">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Сделано сегодня:</span>
+                <span className="text-muted-foreground">Сделано сегодня (запрошено сегодня):</span>
                 <span className="text-foreground">{dailyCount} / {dailyLimit}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Сделано в месяце:</span>
+                <span className="text-muted-foreground">Сделано в месяце (запрошено в месяце):</span>
                 <span className="text-foreground">{monthlyCount} / {monthlyLimit}</span>
               </div>
               <div className="flex justify-between">
