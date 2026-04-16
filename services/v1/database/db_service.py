@@ -1100,7 +1100,7 @@ def get_client_monthly_final_video_count(client_id: int) -> int:
               AND gs.montage_status = 'completed'
               AND DATE_TRUNC(
                     'month',
-                    COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at)
+                    ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                   ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
               AND EXISTS (
                     SELECT 1
@@ -1110,7 +1110,7 @@ def get_client_monthly_final_video_count(client_id: int) -> int:
                         fvj.scenario_id = gs.id
                         OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
                       )
-                      AND DATE_TRUNC('month', fvj.created_at) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+                      AND DATE_TRUNC('month', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                   )
             """,
             (client_id,),
@@ -1129,7 +1129,7 @@ def get_client_daily_final_video_count(client_id: int) -> int:
               AND gs.montage_status = 'completed'
               AND DATE_TRUNC(
                     'day',
-                    COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at)
+                    ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                   ) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
               AND EXISTS (
                     SELECT 1
@@ -1139,7 +1139,7 @@ def get_client_daily_final_video_count(client_id: int) -> int:
                         fvj.scenario_id = gs.id
                         OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
                       )
-                      AND DATE_TRUNC('day', fvj.created_at) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+                      AND DATE_TRUNC('day', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                   )
             """,
             (client_id,),
@@ -1337,7 +1337,7 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                     COUNT(*) FILTER (
                         WHERE DATE_TRUNC(
                                 'day',
-                                COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at)
+                                ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                               ) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                           AND EXISTS (
                                 SELECT 1
@@ -1347,7 +1347,7 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                                     fvj.scenario_id = gs.id
                                     OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
                                   )
-                                  AND DATE_TRUNC('day', fvj.created_at) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+                                  AND DATE_TRUNC('day', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                             )
                     )::int AS daily_completed_count,
                     COUNT(*)::int AS completed_count
@@ -1355,7 +1355,7 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                 WHERE gs.montage_status = 'completed'
                   AND DATE_TRUNC(
                         'month',
-                        COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at)
+                        ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                       ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                   AND EXISTS (
                         SELECT 1
@@ -1365,7 +1365,7 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                             fvj.scenario_id = gs.id
                             OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
                           )
-                          AND DATE_TRUNC('month', fvj.created_at) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+                          AND DATE_TRUNC('month', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                     )
                 GROUP BY gs.client_id
             ) completed ON completed.client_id = c.id
@@ -1381,13 +1381,13 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                     COUNT(*) FILTER (
                         WHERE DATE_TRUNC(
                                 'day',
-                                created_at
+                                ((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                               ) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                     )::int AS daily_job_count,
                     COUNT(*) FILTER (
                         WHERE DATE_TRUNC(
                                 'month',
-                                created_at
+                                ((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                               ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
                     )::int AS monthly_job_count
                 FROM final_video_jobs

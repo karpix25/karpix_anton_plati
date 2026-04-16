@@ -9,7 +9,7 @@ export function Header({ screenTitle, selectedClientName }: HeaderProps) {
       <div className="flex items-center gap-4">
         <span className="text-lg font-bold tracking-tight text-foreground">{screenTitle}</span>
         <div className="h-4 w-px bg-border/70" />
-        <button className="border-b-2 border-primary py-1 font-semibold text-primary">
+        <button className="max-w-[min(55vw,520px)] truncate border-b-2 border-primary py-1 font-semibold text-primary">
           {selectedClientName || "Проект"}
         </button>
       </div>

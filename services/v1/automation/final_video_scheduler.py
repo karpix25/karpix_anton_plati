@@ -68,10 +68,12 @@ def run_scheduler_cycle() -> int:
             if limit <= 0 or daily_limit <= 0:
                 continue
 
-            # Hard cap by number of auto-jobs created in this day/month so the
-            # scenario volume matches configured limits even under retries/failures.
-            remaining_today = max(0, daily_limit - daily_job_count)
-            remaining_month = max(0, limit - monthly_job_count)
+            # Gate by completed + in-flight jobs so failures can be recovered by
+            # creating fresh jobs without blocking the rest of the current day.
+            in_flight_today = completed_today + open_jobs
+            in_flight_month = completed + open_jobs
+            remaining_today = max(0, daily_limit - in_flight_today)
+            remaining_month = max(0, limit - in_flight_month)
             remaining = min(remaining_today, remaining_month)
             backlog_room = max(0, max_backlog_per_client - open_jobs)
             to_enqueue = min(max_batch_per_client, remaining, backlog_room)

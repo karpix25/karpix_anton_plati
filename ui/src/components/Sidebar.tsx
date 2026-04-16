@@ -50,13 +50,13 @@ export function Sidebar({
           onValueChange={setSelectedClientId}
           disabled={isLoadingClients || !clients.length}
         >
-          <SelectTrigger className="h-12 rounded-xl border-none bg-white text-sm font-medium shadow-sm">
-            <SelectValue placeholder="Выберите проект" />
+          <SelectTrigger className="h-12 w-full min-w-0 rounded-xl border-none bg-white text-sm font-medium shadow-sm">
+            <SelectValue className="max-w-full truncate" placeholder="Выберите проект" />
           </SelectTrigger>
           <SelectContent>
             {clients.map((client) => (
-              <SelectItem key={client.id} value={client.id.toString()}>
-                {client.name}
+              <SelectItem key={client.id} value={client.id.toString()} className="max-w-[22rem]">
+                <span className="block max-w-full truncate">{client.name}</span>
               </SelectItem>
             ))}
           </SelectContent>

@@ -184,7 +184,7 @@ export async function GET() {
           COUNT(*) FILTER (
             WHERE DATE_TRUNC(
               'day',
-              COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at)
+              ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
             ) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
             AND EXISTS (
               SELECT 1
@@ -194,7 +194,7 @@ export async function GET() {
                   fvj.scenario_id = gs.id
                   OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
                 )
-                AND DATE_TRUNC('day', fvj.created_at) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+                AND DATE_TRUNC('day', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
             )
           )::int AS daily_final_video_count,
           COUNT(*)::int AS monthly_final_video_count
@@ -202,7 +202,7 @@ export async function GET() {
         WHERE gs.montage_status = 'completed'
           AND DATE_TRUNC(
             'month',
-            COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at)
+            ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
           ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
           AND EXISTS (
             SELECT 1
@@ -212,7 +212,7 @@ export async function GET() {
                 fvj.scenario_id = gs.id
                 OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
               )
-              AND DATE_TRUNC('month', fvj.created_at) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+              AND DATE_TRUNC('month', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
           )
         GROUP BY gs.client_id
       ) stats ON stats.client_id = c.id
