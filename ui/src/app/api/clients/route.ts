@@ -182,12 +182,18 @@ export async function GET() {
         SELECT
           client_id,
           COUNT(*) FILTER (
-            WHERE DATE_TRUNC('day', COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at)) = DATE_TRUNC('day', CURRENT_TIMESTAMP)
+            WHERE DATE_TRUNC(
+              'day',
+              ((COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
+            ) = DATE_TRUNC('day', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
           )::int AS daily_final_video_count,
           COUNT(*)::int AS monthly_final_video_count
         FROM generated_scenarios
         WHERE montage_status = 'completed'
-          AND DATE_TRUNC('month', COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at)) = DATE_TRUNC('month', CURRENT_TIMESTAMP)
+          AND DATE_TRUNC(
+            'month',
+            ((COALESCE(montage_yandex_uploaded_at, montage_updated_at, created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
+          ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
         GROUP BY client_id
       ) stats ON stats.client_id = c.id
       ORDER BY c.created_at DESC

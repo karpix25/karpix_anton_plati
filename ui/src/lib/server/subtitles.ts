@@ -42,6 +42,13 @@ const DEFAULT_SUBTITLE_SETTINGS: SubtitleRenderSettings = {
   subtitle_margin_percent: SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT.classic,
 };
 
+const WORD_SUBTITLE_LEAD_IN_SECONDS = 0.04;
+const WORD_SUBTITLE_MIN_DURATION_SECONDS = 0.28;
+const WORD_SUBTITLE_MAX_DURATION_SECONDS = 1.0;
+const WORD_SUBTITLE_MIN_GAP_SECONDS = 0.01;
+const WORD_SUBTITLE_MAX_BURST_WORDS = 3;
+const WORD_SUBTITLE_BURST_JOIN_GAP_SECONDS = 0.18;
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -96,24 +103,54 @@ function buildWordByWordEvents(words: WordTimestamp[], totalDuration: number, pr
     .filter((word) => word.text && Number.isFinite(word.start) && Number.isFinite(word.end) && word.end > word.start);
 
   const events: SubtitleEvent[] = [];
+  let previousEventEnd = 0;
+  let index = 0;
 
-  for (let index = 0; index < normalizedWords.length; index += 1) {
-    const current = normalizedWords[index];
-    const next = normalizedWords[index + 1];
-    const start = current.start;
-    const naturalEnd = next ? Math.max(current.end, next.start - 0.02) : current.end + 0.6;
-    const cappedEnd = Math.min(totalDuration, naturalEnd);
-    const text = preset === "impact" ? current.text.toUpperCase() : current.text;
+  while (index < normalizedWords.length) {
+    const startWord = normalizedWords[index];
+    let burstEnd = startWord.end;
+    const burstWords = [startWord.text];
+    let lastIndex = index;
 
-    if (cappedEnd - start < 0.05) {
-      continue;
+    // Merge ultra-fast neighboring words into mini-phrases for readability.
+    while (lastIndex + 1 < normalizedWords.length && burstWords.length < WORD_SUBTITLE_MAX_BURST_WORDS) {
+      const nextWord = normalizedWords[lastIndex + 1];
+      const joinGap = nextWord.start - normalizedWords[lastIndex].end;
+      const burstDurationIfJoined = nextWord.end - startWord.start;
+      if (
+        joinGap <= WORD_SUBTITLE_BURST_JOIN_GAP_SECONDS &&
+        burstDurationIfJoined <= WORD_SUBTITLE_MIN_DURATION_SECONDS
+      ) {
+        burstWords.push(nextWord.text);
+        burstEnd = nextWord.end;
+        lastIndex += 1;
+        continue;
+      }
+      break;
     }
 
-    events.push({
-      start,
-      end: cappedEnd,
-      text,
-    });
+    const nextAfterBurst = normalizedWords[lastIndex + 1];
+    const start = Math.max(0, Math.max(startWord.start - WORD_SUBTITLE_LEAD_IN_SECONDS, previousEventEnd));
+    const naturalEnd = nextAfterBurst ? Math.max(burstEnd, nextAfterBurst.start - 0.02) : burstEnd + 0.55;
+    let end = Math.max(start + WORD_SUBTITLE_MIN_DURATION_SECONDS, naturalEnd);
+    end = Math.min(totalDuration, Math.min(end, start + WORD_SUBTITLE_MAX_DURATION_SECONDS));
+
+    if (nextAfterBurst) {
+      const safeBeforeNext = nextAfterBurst.start + 0.12;
+      end = Math.min(end, safeBeforeNext);
+    }
+
+    if (end - start >= 0.08) {
+      const text = preset === "impact" ? burstWords.join(" ").toUpperCase() : burstWords.join(" ");
+      events.push({
+        start,
+        end,
+        text,
+      });
+      previousEventEnd = Math.max(previousEventEnd, end + WORD_SUBTITLE_MIN_GAP_SECONDS);
+    }
+
+    index = lastIndex + 1;
   }
 
   return events;
