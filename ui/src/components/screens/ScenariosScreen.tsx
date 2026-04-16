@@ -32,6 +32,11 @@ const HEYGEN_PENDING_STATUSES = new Set(["pending", "waiting", "processing", "qu
 const AUTO_BUILD_POLL_INTERVAL_MS = 5000;
 const AUTO_BUILD_TIMEOUT_MS = 18 * 60 * 1000;
 
+type FeedbackOptimizationStatus = {
+  tone: "success" | "warning" | "error";
+  text: string;
+};
+
 const isPendingHeygenStatus = (status: string | null | undefined) =>
   HEYGEN_PENDING_STATUSES.has(String(status || "").toLowerCase());
 
@@ -135,6 +140,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [feedbackCategories, setFeedbackCategories] = useState<string[]>([]);
   const [isSavingFeedback, setIsSavingFeedback] = useState(false);
   const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [feedbackOptimizationStatus, setFeedbackOptimizationStatus] = useState<FeedbackOptimizationStatus | null>(null);
   const scenariosRef = useRef<Scenario[]>(scenarios);
 
   const hasPendingVideoPrompts = (prompts: ScenarioVideoPromptItem[]) =>
@@ -407,6 +413,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     setFeedbackComment("");
     setFeedbackCategories([]);
     setFeedbackSaved(false);
+    setFeedbackOptimizationStatus(null);
   };
 
   const handleGenerateHeygenVideo = async () => {
@@ -925,6 +932,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                     onClick={() => {
                       setFeedbackRating("like");
                       setFeedbackSaved(false);
+                      setFeedbackOptimizationStatus(null);
                     }}
                   >
                     <ThumbsUp className="h-4 w-4" />
@@ -940,6 +948,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                     onClick={() => {
                       setFeedbackRating("dislike");
                       setFeedbackSaved(false);
+                      setFeedbackOptimizationStatus(null);
                     }}
                   >
                     <ThumbsDown className="h-4 w-4" />
@@ -974,6 +983,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                                 return base.includes(key) ? base.filter((c) => c !== key) : [...base, key];
                               });
                               setFeedbackSaved(false);
+                              setFeedbackOptimizationStatus(null);
                             }}
                           >
                             {label}
@@ -990,6 +1000,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       onChange={(e) => {
                         setFeedbackComment(e.target.value);
                         setFeedbackSaved(false);
+                        setFeedbackOptimizationStatus(null);
                       }}
                     />
                   </div>
@@ -1020,8 +1031,39 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                           }),
                         });
 
+                        const payload = await response.json().catch(() => null);
                         if (!response.ok) {
-                          throw new Error("Failed to save feedback");
+                          throw new Error(payload?.error || "Failed to save feedback");
+                        }
+
+                        const optimization = payload?.optimization;
+                        const attempted = Array.isArray(optimization?.attempted) ? optimization.attempted : [];
+                        const succeeded = Array.isArray(optimization?.succeeded) ? optimization.succeeded : [];
+                        const failed = Array.isArray(optimization?.failed) ? optimization.failed : [];
+
+                        if (attempted.length > 0) {
+                          if (failed.length === 0) {
+                            setFeedbackOptimizationStatus({
+                              tone: "success",
+                              text: `Правила обновлены автоматически: ${succeeded.join(", ")}`,
+                            });
+                          } else if (succeeded.length > 0) {
+                            setFeedbackOptimizationStatus({
+                              tone: "warning",
+                              text: `Обновлено частично (${succeeded.join(", ")}). Ошибки: ${failed
+                                .map((item: { category: string; error: string }) => `${item.category}: ${item.error}`)
+                                .join("; ")}`,
+                            });
+                          } else {
+                            setFeedbackOptimizationStatus({
+                              tone: "error",
+                              text: `Фидбэк сохранен, но обновление правил не выполнено: ${failed
+                                .map((item: { category: string; error: string }) => `${item.category}: ${item.error}`)
+                                .join("; ")}`,
+                            });
+                          }
+                        } else {
+                          setFeedbackOptimizationStatus(null);
                         }
 
                         setFeedbackSaved(true);
@@ -1036,6 +1078,20 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                   >
                     {isSavingFeedback ? "Сохранение..." : feedbackSaved ? "✓ Сохранено" : "Сохранить оценку"}
                   </Button>
+                ) : null}
+
+                {feedbackOptimizationStatus ? (
+                  <div
+                    className={`text-xs font-medium ${
+                      feedbackOptimizationStatus.tone === "success"
+                        ? "text-emerald-700"
+                        : feedbackOptimizationStatus.tone === "warning"
+                          ? "text-amber-700"
+                          : "text-rose-700"
+                    }`}
+                  >
+                    {feedbackOptimizationStatus.text}
+                  </div>
                 ) : null}
               </div>
             ) : null}
