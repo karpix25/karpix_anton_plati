@@ -57,10 +57,24 @@ class GenerationConfig:
 
 STRONG_BOUNDARY_RE = re.compile(r"[.!?;:]$")
 SOFT_BOUNDARY_RE = re.compile(r"[,)]$")
+PRODUCT_KEYWORD_SPLIT_RE = re.compile(r"[,\n;]+")
+NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Zа-яА-ЯёЁ]+")
 MIN_BROLL_SEGMENT_SECONDS = 2.0
 MIN_PRODUCT_SEGMENT_SECONDS = 3.0
 FIRST_ATTENTION_CUT_MIN_SECONDS = 2.6
 FIRST_ATTENTION_CUT_MAX_SECONDS = 3.0
+
+PRODUCT_KEYWORD_STOPWORDS = {
+    "и", "или", "для", "в", "во", "на", "по", "с", "со", "к", "ко", "у", "о", "об", "от", "из", "за",
+    "под", "при", "над", "до", "без", "не", "но", "а", "то", "же",
+}
+
+RUSSIAN_STEM_SUFFIXES = (
+    "иями", "ями", "ами", "ого", "ему", "ому", "ыми", "ими", "его", "ее",
+    "ая", "яя", "ое", "ее", "ов", "ев", "ом", "ем", "ой", "ей", "ам", "ям",
+    "ах", "ях", "ую", "юю", "ия", "ья", "ию", "ью", "ий", "ый", "ой", "ых", "их",
+    "а", "я", "ы", "и", "е", "у", "ю", "о",
+)
 
 PACING_PRESETS: Dict[str, Dict[str, float]] = {
     "calm": {
@@ -111,6 +125,69 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _normalize_text(value: str) -> str:
+    cleaned = NON_ALNUM_RE.sub(" ", (value or "").lower().replace("ё", "е"))
+    return " ".join(cleaned.split())
+
+
+def _parse_product_keywords(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    seen: set[str] = set()
+    result: List[str] = []
+    for item in PRODUCT_KEYWORD_SPLIT_RE.split(raw):
+        phrase = " ".join(str(item or "").strip().split())
+        if not phrase:
+            continue
+        norm = _normalize_text(phrase)
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        result.append(phrase)
+    return result
+
+
+def _stem_token(token: str) -> str:
+    t = token.strip()
+    if len(t) <= 3:
+        return t
+    for suffix in RUSSIAN_STEM_SUFFIXES:
+        if t.endswith(suffix) and len(t) - len(suffix) >= 3:
+            return t[: -len(suffix)]
+    return t
+
+
+def _keyword_matches_phrase(keyword: str, phrase: str) -> bool:
+    keyword_norm = _normalize_text(keyword)
+    phrase_norm = _normalize_text(phrase)
+    if not keyword_norm or not phrase_norm:
+        return False
+    if keyword_norm in phrase_norm:
+        return True
+
+    phrase_tokens = phrase_norm.split()
+    phrase_stems = {_stem_token(token) for token in phrase_tokens}
+    keyword_tokens = [token for token in keyword_norm.split() if token]
+    if not keyword_tokens:
+        return False
+
+    significant_tokens = [
+        token for token in keyword_tokens
+        if len(token) >= 3 and token not in PRODUCT_KEYWORD_STOPWORDS
+    ]
+    if not significant_tokens:
+        significant_tokens = keyword_tokens
+
+    return all(_stem_token(token) in phrase_stems for token in significant_tokens)
+
+
+def _find_matching_product_keyword(product_keywords: List[str], phrase: str) -> Optional[str]:
+    for keyword in product_keywords:
+        if _keyword_matches_phrase(keyword, phrase):
+            return keyword
+    return None
 
 # --- TIMING ENGINE ---
 
@@ -310,15 +387,17 @@ class ProductAssetManager:
         return {"id": fallback_url, "url": fallback_url, "name": "Product Video", "source_type": "video"}
 
     def apply_assets(self, segments: List[VisualSegment], words: List[Word], slots: List[TimingSlot]) -> List[VisualSegment]:
-        prod_keyword = (self.config.product_keyword or "").lower().strip()
-        if not prod_keyword: return segments
+        product_keywords = _parse_product_keywords(self.config.product_keyword)
+        if not product_keywords:
+            return segments
         
         policy = self.config.product_clip_policy # "required" or "contextual"
         result: List[VisualSegment] = []
         
         for seg in segments:
-            phrase = seg.get('phrase', '').lower()
-            keyword_match = prod_keyword in phrase
+            phrase = str(seg.get("phrase") or "")
+            matched_keyword = _find_matching_product_keyword(product_keywords, phrase)
+            keyword_match = matched_keyword is not None
             
             # Logic:
             # REQUIRED -> If word in text, MUST be product.
@@ -328,11 +407,8 @@ class ProductAssetManager:
             if policy == "required":
                 use_product = keyword_match
             else: # contextual
-                # Trust the AI's 'should_use_product_clip' flag
-                use_product = seg.get("should_use_product_clip", False)
-                # Fallback: if AI missed a direct mention but keyword is there, 
-                # we could still show it, but user said 'better generative' for contextual.
-                # So we stick to the AI flag for contextual.
+                # In contextual mode, keep AI decision but force product clip for explicit keyword mentions.
+                use_product = bool(seg.get("should_use_product_clip", False) or keyword_match)
 
             if use_product:
                 asset = self.pick_asset()
@@ -342,7 +418,7 @@ class ProductAssetManager:
                     "asset_id": asset["id"] if asset else None,
                     "asset_name": asset["name"] if asset else None,
                     "generate_video": False,
-                    "keyword": self.config.product_keyword,
+                    "keyword": matched_keyword or self.config.product_keyword,
                 })
             else:
                 seg.update({"asset_type": "generated_video", "generate_video": True})
@@ -350,14 +426,18 @@ class ProductAssetManager:
         return result
 
     def _find_forced_product_segment(self, words: List[Word], slots: List[TimingSlot], keyword: str) -> Optional[VisualSegment]:
+        normalized_keywords = _parse_product_keywords(keyword)
+        if not normalized_keywords:
+            return None
         for slot in slots:
             slot_words = [w for w in words if w["start"] >= slot["slot_start"] and w["start"] < slot["slot_end"]]
-            combined = " ".join(w["word"] for w in slot_words).lower()
-            if keyword in combined:
+            combined = " ".join(w["word"] for w in slot_words)
+            matched_keyword = _find_matching_product_keyword(normalized_keywords, combined)
+            if matched_keyword:
                 return {
                     "slot_start": slot["slot_start"],
                     "slot_end": slot["slot_end"],
-                    "keyword": self.config.product_keyword,
+                    "keyword": matched_keyword,
                     "phrase": combined[:50],
                     "asset_type": "product_video",
                     "generate_video": False,
@@ -466,6 +546,7 @@ class VisualPromptBuilder:
         self.config = config
 
     def build_system_prompt(self, scenario_text: str) -> str:
+        product_keywords = _parse_product_keywords(self.config.product_keyword)
         prompt = f"""SYSTEM:
 Ты — эксперт по видеомонтажу и UGC. Твоя задача — отобрать визуальные образы из сценария.
 Сценарий: {scenario_text}
@@ -489,14 +570,21 @@ class VisualPromptBuilder:
     - **No Vague Words**: Avoid "cinematic", "amazing", "beautiful". Use physical facts.
     - **Appearance**: Visible people must be European-looking (light skin).
 """
-        if self.config.product_keyword:
-            prompt += f"\nГЛАВНЫЙ ПРОДУКТ (PRODUCT_KEYWORD): '{self.config.product_keyword}'. Обязательно выдели сегмент(ы), где упоминается этот продукт, чтобы мы могли вставить реальное видео товара.\n"
+        if product_keywords:
+            keywords_hint = ", ".join([f"'{k}'" for k in product_keywords])
+            prompt += (
+                "\nГЛАВНЫЕ ПРОДУКТОВЫЕ КЛЮЧИ (PRODUCT_KEYWORDS): "
+                f"{keywords_hint}."
+                " Обязательно выдели сегмент(ы), где упоминается любой из этих ключей, "
+                "чтобы мы могли вставить реальное видео товара.\n"
+            )
         
         if self.config.learned_rules:
             prompt += f"\nДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА ОТ ПОЛЬЗОВАТЕЛЯ (УЧТИ ОБЯЗАТЕЛЬНО):\n{self.config.learned_rules}\n"
         return prompt
 
     def build_user_prompt(self, transcript: str, slots: List[TimingSlot]) -> str:
+        product_keywords = _parse_product_keywords(self.config.product_keyword)
         user_msg = f"""TRANSCRIPT: {transcript}
 
 AVAILABLE SLOTS (Choose from these and map to keywords): 
@@ -504,8 +592,12 @@ AVAILABLE SLOTS (Choose from these and map to keywords):
 
 TASK: Extract at most {len(slots)} segments that match the keywords in the transcript.
 """
-        if self.config.product_keyword:
-            user_msg += f"ВАЖНО: Обязательно найди и выдели моменты, где говорится про '{self.config.product_keyword}'.\n"
+        if product_keywords:
+            keywords_hint = ", ".join([f"'{k}'" for k in product_keywords])
+            user_msg += (
+                "ВАЖНО: Обязательно найди и выдели моменты, где говорится про любой из ключей: "
+                f"{keywords_hint}.\n"
+            )
         
         user_msg += f"""Return ONLY JSON in this format:
 {{
