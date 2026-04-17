@@ -159,6 +159,14 @@ def _stem_token(token: str) -> str:
     return t
 
 
+def _get_timestamped_transcript(words: List[Word]) -> str:
+    """Creates a transcript string with embedded timestamps for the LLM."""
+    chunks = []
+    for w in words:
+        chunks.append(f"{w['word']} ({w['start']}s)")
+    return " ".join(chunks)
+
+
 def _keyword_matches_phrase(keyword: str, phrase: str) -> bool:
     keyword_norm = _normalize_text(keyword)
     phrase_norm = _normalize_text(phrase)
@@ -583,14 +591,21 @@ class VisualPromptBuilder:
             prompt += f"\nДОПОЛНИТЕЛЬНЫЕ ПРАВИЛА ОТ ПОЛЬЗОВАТЕЛЯ (УЧТИ ОБЯЗАТЕЛЬНО):\n{self.config.learned_rules}\n"
         return prompt
 
-    def build_user_prompt(self, transcript: str, slots: List[TimingSlot]) -> str:
+    def build_user_prompt(self, words: List[Word], slots: List[TimingSlot]) -> str:
         product_keywords = _parse_product_keywords(self.config.product_keyword)
-        user_msg = f"""TRANSCRIPT: {transcript}
+        timestamped_transcript = _get_timestamped_transcript(words)
+        
+        user_msg = f"""TRANSCRIPT WITH TIMESTAMPS: {timestamped_transcript}
 
-AVAILABLE SLOTS (Choose from these and map to keywords): 
+AVAILABLE SLOTS (Calculated by math, use them as reference but prioritize actual word timing if there's a match): 
 {json.dumps(slots)}
 
-TASK: Extract at most {len(slots)} segments that match the keywords in the transcript.
+TASK:
+1. Identify up to {len(slots)} key segments from the transcript.
+2. For each segment, find EXACT word timings from the transcript above.
+3. Map them to the closest available slot or provide the exact word timings.
+
+CRITICAL: You MUST provide 'word_start' and 'word_end' based on the timestamps in the transcript.
 """
         if product_keywords:
             keywords_hint = ", ".join([f"'{k}'" for k in product_keywords])
@@ -603,13 +618,15 @@ TASK: Extract at most {len(slots)} segments that match the keywords in the trans
 {{
   "segments": [
     {{
-      "slot_start": <must be from one of the slots above>,
-      "slot_end": <must be from one of the slots above>,
+      "slot_start": <start of the best matching slot>,
+      "slot_end": <end of the best matching slot>,
+      "word_start": <exact start timestamp of the keyword mention>,
+      "word_end": <exact end timestamp of the keyword mention>,
       "keyword": "<main subject RU>",
       "phrase": "<short phrase RU>",
       "visual_intent": "<VEO-3 Technical details in EN>",
-      "should_use_product_clip": <boolean, true if keyword mentions product and it fits the style, false if generative video is better for native feel>,
-      "reason": "<why this keyword fits this timing and why you chose/didn't choose product clip>"
+      "should_use_product_clip": <boolean>,
+      "reason": "<why this keyword fits this timing>"
     }}
   ]
 }}"""
@@ -640,7 +657,24 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
         total_dur = norm_words[-1]["end"]
         
         # 1. Build LLM Segments
-        segments = _build_semantic_llm_segments(config, scenario_text, transcript, slots)
+        segments = _build_semantic_llm_segments(config, scenario_text, norm_words, slots)
+        
+        # 3. Post-LLM: Adjust slots to actually match word timings if returned
+        for seg in (segments or []):
+            w_start = seg.get("word_start")
+            w_end = seg.get("word_end")
+            if isinstance(w_start, (int, float)) and isinstance(w_end, (int, float)):
+                # If we have word timings, make sure the slot covers them
+                # We usually want the slot to start a bit before the word and end a bit after,
+                # but staying within reasonable bounds.
+                duration = seg["slot_end"] - seg["slot_start"]
+                new_start = round(max(0.0, w_start - 0.5), 1)
+                new_end = round(min(total_dur, new_start + duration), 1)
+                
+                # Update slot to match reality
+                seg["slot_start"] = new_start
+                seg["slot_end"] = new_end
+
         if not segments:
             segments = _fallback_segments(norm_words, slots)
             
@@ -657,7 +691,7 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
         logger.error(f"Failed to extract segments: {e}")
         return {"segments": [], "updated_at": datetime.now(timezone.utc).isoformat()}
 
-def _build_semantic_llm_segments(config: GenerationConfig, scenario: str, transcript: str, slots: List[TimingSlot]) -> Optional[List[VisualSegment]]:
+def _build_semantic_llm_segments(config: GenerationConfig, scenario: str, words: List[Word], slots: List[TimingSlot]) -> Optional[List[VisualSegment]]:
     try:
         builder = VisualPromptBuilder(config)
         client = _openrouter_client()
@@ -665,7 +699,7 @@ def _build_semantic_llm_segments(config: GenerationConfig, scenario: str, transc
             model="google/gemini-2.5-flash",
             messages=[
                 {"role": "system", "content": builder.build_system_prompt(scenario)},
-                {"role": "user", "content": builder.build_user_prompt(transcript, slots)}
+                {"role": "user", "content": builder.build_user_prompt(words, slots)}
             ],
             response_format={"type": "json_object"}
         )
