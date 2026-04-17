@@ -127,6 +127,16 @@ interface ScenariosScreenProps {
   onRefresh: () => void;
 }
 
+type ScenarioProcessingState = {
+  isGeneratingAudio?: boolean;
+  isAnalyzingAudio?: boolean;
+  isStartingHeygen?: boolean;
+  isSubmittingVideoPrompts?: boolean;
+  isAssemblingMontage?: boolean;
+  isAssemblingAll?: boolean;
+  assembleAllStep?: string;
+};
+
 export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosScreenProps) {
   const toSafeNumber = (value: unknown, fallback = 0) => {
     const parsed = Number(value);
@@ -134,12 +144,16 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   };
 
   const [selectedScenario, setSelectedScenario] = useState<Scenario | null>(null);
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
-  const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false);
-  const [isStartingHeygen, setIsStartingHeygen] = useState(false);
-  const [isSubmittingVideoPrompts, setIsSubmittingVideoPrompts] = useState(false);
-  const [isAssemblingMontage, setIsAssemblingMontage] = useState(false);
-  const [isSavingBackgroundAudioTag, setIsSavingBackgroundAudioTag] = useState(false);
+  const [processingStates, setProcessingStates] = useState<Record<number, ScenarioProcessingState>>({});
+  
+  const updateProcessingState = (scenarioId: number, update: ScenarioProcessingState) => {
+    setProcessingStates(prev => ({
+      ...prev,
+      [scenarioId]: { ...prev[scenarioId], ...update }
+    }));
+  };
+
+  const [isSavingBackgroundAudioTag, setIsSavingBackgroundAudioTag] = useState<Record<number, boolean>>({});
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [generatedAudioScenarioId, setGeneratedAudioScenarioId] = useState<number | null>(null);
   const [generatedWordTimestamps, setGeneratedWordTimestamps] = useState<WordTimestamp[]>([]);
@@ -149,8 +163,6 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
   const [isPollingVideoStatus, setIsPollingVideoStatus] = useState(false);
   const [actualAudioDurationSeconds, setActualAudioDurationSeconds] = useState<number | null>(null);
   const [scenarioSearchQuery, setScenarioSearchQuery] = useState("");
-  const [isAssemblingAll, setIsAssemblingAll] = useState(false);
-  const [assembleAllStep, setAssembleAllStep] = useState("");
   const [feedbackRating, setFeedbackRating] = useState<"like" | "dislike" | null>(null);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackCategories, setFeedbackCategories] = useState<string[]>([]);
@@ -356,7 +368,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
 
   const handleGenerateAudio = async (text: string, scenarioId: number) => {
     if (!text) return;
-    setIsGeneratingAudio(true);
+    updateProcessingState(scenarioId, { isGeneratingAudio: true });
     try {
       const response = await fetch("/api/tts", {
         method: "POST",
@@ -381,7 +393,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       setGeneratedVideoPrompts([]);
       await Promise.resolve(onRefresh());
 
-      setIsAnalyzingAudio(true);
+      updateProcessingState(scenarioId, { isAnalyzingAudio: true });
       try {
         const file = new File([blob], `scenario_${scenarioId}_audio.mp3`, { type: "audio/mpeg" });
         const formData = new FormData();
@@ -413,13 +425,13 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
         console.error("Deepgram Timestamp Error:", error);
         alert("Аудио создано, но не удалось получить таймкоды слов из Deepgram.");
       } finally {
-        setIsAnalyzingAudio(false);
+        updateProcessingState(scenarioId, { isAnalyzingAudio: false });
       }
     } catch (error) {
       console.error("TTS Error:", error);
       alert("Ошибка при генерации аудио. Проверьте настройки MiniMax.");
     } finally {
-      setIsGeneratingAudio(false);
+      updateProcessingState(scenarioId, { isGeneratingAudio: false });
     }
   };
 
@@ -434,13 +446,14 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
 
   const handleGenerateHeygenVideo = async () => {
     if (!selectedScenario?.id) return;
+    const scenarioId = selectedScenario.id;
 
-    setIsStartingHeygen(true);
+    updateProcessingState(scenarioId, { isStartingHeygen: true });
     try {
       const response = await fetch("/api/heygen/avatar-video", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId: selectedScenario.id }),
+        body: JSON.stringify({ scenarioId }),
       });
 
       const payload = await response.json().catch(() => null);
@@ -453,19 +466,20 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       console.error("HeyGen start error:", error);
       alert(error instanceof Error ? error.message : "Не удалось запустить HeyGen.");
     } finally {
-      setIsStartingHeygen(false);
+      updateProcessingState(scenarioId, { isStartingHeygen: false });
     }
   };
 
   const handleAssembleMontage = async () => {
     if (!selectedScenario?.id) return;
+    const scenarioId = selectedScenario.id;
 
-    setIsAssemblingMontage(true);
+    updateProcessingState(scenarioId, { isAssemblingMontage: true });
     try {
       const response = await fetch("/api/scenarios/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId: selectedScenario.id }),
+        body: JSON.stringify({ scenarioId }),
       });
 
       const payload = await response.json().catch(() => null);
@@ -478,7 +492,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       console.error("Montage assemble error:", error);
       alert(error instanceof Error ? error.message : "Не удалось собрать монтаж.");
     } finally {
-      setIsAssemblingMontage(false);
+      updateProcessingState(scenarioId, { isAssemblingMontage: false });
     }
   };
 
@@ -489,12 +503,11 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       return;
     }
 
-    setIsAssemblingAll(true);
-    setAssembleAllStep("Стартуем полный пайплайн...");
+    const scenarioId = selectedScenario.id;
+    updateProcessingState(scenarioId, { isAssemblingAll: true, assembleAllStep: "Стартуем полный пайплайн..." });
 
     try {
       let currentScenario: Scenario | null = selectedScenario;
-      const scenarioId = selectedScenario.id;
       const deadline = Date.now() + AUTO_BUILD_TIMEOUT_MS;
 
       const refreshCurrentScenario = async () => {
@@ -502,7 +515,8 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
         const fresh = scenariosRef.current.find((item) => item.id === scenarioId) || null;
         if (fresh) {
           currentScenario = fresh;
-          setSelectedScenario(fresh);
+          // Only update selectedScenario if the user is still looking at the same scenario
+          setSelectedScenario(prev => (prev?.id === scenarioId ? fresh : prev));
           setGeneratedVideoPrompts(fresh.video_generation_prompts?.prompts || []);
         }
         return fresh;
@@ -510,7 +524,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
 
       const initialPrompts = currentScenario?.video_generation_prompts?.prompts || [];
       if (initialPrompts.length && hasStartableVideoPrompts(initialPrompts)) {
-        setAssembleAllStep("Запускаем генерацию видео-перебивок...");
+        updateProcessingState(scenarioId, { assembleAllStep: "Запускаем генерацию видео-перебивок..." });
         const submitResponse = await fetch("/api/kie/submit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -525,7 +539,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
 
       const heygenStatus = String(currentScenario?.heygen_status || "").toLowerCase();
       if (!currentScenario?.heygen_video_url && !isPendingHeygenStatus(heygenStatus)) {
-        setAssembleAllStep("Запускаем рендер аватара...");
+        updateProcessingState(scenarioId, { assembleAllStep: "Запускаем рендер аватара..." });
         const heygenResponse = await fetch("/api/heygen/avatar-video", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -554,7 +568,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
           break;
         }
 
-        setAssembleAllStep("Ждём готовности KIE и HeyGen...");
+        updateProcessingState(scenarioId, { assembleAllStep: "Ждём готовности KIE и HeyGen..." });
 
         if (kiePending && currentScenario?.job_id) {
           await fetch("/api/kie/poll", {
@@ -578,7 +592,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
         throw new Error("HeyGen не отдал готовое видео в отведённое время.");
       }
 
-      setAssembleAllStep("Собираем финальный монтаж...");
+      updateProcessingState(scenarioId, { assembleAllStep: "Собираем финальный монтаж..." });
       const assembleResponse = await fetch("/api/scenarios/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -590,25 +604,26 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       }
 
       await refreshCurrentScenario();
-      setAssembleAllStep("Готово");
+      updateProcessingState(scenarioId, { assembleAllStep: "Готово" });
     } catch (error) {
       console.error("Assemble all error:", error);
       alert(error instanceof Error ? error.message : "Не удалось выполнить полный пайплайн.");
     } finally {
-      setIsAssemblingAll(false);
-      window.setTimeout(() => setAssembleAllStep(""), 1000);
+      updateProcessingState(scenarioId, { isAssemblingAll: false });
+      window.setTimeout(() => updateProcessingState(scenarioId, { assembleAllStep: "" }), 1000);
     }
   };
 
   const handleUpdateBackgroundAudioTag = async (backgroundAudioTag: Scenario["background_audio_tag"]) => {
     if (!selectedScenario?.id || !backgroundAudioTag) return;
+    const scenarioId = selectedScenario.id;
 
-    setIsSavingBackgroundAudioTag(true);
+    setIsSavingBackgroundAudioTag(prev => ({ ...prev, [scenarioId]: true }));
     try {
       const response = await fetch("/api/scenarios", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId: selectedScenario.id, backgroundAudioTag }),
+        body: JSON.stringify({ scenarioId, backgroundAudioTag }),
       });
 
       const payload = await response.json().catch(() => null);
@@ -622,19 +637,20 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       console.error("Background audio tag update error:", error);
       alert(error instanceof Error ? error.message : "Не удалось сохранить тег фонового аудио.");
     } finally {
-      setIsSavingBackgroundAudioTag(false);
+      setIsSavingBackgroundAudioTag(prev => ({ ...prev, [scenarioId]: false }));
     }
   };
 
   const handleSubmitVideoPrompts = async () => {
     if (!selectedScenario?.id) return;
+    const scenarioId = selectedScenario.id;
 
-    setIsSubmittingVideoPrompts(true);
+    updateProcessingState(scenarioId, { isSubmittingVideoPrompts: true });
     try {
       const response = await fetch("/api/kie/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenarioId: selectedScenario.id }),
+        body: JSON.stringify({ scenarioId }),
       });
 
       const payload = await response.json().catch(() => null);
@@ -647,7 +663,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       console.error("KIE submit error:", error);
       alert(error instanceof Error ? error.message : "Не удалось запустить генерацию видео.");
     } finally {
-      setIsSubmittingVideoPrompts(false);
+      updateProcessingState(scenarioId, { isSubmittingVideoPrompts: false });
     }
   };
 
@@ -1164,12 +1180,12 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       className="h-7 text-[10px] font-bold border-rose-200 text-rose-600 hover:bg-rose-50"
                       onClick={handleGenerateHeygenVideo}
                       disabled={
-                        isStartingHeygen ||
+                        processingStates[selectedScenario.id]?.isStartingHeygen ||
                         !selectedScenario?.tts_audio_path ||
                         isPendingHeygenStatus(selectedScenario?.heygen_status)
                       }
                     >
-                      {isStartingHeygen || isPendingHeygenStatus(selectedScenario?.heygen_status) ? (
+                      {processingStates[selectedScenario.id]?.isStartingHeygen || isPendingHeygenStatus(selectedScenario?.heygen_status) ? (
                         <>
                           <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                           Рендер...
@@ -1231,15 +1247,15 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                         className="h-7 text-[10px] font-bold border-indigo-300 text-indigo-700 hover:bg-indigo-50"
                         onClick={handleAssembleAll}
                         disabled={
-                          isAssemblingAll ||
-                          isAssemblingMontage ||
-                          isSubmittingVideoPrompts ||
-                          isStartingHeygen ||
+                          processingStates[selectedScenario.id]?.isAssemblingAll ||
+                          processingStates[selectedScenario.id]?.isAssemblingMontage ||
+                          processingStates[selectedScenario.id]?.isSubmittingVideoPrompts ||
+                          processingStates[selectedScenario.id]?.isStartingHeygen ||
                           !selectedScenario?.tts_audio_path ||
                           (selectedScenario?.montage_status || "").toLowerCase() === "processing"
                         }
                       >
-                        {isAssemblingAll ? (
+                        {processingStates[selectedScenario.id]?.isAssemblingAll ? (
                           <>
                             <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                             Собираем всё...
@@ -1254,14 +1270,14 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                         className="h-7 text-[10px] font-bold border-slate-300 text-slate-700 hover:bg-slate-100"
                         onClick={handleAssembleMontage}
                         disabled={
-                          isAssemblingAll ||
-                          isAssemblingMontage ||
+                          processingStates[selectedScenario.id]?.isAssemblingAll ||
+                          processingStates[selectedScenario.id]?.isAssemblingMontage ||
                           !selectedScenario?.tts_audio_path ||
                           !selectedScenario?.heygen_video_url ||
                           (selectedScenario?.montage_status || "").toLowerCase() === "processing"
                         }
                       >
-                        {isAssemblingMontage || (selectedScenario?.montage_status || "").toLowerCase() === "processing" ? (
+                        {processingStates[selectedScenario.id]?.isAssemblingMontage || (selectedScenario?.montage_status || "").toLowerCase() === "processing" ? (
                           <>
                             <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                             Сборка...
@@ -1272,9 +1288,9 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       </Button>
                     </div>
                   </div>
-                  {assembleAllStep ? (
+                  {processingStates[selectedScenario.id]?.assembleAllStep ? (
                     <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-xs text-indigo-900">
-                      {assembleAllStep}
+                      {processingStates[selectedScenario.id].assembleAllStep}
                     </div>
                   ) : null}
                   <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -1285,7 +1301,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       <Select
                         value={selectedScenario?.background_audio_tag || "neutral"}
                         onValueChange={(value) => handleUpdateBackgroundAudioTag(value as Scenario["background_audio_tag"])}
-                        disabled={isSavingBackgroundAudioTag}
+                        disabled={isSavingBackgroundAudioTag[selectedScenario.id]}
                       >
                         <SelectTrigger className="h-11 rounded-xl border border-slate-200 bg-white text-sm text-slate-900">
                           <SelectValue />
@@ -1387,9 +1403,9 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       variant="outline" 
                       className="h-7 text-[10px] font-bold border-emerald-200 text-emerald-600 hover:bg-emerald-50"
                       onClick={() => handleGenerateAudio(selectedScenario.tts_script!, selectedScenario.id)}
-                      disabled={isGeneratingAudio}
+                      disabled={processingStates[selectedScenario.id]?.isGeneratingAudio}
                     >
-                      {isGeneratingAudio ? (
+                      {processingStates[selectedScenario.id]?.isGeneratingAudio ? (
                         <>
                           <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                           Генерация...
@@ -1444,7 +1460,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                         <div className="text-xs font-bold uppercase tracking-widest text-slate-500">
                           Таймкоды слов Deepgram
                         </div>
-                        {isAnalyzingAudio ? (
+                        {processingStates[selectedScenario.id]?.isAnalyzingAudio ? (
                           <div className="flex items-center text-[10px] font-bold uppercase tracking-widest text-slate-400">
                             <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                             Анализ...
@@ -1474,7 +1490,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                             </div>
                           ))}
                         </div>
-                      ) : !isAnalyzingAudio ? (
+                      ) : !processingStates[selectedScenario.id]?.isAnalyzingAudio ? (
                         <div className="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-400">
                           Таймкоды слов появятся здесь после анализа аудио через Deepgram.
                         </div>
@@ -1538,9 +1554,9 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                           Seedance Pro v1 JSON prompts
                         </div>
                         <div className="flex items-center gap-2">
-                          {isPollingVideoStatus || hasPendingVideoPrompts(generatedVideoPrompts) ? (
+                          {hasPendingVideoPrompts(generatedVideoPrompts) ? (
                             <div className="flex items-center text-[10px] font-bold uppercase tracking-widest text-sky-600">
-                              <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
+                              <RefreshCw className={`mr-1 h-3 w-3 ${isPollingVideoStatus ? "animate-spin" : ""}`} />
                               Генерация видео
                             </div>
                           ) : null}
@@ -1550,13 +1566,13 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                             className="h-7 text-[10px] font-bold border-sky-200 text-sky-700 hover:bg-sky-50"
                             onClick={handleSubmitVideoPrompts}
                             disabled={
-                              isSubmittingVideoPrompts ||
+                              processingStates[selectedScenario.id]?.isSubmittingVideoPrompts ||
                               !generatedVideoPrompts.length ||
                               hasPendingVideoPrompts(generatedVideoPrompts) ||
                               !hasStartableVideoPrompts(generatedVideoPrompts)
                             }
                           >
-                            {isSubmittingVideoPrompts ? (
+                            {processingStates[selectedScenario.id]?.isSubmittingVideoPrompts ? (
                               <>
                                 <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                                 Запуск...
