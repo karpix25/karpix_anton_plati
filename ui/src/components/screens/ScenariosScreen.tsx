@@ -228,6 +228,10 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
     setGeneratedVideoPrompts(savedVideoPrompts);
   }, [selectedScenario]);
 
+  // UI state helpers to avoid "possibly null" errors and reduce JSX clutter
+  const currentProcessing = selectedScenario ? processingStates[selectedScenario.id] : {};
+  const currentIsSavingTag = selectedScenario ? isSavingBackgroundAudioTag[selectedScenario.id] : false;
+
   useEffect(() => {
     if (!effectiveAudioUrl) {
       setActualAudioDurationSeconds(null);
@@ -1180,12 +1184,12 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       className="h-7 text-[10px] font-bold border-rose-200 text-rose-600 hover:bg-rose-50"
                       onClick={handleGenerateHeygenVideo}
                       disabled={
-                        processingStates[selectedScenario.id]?.isStartingHeygen ||
+                        currentProcessing?.isStartingHeygen ||
                         !selectedScenario?.tts_audio_path ||
                         isPendingHeygenStatus(selectedScenario?.heygen_status)
                       }
                     >
-                      {processingStates[selectedScenario.id]?.isStartingHeygen || isPendingHeygenStatus(selectedScenario?.heygen_status) ? (
+                      {currentProcessing?.isStartingHeygen || isPendingHeygenStatus(selectedScenario?.heygen_status) ? (
                         <>
                           <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                           Рендер...
@@ -1247,15 +1251,15 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                         className="h-7 text-[10px] font-bold border-indigo-300 text-indigo-700 hover:bg-indigo-50"
                         onClick={handleAssembleAll}
                         disabled={
-                          processingStates[selectedScenario.id]?.isAssemblingAll ||
-                          processingStates[selectedScenario.id]?.isAssemblingMontage ||
-                          processingStates[selectedScenario.id]?.isSubmittingVideoPrompts ||
-                          processingStates[selectedScenario.id]?.isStartingHeygen ||
+                          currentProcessing?.isAssemblingAll ||
+                          currentProcessing?.isAssemblingMontage ||
+                          currentProcessing?.isSubmittingVideoPrompts ||
+                          currentProcessing?.isStartingHeygen ||
                           !selectedScenario?.tts_audio_path ||
                           (selectedScenario?.montage_status || "").toLowerCase() === "processing"
                         }
                       >
-                        {processingStates[selectedScenario.id]?.isAssemblingAll ? (
+                        {currentProcessing?.isAssemblingAll ? (
                           <>
                             <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                             Собираем всё...
@@ -1270,14 +1274,14 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                         className="h-7 text-[10px] font-bold border-slate-300 text-slate-700 hover:bg-slate-100"
                         onClick={handleAssembleMontage}
                         disabled={
-                          processingStates[selectedScenario.id]?.isAssemblingAll ||
-                          processingStates[selectedScenario.id]?.isAssemblingMontage ||
+                          currentProcessing?.isAssemblingAll ||
+                          currentProcessing?.isAssemblingMontage ||
                           !selectedScenario?.tts_audio_path ||
                           !selectedScenario?.heygen_video_url ||
                           (selectedScenario?.montage_status || "").toLowerCase() === "processing"
                         }
                       >
-                        {processingStates[selectedScenario.id]?.isAssemblingMontage || (selectedScenario?.montage_status || "").toLowerCase() === "processing" ? (
+                        {currentProcessing?.isAssemblingMontage || (selectedScenario?.montage_status || "").toLowerCase() === "processing" ? (
                           <>
                             <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                             Сборка...
@@ -1288,9 +1292,9 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       </Button>
                     </div>
                   </div>
-                  {processingStates[selectedScenario.id]?.assembleAllStep ? (
+                  {currentProcessing?.assembleAllStep ? (
                     <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 text-xs text-indigo-900">
-                      {processingStates[selectedScenario.id].assembleAllStep}
+                      {currentProcessing.assembleAllStep}
                     </div>
                   ) : null}
                   <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -1301,7 +1305,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       <Select
                         value={selectedScenario?.background_audio_tag || "neutral"}
                         onValueChange={(value) => handleUpdateBackgroundAudioTag(value as Scenario["background_audio_tag"])}
-                        disabled={isSavingBackgroundAudioTag[selectedScenario.id]}
+                        disabled={currentIsSavingTag}
                       >
                         <SelectTrigger className="h-11 rounded-xl border border-slate-200 bg-white text-sm text-slate-900">
                           <SelectValue />
@@ -1403,9 +1407,9 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                       variant="outline" 
                       className="h-7 text-[10px] font-bold border-emerald-200 text-emerald-600 hover:bg-emerald-50"
                       onClick={() => handleGenerateAudio(selectedScenario.tts_script!, selectedScenario.id)}
-                      disabled={processingStates[selectedScenario.id]?.isGeneratingAudio}
+                      disabled={currentProcessing?.isGeneratingAudio}
                     >
-                      {processingStates[selectedScenario.id]?.isGeneratingAudio ? (
+                      {currentProcessing?.isGeneratingAudio ? (
                         <>
                           <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                           Генерация...
@@ -1460,7 +1464,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                         <div className="text-xs font-bold uppercase tracking-widest text-slate-500">
                           Таймкоды слов Deepgram
                         </div>
-                        {processingStates[selectedScenario.id]?.isAnalyzingAudio ? (
+                        {currentProcessing?.isAnalyzingAudio ? (
                           <div className="flex items-center text-[10px] font-bold uppercase tracking-widest text-slate-400">
                             <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                             Анализ...
@@ -1490,7 +1494,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                             </div>
                           ))}
                         </div>
-                      ) : !processingStates[selectedScenario.id]?.isAnalyzingAudio ? (
+                      ) : !currentProcessing?.isAnalyzingAudio ? (
                         <div className="rounded-xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-400">
                           Таймкоды слов появятся здесь после анализа аудио через Deepgram.
                         </div>
@@ -1566,13 +1570,13 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                             className="h-7 text-[10px] font-bold border-sky-200 text-sky-700 hover:bg-sky-50"
                             onClick={handleSubmitVideoPrompts}
                             disabled={
-                              processingStates[selectedScenario.id]?.isSubmittingVideoPrompts ||
+                              currentProcessing?.isSubmittingVideoPrompts ||
                               !generatedVideoPrompts.length ||
                               hasPendingVideoPrompts(generatedVideoPrompts) ||
                               !hasStartableVideoPrompts(generatedVideoPrompts)
                             }
                           >
-                            {processingStates[selectedScenario.id]?.isSubmittingVideoPrompts ? (
+                            {currentProcessing?.isSubmittingVideoPrompts ? (
                               <>
                                 <RefreshCw className="mr-1 h-3 w-3 animate-spin" />
                                 Запуск...
