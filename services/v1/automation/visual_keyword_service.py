@@ -631,7 +631,6 @@ CRITICAL: You MUST provide 'word_start' and 'word_end' based on the timestamps i
   ]
 }}"""
         return user_msg
-        return user_msg
 
 # --- ORCHESTRATOR ---
 
