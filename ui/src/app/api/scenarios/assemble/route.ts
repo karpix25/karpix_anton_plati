@@ -106,11 +106,9 @@ const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || ""
 
 function pickFirstAvatarIntroSeconds(totalDuration: number) {
   if (!Number.isFinite(totalDuration) || totalDuration <= 0) return 0;
-  const raw =
-    FIRST_AVATAR_INTRO_MIN_SECONDS +
-    Math.random() * (FIRST_AVATAR_INTRO_MAX_SECONDS - FIRST_AVATAR_INTRO_MIN_SECONDS);
-  // Keep stable string formatting in logs/filenames while staying random per montage.
-  return Math.min(totalDuration, Number(raw.toFixed(3)));
+  // Use deterministic value aligned with FIRST_ATTENTION_CUT_MIN_SECONDS
+  // from visual_keyword_service.py to avoid timing gaps at the first B-roll cut.
+  return Math.min(totalDuration, FIRST_AVATAR_INTRO_MIN_SECONDS);
 }
 
 type FaceBox = { x: number; y: number; w: number; h: number };
@@ -289,6 +287,65 @@ function buildAvatarFilter(options: {
   const yExpr = escapeFilterExpr(
     `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.40))`
   );
+  return [
+    "setpts=PTS-STARTPTS",
+    `scale=iw*(${zoomExpr}):ih*(${zoomExpr}):eval=frame`,
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}`,
+    `fps=${OUTPUT_FPS}`,
+    "format=yuv420p",
+    "setsar=1",
+  ].join(",");
+}
+
+/**
+ * Builds a single continuous avatar filter with time-varying zoom that
+ * cycles through AVATAR_PLANS at each B-roll boundary. Since the B-roll
+ * overlay hides the avatar during transitions, the zoom change is
+ * invisible to the viewer.
+ */
+function buildCyclingAvatarFilter(options: {
+  totalDuration: number;
+  faceCenterX: number;
+  faceCenterY: number;
+  brollEndTimes: number[];
+}) {
+  const zoomChangePoints: { threshold: number; zoom: number }[] = [
+    {
+      threshold: 0,
+      zoom: AVATAR_ANIMATE_ZOOM ? AVATAR_PLANS[0].start : AVATAR_PLANS[0].end,
+    },
+  ];
+  for (let i = 0; i < options.brollEndTimes.length; i++) {
+    const planIdx = (i + 1) % AVATAR_PLANS.length;
+    const plan = AVATAR_PLANS[planIdx];
+    zoomChangePoints.push({
+      threshold: options.brollEndTimes[i],
+      zoom: AVATAR_ANIMATE_ZOOM ? plan.start : plan.end,
+    });
+  }
+
+  // Build nested if() expression: if(lt(t,T1),Z0,if(lt(t,T2),Z1,...,Zn))
+  let zoomExprRaw: string;
+  if (zoomChangePoints.length <= 1) {
+    zoomExprRaw = String(zoomChangePoints[0]?.zoom || 1.35);
+  } else {
+    zoomExprRaw = String(
+      zoomChangePoints[zoomChangePoints.length - 1].zoom
+    );
+    for (let i = zoomChangePoints.length - 2; i >= 0; i--) {
+      const nextT = zoomChangePoints[i + 1].threshold;
+      zoomExprRaw = `if(lt(t,${nextT.toFixed(3)}),${zoomChangePoints[i].zoom},${zoomExprRaw})`;
+    }
+  }
+
+  const zoomExpr = escapeFilterExpr(zoomExprRaw);
+  const xExpr = escapeFilterExpr(
+    `max(0,min(iw-ow,${options.faceCenterX}*(${zoomExprRaw})-ow/2))`
+  );
+  const yExpr = escapeFilterExpr(
+    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.40))`
+  );
+
   return [
     "setpts=PTS-STARTPTS",
     `scale=iw*(${zoomExpr}):ih*(${zoomExpr}):eval=frame`,
@@ -744,8 +801,6 @@ async function renderSegment(
         ]
       : [
           "-y",
-          "-stream_loop",
-          "-1",
           "-i",
           sourcePath,
           "-t",
@@ -782,8 +837,7 @@ async function buildMontage(scenarioId: number) {
 
   const sourceCache = new Map<string, string>();
   const dimensionCache = new Map<string, { width: number; height: number }>();
-  let avatarPlanIndex = 0;
-  const segmentPaths: string[] = [];
+
   const avatarSourcePath =
     sourceCache.get(scenario.heygen_video_url) ||
     (await materializeSource(scenario.heygen_video_url, workdir, "avatar_master"));
@@ -795,6 +849,10 @@ async function buildMontage(scenarioId: number) {
       ? scenario.tts_audio_path
       : null;
   if (!ttsAudioPath && avatarSourcePath) {
+    console.warn(
+      "[montage] WARNING: TTS audio file not found, falling back to HeyGen audio. " +
+        "B-roll timing may be desynchronized because slots were computed from original TTS timestamps."
+    );
     const extractedAudioPath = path.join(workdir, "avatar_audio.m4a");
     try {
       await runCommand("ffmpeg", [
@@ -837,82 +895,128 @@ async function buildMontage(scenarioId: number) {
     throw new Error("No video segments available for montage");
   }
 
-  for (let index = 0; index < timeline.length; index += 1) {
-    const segment = timeline[index];
-    let renderSegmentData = segment;
-    let sourcePath = sourceCache.get(segment.source);
-
-    try {
-      if (!sourcePath) {
-        const sourceKey = `${segment.kind}-${index}`;
-        sourcePath = await materializeSource(segment.source, workdir, sourceKey);
-        sourceCache.set(segment.source, sourcePath);
-      }
-    } catch (error) {
-      if (segment.kind !== "broll") {
-        throw error;
-      }
-
-      console.warn(`Montage fallback to avatar for slot ${segment.start}-${segment.end}:`, error);
-      renderSegmentData = {
-        kind: "avatar",
-        start: segment.start,
-        end: segment.end,
-        source: scenario.heygen_video_url,
-      };
-      sourcePath = avatarSourcePath;
-    }
-
-    const outputPath = path.join(workdir, `segment_${String(index).padStart(3, "0")}.mp4`);
-    let avatarFilter: string | undefined;
-    if (renderSegmentData.kind === "avatar" && sourcePath) {
-      const durationSeconds = Math.max(0.1, renderSegmentData.end - renderSegmentData.start);
-      let dims = dimensionCache.get(sourcePath);
-      if (!dims) {
-        try {
-          const probed = await probeVideoDimensions(sourcePath);
-          if (probed) {
-            dims = probed;
-            dimensionCache.set(sourcePath, probed);
-          }
-        } catch {
-          dims = undefined;
-        }
-      }
-      const faceCenterX = stableAvatarFaceBox
-        ? stableAvatarFaceBox.x + stableAvatarFaceBox.w / 2
-        : dims
-          ? dims.width / 2
-          : OUTPUT_WIDTH / 2;
-      const faceCenterY = stableAvatarFaceBox
-        ? stableAvatarFaceBox.y + stableAvatarFaceBox.h / 2
-        : dims
-          ? dims.height * AVATAR_FACE_FALLBACK_Y
-          : OUTPUT_HEIGHT * 0.4;
-      const plan = AVATAR_PLANS[avatarPlanIndex % AVATAR_PLANS.length];
-      avatarPlanIndex += 1;
-      avatarFilter = buildAvatarFilter({
-        duration: durationSeconds,
-        faceCenterX,
-        faceCenterY,
-        // Default to a "pre-zoomed" static framing to avoid crop jitter during zoom-in.
-        // Set MONTAGE_AVATAR_ANIMATE_ZOOM=1 to restore animated zoom.
-        zoomStart: AVATAR_ANIMATE_ZOOM ? plan.start : plan.end,
-        zoomEnd: plan.end,
-      });
-    }
-    await renderSegment(renderSegmentData, sourcePath, outputPath, avatarFilter);
-    segmentPaths.push(outputPath);
-  }
-
-  const concatListPath = path.join(workdir, "segments.txt");
-  await writeFile(
-    concatListPath,
-    segmentPaths.map((segmentPath) => `file '${segmentPath.replace(/'/g, "'\\''")}'`).join("\n"),
-    "utf8"
+  // ════════════════════════════════════════════════════════════════════
+  // OVERLAY STRATEGY — Eliminates cumulative timing drift
+  // ════════════════════════════════════════════════════════════════════
+  // Instead of concat (where frame-boundary rounding errors accumulate,
+  // causing up to 400ms drift over 10-15 segments), we render the avatar
+  // as a continuous base and overlay B-roll clips at their EXACT
+  // timestamps via FFmpeg overlay filters.
+  const brollSegments = timeline.filter((s) => s.kind === "broll");
+  console.log(
+    `[montage] Overlay strategy: avatar base + ${brollSegments.length} B-roll overlays`
   );
 
-  const outputPath = path.join(workdir, `scenario_${scenarioId}_montage.mp4`);
+  // 1. Render continuous avatar base video (full duration with cycling zoom)
+  const avatarBasePath = path.join(workdir, "avatar_base.mp4");
+  {
+    let dims = dimensionCache.get(avatarSourcePath);
+    if (!dims) {
+      try {
+        const probed = await probeVideoDimensions(avatarSourcePath);
+        if (probed) {
+          dims = probed;
+          dimensionCache.set(avatarSourcePath, probed);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    const faceCenterX = stableAvatarFaceBox
+      ? stableAvatarFaceBox.x + stableAvatarFaceBox.w / 2
+      : dims
+        ? dims.width / 2
+        : OUTPUT_WIDTH / 2;
+    const faceCenterY = stableAvatarFaceBox
+      ? stableAvatarFaceBox.y + stableAvatarFaceBox.h / 2
+      : dims
+        ? dims.height * AVATAR_FACE_FALLBACK_Y
+        : OUTPUT_HEIGHT * 0.4;
+    const avatarBaseFilter = buildCyclingAvatarFilter({
+      totalDuration,
+      faceCenterX,
+      faceCenterY,
+      brollEndTimes: brollSegments.map((s) => s.end),
+    });
+    await runCommand("ffmpeg", [
+      "-y",
+      "-i",
+      avatarSourcePath,
+      "-t",
+      totalDuration.toFixed(3),
+      "-an",
+      "-vf",
+      `${avatarBaseFilter},tpad=stop_mode=clone:stop_duration=30`,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "20",
+      avatarBasePath,
+    ]);
+    console.log(`[montage] Avatar base rendered: ${totalDuration.toFixed(2)}s`);
+  }
+
+  // 2. Render individual B-roll clips (no looping — clip plays once, trimmed)
+  const brollClips: { localPath: string; start: number; end: number }[] = [];
+  const commonBrollFilter = `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase,crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT},fps=${OUTPUT_FPS},format=yuv420p,setsar=1`;
+  for (let i = 0; i < brollSegments.length; i++) {
+    const segment = brollSegments[i];
+    try {
+      let sourcePath = sourceCache.get(segment.source);
+      if (!sourcePath) {
+        sourcePath = await materializeSource(
+          segment.source,
+          workdir,
+          `broll-src-${i}`
+        );
+        sourceCache.set(segment.source, sourcePath);
+      }
+      const clipPath = path.join(
+        workdir,
+        `broll_clip_${String(i).padStart(3, "0")}.mp4`
+      );
+      const clipDuration = (segment.end - segment.start).toFixed(3);
+      await runCommand("ffmpeg", [
+        "-y",
+        "-i",
+        sourcePath,
+        "-t",
+        clipDuration,
+        "-an",
+        "-vf",
+        commonBrollFilter,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        clipPath,
+      ]);
+      brollClips.push({
+        localPath: clipPath,
+        start: segment.start,
+        end: segment.end,
+      });
+    } catch (error) {
+      // B-roll failed → avatar shows through naturally (no fallback needed)
+      console.warn(
+        `[montage] B-roll ${i} (${segment.start.toFixed(2)}-${segment.end.toFixed(2)}s) failed, avatar will show:`,
+        error
+      );
+    }
+  }
+  console.log(
+    `[montage] B-roll clips rendered: ${brollClips.length}/${brollSegments.length}`
+  );
+
+  // 3. Prepare subtitle track
+  const outputPath = path.join(
+    workdir,
+    `scenario_${scenarioId}_montage.mp4`
+  );
   const subtitleTrack = await materializeSubtitleTrack({
     settings: {
       subtitles_enabled: scenario.subtitles_enabled ?? false,
@@ -924,43 +1028,113 @@ async function buildMontage(scenarioId: number) {
       subtitle_outline_color: scenario.subtitle_outline_color || "#111111",
       subtitle_outline_width: Number(scenario.subtitle_outline_width || 3),
       subtitle_margin_v: Number(scenario.subtitle_margin_v || 140),
-      subtitle_margin_percent: Number(scenario.subtitle_margin_percent ?? Math.round((Number(scenario.subtitle_margin_v || 140) / 1280) * 100)),
+      subtitle_margin_percent: Number(
+        scenario.subtitle_margin_percent ??
+          Math.round(
+            (Number(scenario.subtitle_margin_v || 140) / 1280) * 100
+          )
+      ),
     },
     words: subtitleWords,
     totalDuration: audioDuration > 0 ? audioDuration : totalDuration,
     workdir,
   });
-  const subtitleFilter = subtitleTrack
-    ? `,subtitles=${subtitleTrack.subtitlePath}${subtitleTrack.fontsDir ? `:fontsdir=${subtitleTrack.fontsDir}` : ""}`
-    : "";
-  const backgroundAudioTag = (scenario.background_audio_tag || "neutral") as BackgroundAudioTag;
-  const backgroundAudioTrack = await getRandomBackgroundAudioTrack(backgroundAudioTag);
-  const backgroundAudioExt = path.extname(backgroundAudioTrack.name || "") || ".mp3";
-  const backgroundAudioPath = path.join(workdir, `background_audio${backgroundAudioExt}`);
-  await downloadBinaryFile(backgroundAudioTrack.downloadHref, backgroundAudioPath, "audio/mpeg");
+
+  // 4. Prepare background audio
+  const backgroundAudioTag = (scenario.background_audio_tag ||
+    "neutral") as BackgroundAudioTag;
+  const backgroundAudioTrack =
+    await getRandomBackgroundAudioTrack(backgroundAudioTag);
+  const backgroundAudioExt =
+    path.extname(backgroundAudioTrack.name || "") || ".mp3";
+  const backgroundAudioPath = path.join(
+    workdir,
+    `background_audio${backgroundAudioExt}`
+  );
+  await downloadBinaryFile(
+    backgroundAudioTrack.downloadHref,
+    backgroundAudioPath,
+    "audio/mpeg"
+  );
+
+  // 5. Build final montage with overlay strategy
+  //    Inputs: [0]=avatar_base, [1..N]=broll clips, [N+1]=tts, [N+2]=background
+  const ffmpegInputs: string[] = [];
+  ffmpegInputs.push("-i", avatarBasePath);
+  for (const clip of brollClips) {
+    ffmpegInputs.push("-i", clip.localPath);
+  }
+  ffmpegInputs.push("-i", ttsAudioPath);
+  ffmpegInputs.push("-stream_loop", "-1", "-i", backgroundAudioPath);
+
+  const ttsInputIdx = brollClips.length + 1;
+  const bgInputIdx = brollClips.length + 2;
+
+  // Build filter_complex: overlay B-roll at exact timestamps on avatar base
+  const filterParts: string[] = [];
+
+  // Reset PTS for each B-roll input
+  for (let i = 0; i < brollClips.length; i++) {
+    filterParts.push(`[${i + 1}:v]setpts=PTS-STARTPTS[b${i}]`);
+  }
+
+  // Chain overlays on avatar base at exact timestamps
+  // eof_action=repeat keeps the last frame visible if B-roll is slightly
+  // shorter than the slot due to frame-boundary quantization.
+  let currentVideoLabel = "0:v";
+  for (let i = 0; i < brollClips.length; i++) {
+    const clip = brollClips[i];
+    const outLabel = `ov${i}`;
+    filterParts.push(
+      `[${currentVideoLabel}][b${i}]overlay=0:0:eof_action=repeat:enable='between(t,${clip.start.toFixed(3)},${clip.end.toFixed(3)})'[${outLabel}]`
+    );
+    currentVideoLabel = outLabel;
+  }
+
+  // If no B-roll clips, pass avatar base through unchanged
+  if (brollClips.length === 0) {
+    filterParts.push(`[0:v]null[ov_pass]`);
+    currentVideoLabel = "ov_pass";
+  }
+
+  // Apply subtitle filter (if enabled)
+  const subtitleFilterExpr = subtitleTrack
+    ? `subtitles=${subtitleTrack.subtitlePath}${subtitleTrack.fontsDir ? `:fontsdir=${subtitleTrack.fontsDir}` : ""}`
+    : null;
+
+  if (subtitleFilterExpr) {
+    filterParts.push(`[${currentVideoLabel}]${subtitleFilterExpr}[vfinal]`);
+  } else {
+    filterParts.push(`[${currentVideoLabel}]null[vfinal]`);
+  }
+
+  // Audio mixing: TTS voice + background music
+  filterParts.push(`[${ttsInputIdx}:a]volume=1.0[voice]`);
+  filterParts.push(`[${bgInputIdx}:a]volume=0.5[bg]`);
+  filterParts.push(
+    `[voice][bg]amix=inputs=2:duration=first:dropout_transition=0[a]`
+  );
+
+  const filterComplex = filterParts.join(";");
+  const finalDuration =
+    audioDuration > 0 ? audioDuration : totalDuration;
+
+  console.log(
+    `[montage] Building overlay montage: ${brollClips.length} overlays, ` +
+      `${finalDuration.toFixed(2)}s, filter_complex length: ${filterComplex.length}`
+  );
 
   await runCommand("ffmpeg", [
     "-y",
-    "-f",
-    "concat",
-    "-safe",
-    "0",
-    "-i",
-    concatListPath,
-    "-i",
-    ttsAudioPath,
-    "-stream_loop",
-    "-1",
-    "-i",
-    backgroundAudioPath,
+    ...ffmpegInputs,
     "-filter_complex",
-    `[0:v]tpad=stop_mode=clone:stop_duration=600${subtitleFilter}[v];[1:a]volume=1.0[voice];[2:a]volume=0.5[bg];[voice][bg]amix=inputs=2:duration=first:dropout_transition=0[a]`,
+    filterComplex,
     "-map",
-    "[v]",
+    "[vfinal]",
     "-map",
     "[a]",
     "-t",
-    audioDuration > 0 ? audioDuration.toFixed(3) : totalDuration.toFixed(3),
+    finalDuration.toFixed(3),
     "-c:v",
     "libx264",
     "-preset",
@@ -977,6 +1151,8 @@ async function buildMontage(scenarioId: number) {
     "+faststart",
     outputPath,
   ]);
+
+  console.log(`[montage] Final overlay montage complete: ${outputPath}`);
 
   return {
     outputPath,

@@ -23,8 +23,30 @@ PAYMENT_ERROR_PATTERNS = [
     re.compile(r"out\s+of\s+credits?", re.IGNORECASE),
     re.compile(r"credits?\s+exhausted", re.IGNORECASE),
     re.compile(r"subscription|plan\s+required|upgrade", re.IGNORECASE),
+    re.compile(r"authorization\s+failed", re.IGNORECASE),
+    re.compile(r"unauthorized", re.IGNORECASE),
+    re.compile(r"\b401\b", re.IGNORECASE),
     re.compile(r"\b402\b", re.IGNORECASE),
 ]
+
+def send_admin_notification(message_text):
+    """
+    Sends a plain text message directly to the administrative chat.
+    """
+    if not bot:
+        return False
+    
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not chat_id:
+        logger.warning("TELEGRAM_CHAT_ID missing. Cannot send admin notification.")
+        return False
+
+    try:
+        bot.send_message(chat_id=chat_id, text=message_text, parse_mode=None)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
+        return False
 
 def send_telegram_notification(client_id, message_text, parse_mode="Markdown"):
     """
@@ -89,9 +111,6 @@ def _is_payment_issue(message: str) -> bool:
 
 
 def notify_service_payment_issue(client_id: int | None, provider: str, error: object) -> bool:
-    if not client_id:
-        return False
-
     message = _stringify_error(error)
     if not _is_payment_issue(message):
         return False
@@ -101,7 +120,16 @@ def notify_service_payment_issue(client_id: int | None, provider: str, error: ob
         short_message = f"{short_message[:420]}..."
 
     text = (
-        f"[{provider}] Похоже, закончился баланс или подписка.\n"
+        f"🚨 [SERVICE ERROR] {provider}\n"
+        f"Похоже, закончился баланс или достигнут лимит.\n"
         f"Детали: {short_message}"
     )
-    return send_telegram_notification(client_id, text, parse_mode=None)
+    
+    # Always notify admins
+    send_admin_notification(text)
+    
+    # If client context exists, also notify client topics
+    if client_id:
+        return send_telegram_notification(client_id, text, parse_mode=None)
+    
+    return True
