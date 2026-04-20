@@ -136,7 +136,11 @@ export default function CuratorDashboard() {
     structureCards,
     scenarios,
     scenariosQuery,
+    referencesQuery,
+    heygenAvatarsQuery,
     heygenCatalogQuery,
+    minimaxVoicesQuery,
+    elevenlabsVoicesQuery,
     scenarioPage,
     setScenarioPage,
     scenarioPageSize,
@@ -154,6 +158,20 @@ export default function CuratorDashboard() {
     totalScenarios,
     totalReferences,
     costStats,
+    heygenAvatars,
+    heygenCatalog,
+    minimaxVoices,
+    elevenlabsVoices,
+    refreshWorkspace,
+    saveSettingsMutation,
+    deleteClientMutation,
+    deleteReferenceMutation,
+    deleteTopicCardMutation,
+    deleteStructureCardMutation,
+    saveHeygenAvatarsMutation,
+    batchRewriteMutation,
+    batchMixMutation,
+    singleRewriteMutation,
   } = useWorkspaceData(selectedClientId);
 
   const activeClientId = selectedClientId || clients[0]?.id?.toString() || "";
@@ -401,7 +419,7 @@ export default function CuratorDashboard() {
   };
 
   const handleDeleteReference = (referenceId: number) => {
-    const targetReference = references.find((ref) => ref.id === referenceId);
+    const targetReference = references.find((ref: Reference) => ref.id === referenceId);
     if (!targetReference) return;
 
     const confirmed = window.confirm(
