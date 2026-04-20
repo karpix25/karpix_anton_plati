@@ -380,7 +380,11 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
         body: JSON.stringify({ text, scenarioId }),
       });
 
-      if (!response.ok) throw new Error("Failed to generate audio");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        const serverMessage = payload?.error || `HTTP ${response.status}`;
+        throw new Error(serverMessage);
+      }
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -433,7 +437,8 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
       }
     } catch (error) {
       console.error("TTS Error:", error);
-      alert("Ошибка при генерации аудио. Проверьте настройки MiniMax.");
+      const errorMsg = error instanceof Error ? error.message : "Неизвестная ошибка";
+      alert(`Ошибка при генерации аудио: ${errorMsg}`);
     } finally {
       updateProcessingState(scenarioId, { isGeneratingAudio: false });
     }

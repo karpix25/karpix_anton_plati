@@ -547,6 +547,13 @@ export async function POST(request: Request) {
 
     const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
     if (Number.isFinite(resolvedScenarioId)) {
+      // Diagnostic: fetch scenario's heygen_avatar_id first
+      const { rows: scenarioRows } = await pool.query<{ heygen_avatar_id: string | null; client_id: number | null }>(
+        `SELECT heygen_avatar_id, client_id FROM generated_scenarios WHERE id = $1`,
+        [resolvedScenarioId]
+      );
+      console.log(`[TTS] scenario ${resolvedScenarioId}: heygen_avatar_id=${scenarioRows[0]?.heygen_avatar_id ?? 'NULL'}, client_id=${scenarioRows[0]?.client_id ?? 'NULL'}`);
+
       const { rows } = await pool.query<{
         tts_provider: string | null;
         tts_voice_id: string | null;
@@ -557,7 +564,9 @@ export async function POST(request: Request) {
            COALESCE(a.tts_provider, c.tts_provider) AS tts_provider,
            COALESCE(a.tts_voice_id, c.tts_voice_id) AS tts_voice_id,
            COALESCE(a.elevenlabs_voice_id, c.elevenlabs_voice_id) AS elevenlabs_voice_id,
-           c.tts_pronunciation_overrides AS tts_pronunciation_overrides
+           c.tts_pronunciation_overrides AS tts_pronunciation_overrides,
+           a.tts_provider AS avatar_tts_provider,
+           a.avatar_id AS matched_avatar_id
          FROM generated_scenarios gs
          LEFT JOIN clients c ON c.id = gs.client_id
          LEFT JOIN client_heygen_avatars a
@@ -566,12 +575,14 @@ export async function POST(request: Request) {
          WHERE gs.id = $1`,
         [resolvedScenarioId]
       );
+      console.log(`[TTS] resolved row: tts_provider=${(rows[0] as Record<string, unknown>)?.tts_provider}, avatar_tts_provider=${(rows[0] as Record<string, unknown>)?.avatar_tts_provider}, matched_avatar_id=${(rows[0] as Record<string, unknown>)?.matched_avatar_id}`);
       selectedProvider = rows[0]?.tts_provider || DEFAULT_TTS_PROVIDER;
       selectedVoiceId =
         selectedProvider === "elevenlabs"
           ? rows[0]?.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID
           : rows[0]?.tts_voice_id || DEFAULT_MINIMAX_VOICE_ID;
       selectedPronunciationOverrides = normalizeElevenLabsOverrides(rows[0]?.tts_pronunciation_overrides);
+      console.log(`[TTS] final provider=${selectedProvider}, voiceId=${selectedVoiceId}`);
     }
 
     const normalizedText = selectedProvider === "elevenlabs" ? prepareElevenLabsText(rawText) : prepareMiniMaxText(rawText);
