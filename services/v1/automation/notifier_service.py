@@ -66,6 +66,7 @@ PAYMENT_ERROR_PATTERNS = [
     re.compile(r"unauthorized", re.IGNORECASE),
     re.compile(r"\\b401\\b", re.IGNORECASE),
     re.compile(r"\\b402\\b", re.IGNORECASE),
+    re.compile(r"probation", re.IGNORECASE),
 ]
 
 def send_admin_notification(message_text):

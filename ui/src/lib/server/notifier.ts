@@ -14,6 +14,7 @@ const PAYMENT_ERROR_PATTERNS = [
   /unauthorized/i,
   /\b401\b/i,
   /\b402\b/i,
+  /probation/i,
 ];
 
 const ALERT_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
