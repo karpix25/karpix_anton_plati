@@ -716,7 +716,17 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
               : "KIE V1 Pro";
   const currentPromptUnitCostUsd = getBrollGenerationUnitCostUsd(currentBrollGeneratorModel);
   const currentPromptCostUsd = currentGeneratedPromptCount * currentPromptUnitCostUsd;
-  const currentHeygenCostUsd = (currentActualDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
+  const currentHeygenStatus = String(selectedScenario?.heygen_status || "").toLowerCase();
+  const hasCurrentHeygenGeneration =
+    Boolean(selectedScenario?.heygen_video_id) ||
+    Boolean(selectedScenario?.heygen_video_url) ||
+    Boolean(selectedScenario?.heygen_requested_at) ||
+    isPendingHeygenStatus(currentHeygenStatus) ||
+    currentHeygenStatus === "completed" ||
+    currentHeygenStatus === "success" ||
+    currentHeygenStatus === "failed";
+  const currentHeygenBilledDurationSeconds = hasCurrentHeygenGeneration ? currentActualDurationSeconds : 0;
+  const currentHeygenCostUsd = (currentHeygenBilledDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
   const currentTotalCostUsd = currentPromptCostUsd + currentHeygenCostUsd;
   const normalizedScenarioSearchQuery = scenarioSearchQuery.trim().toLowerCase();
   const filteredScenarios = useMemo(() => {
@@ -1146,11 +1156,16 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
               </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">HeyGen длительность</div>
-                <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{toSafeNumber(currentActualDurationSeconds).toFixed(1)}s</div>
+                <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{toSafeNumber(currentHeygenBilledDurationSeconds).toFixed(1)}s</div>
                 <div className="mt-1 text-xs text-slate-500">{formatUsd(currentHeygenCostUsd)} по $1.00 за минуту</div>
-                {Math.abs(currentActualDurationSeconds - currentTranscriptDurationSeconds) > 0.35 ? (
+                {hasCurrentHeygenGeneration && Math.abs(currentActualDurationSeconds - currentTranscriptDurationSeconds) > 0.35 ? (
                   <div className="mt-1 text-[11px] text-amber-600">
                     transcript timestamps: {toSafeNumber(currentTranscriptDurationSeconds).toFixed(1)}s
+                  </div>
+                ) : null}
+                {!hasCurrentHeygenGeneration ? (
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    HeyGen не запускался, стоимость не начисляется.
                   </div>
                 ) : null}
               </div>
@@ -1159,7 +1174,7 @@ export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosSc
                 <div className="mt-2 text-2xl font-black tracking-tight text-slate-900">
                   {scenarioCosts ? formatUsd(scenarioCosts.totalCostUsd) : "$0.000"}
                 </div>
-                <div className="mt-1 text-xs text-slate-500">Расчёт по сохранённым prompts и timestamps</div>
+                <div className="mt-1 text-xs text-slate-500">Расчёт по фактически запущенным генерациям</div>
               </div>
             </div>
 

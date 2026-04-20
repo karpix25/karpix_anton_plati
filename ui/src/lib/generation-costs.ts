@@ -56,8 +56,32 @@ export function getScenarioActualDurationSeconds(scenario?: Scenario | null): nu
   return getScenarioDurationSeconds(scenario.tts_word_timestamps?.words);
 }
 
+function isActuallyGeneratedPrompt(item: ScenarioVideoPromptItem): boolean {
+  if (item.use_ready_asset) return false;
+  if (item.video_url) return true;
+  if (Array.isArray(item.result_urls) && item.result_urls.length > 0) return true;
+  if (item.task_id) return true;
+
+  const taskState = String(item.task_state || "").toLowerCase();
+  if (taskState === "success" || taskState === "fail") return true;
+
+  const submissionStatus = String(item.submission_status || "").toLowerCase();
+  return ["submitted", "success", "completed", "failed"].includes(submissionStatus);
+}
+
+function hasHeygenGenerationAttempt(scenario?: Scenario | null): boolean {
+  if (!scenario) return false;
+  const status = String(scenario.heygen_status || "").toLowerCase();
+  return Boolean(
+    scenario.heygen_video_id ||
+      scenario.heygen_video_url ||
+      scenario.heygen_requested_at ||
+      ["pending", "waiting", "processing", "queued", "in_progress", "completed", "success", "failed"].includes(status)
+  );
+}
+
 export function getGeneratedPromptCount(prompts?: ScenarioVideoPromptItem[] | null): number {
-  return (prompts || []).filter((item) => !item.use_ready_asset && item.prompt_json).length;
+  return (prompts || []).filter(isActuallyGeneratedPrompt).length;
 }
 
 export function getScenarioGenerationCosts(scenario: Scenario) {
@@ -66,7 +90,7 @@ export function getScenarioGenerationCosts(scenario: Scenario) {
   const generatorModel = getScenarioBrollGeneratorModel(scenario);
   const promptUnitCostUsd = getBrollGenerationUnitCostUsd(generatorModel);
   const promptCostUsd = generatedPromptCount * promptUnitCostUsd;
-  const heygenDurationSeconds = getScenarioActualDurationSeconds(scenario);
+  const heygenDurationSeconds = hasHeygenGenerationAttempt(scenario) ? getScenarioActualDurationSeconds(scenario) : 0;
   const heygenCostUsd = (heygenDurationSeconds / 60) * HEYGEN_COST_PER_MINUTE_USD;
   const totalCostUsd = promptCostUsd + heygenCostUsd;
 
