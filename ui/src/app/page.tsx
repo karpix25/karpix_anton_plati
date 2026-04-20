@@ -223,7 +223,7 @@ export default function CuratorDashboard() {
   );
 
   const selectedReference = useMemo(
-    () => references.find((r) => r.id === selectedReferenceId) || null,
+    () => references.find((r: Reference) => r.id === selectedReferenceId) || null,
     [references, selectedReferenceId]
   );
 
