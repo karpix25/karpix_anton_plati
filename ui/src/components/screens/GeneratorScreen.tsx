@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Palette, Grid3X3, Zap, LoaderCircle, Search, X, ChevronRight, Check, Shuffle } from "lucide-react";
+import { Palette, Grid3X3, Zap, LoaderCircle, Search, X, ChevronRight, Check, Shuffle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,11 @@ interface GeneratorScreenProps {
   setSelectedTopic: (topic: TopicCard | null) => void;
   selectedStructure: StructureCard | null;
   setSelectedStructure: (structure: StructureCard | null) => void;
+  onDeleteTopicCard: (topicCardId: number) => void;
+  onDeleteStructureCard: (structureCardId: number) => void;
+  canDeleteCards: boolean;
+  isDeletingTopicCard: boolean;
+  isDeletingStructureCard: boolean;
   onGenerate: () => void;
   onGenerateRandomBatch: () => void;
   isGenerating: boolean;
@@ -39,6 +44,11 @@ export function GeneratorScreen({
   setSelectedTopic,
   selectedStructure,
   setSelectedStructure,
+  onDeleteTopicCard,
+  onDeleteStructureCard,
+  canDeleteCards,
+  isDeletingTopicCard,
+  isDeletingStructureCard,
   onGenerate,
   onGenerateRandomBatch,
   isGenerating
@@ -294,11 +304,37 @@ export function GeneratorScreen({
               </h3>
               <div className="mb-6 space-y-4">
                 <div className="rounded-xl border border-primary/10 bg-primary/5 p-4 transition-all">
-                  <p className="mb-1 text-[9px] font-extrabold uppercase text-primary/60">Слой Темы</p>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[9px] font-extrabold uppercase text-primary/60">Слой Темы</p>
+                    {canDeleteCards && selectedTopic ? (
+                      <Button
+                        variant="destructive"
+                        size="icon-xs"
+                        onClick={() => onDeleteTopicCard(selectedTopic.id)}
+                        disabled={isDeletingTopicCard}
+                        aria-label={`Удалить тему ${selectedTopic.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
                   <p className="text-sm font-medium">{selectedTopic?.topic_short || "Не выбрано"}</p>
                 </div>
                 <div className="rounded-xl border border-secondary/10 bg-secondary/5 p-4 transition-all">
-                  <p className="mb-1 text-[9px] font-extrabold uppercase text-secondary/60">Слой Паттерна</p>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-[9px] font-extrabold uppercase text-secondary/60">Слой Паттерна</p>
+                    {canDeleteCards && selectedStructure ? (
+                      <Button
+                        variant="destructive"
+                        size="icon-xs"
+                        onClick={() => onDeleteStructureCard(selectedStructure.id)}
+                        disabled={isDeletingStructureCard}
+                        aria-label={`Удалить паттерн ${selectedStructure.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
                   <p className="text-sm font-medium">
                     {selectedStructure ? (
                       <span className="flex flex-col">

@@ -552,6 +552,11 @@ export default function CuratorDashboard() {
               setSelectedTopic={setSelectedTopic}
               selectedStructure={selectedStructure}
               setSelectedStructure={setSelectedStructure}
+              onDeleteTopicCard={handleDeleteTopicCard}
+              onDeleteStructureCard={handleDeleteStructureCard}
+              canDeleteCards={Boolean(authUser?.isSuperAdmin)}
+              isDeletingTopicCard={deleteTopicCardMutation.isPending}
+              isDeletingStructureCard={deleteStructureCardMutation.isPending}
               isGenerating={batchMixMutation.isPending}
               onGenerate={handleGenerateMix}
               onGenerateRandomBatch={handleGenerateRandomMixBatch}
