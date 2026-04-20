@@ -1,5 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { RefreshCw, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare } from "lucide-react";
+import { RefreshCw, ArrowRight, ThumbsUp, ThumbsDown, MessageSquare, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -125,6 +124,11 @@ interface ScenariosScreenProps {
   scenarios: Scenario[];
   isLoading: boolean;
   onRefresh: () => void;
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
 }
 
 type ScenarioProcessingState = {
@@ -137,7 +141,16 @@ type ScenarioProcessingState = {
   assembleAllStep?: string;
 };
 
-export function ScenariosScreen({ scenarios, isLoading, onRefresh }: ScenariosScreenProps) {
+export function ScenariosScreen({
+  scenarios,
+  isLoading,
+  onRefresh,
+  totalCount,
+  page,
+  pageSize,
+  onPageChange,
+  onPageSizeChange
+}: ScenariosScreenProps) {
   const toSafeNumber = (value: unknown, fallback = 0) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;

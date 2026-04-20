@@ -116,11 +116,10 @@ export default function CuratorDashboard() {
   const [authError, setAuthError] = useState("");
   const [isStartingTelegramAuth, setIsStartingTelegramAuth] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   // --- Local State ---
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [scenarioFilter, setScenarioFilter] = useState<"all" | "with" | "without">("all");
   
   // Selection state for generator and modal
   const [selectedReferenceId, setSelectedReferenceId] = useState<number | null>(null);
@@ -133,25 +132,28 @@ export default function CuratorDashboard() {
     clients,
     isLoadingClients,
     references,
-    scenarios,
     topicCards,
     structureCards,
-    heygenAvatars,
-    heygenCatalog,
-    minimaxVoices,
-    elevenlabsVoices,
-    refreshWorkspace,
-    saveSettingsMutation,
-    deleteClientMutation,
-    deleteReferenceMutation,
-    deleteTopicCardMutation,
-    deleteStructureCardMutation,
-    saveHeygenAvatarsMutation,
-    batchMixMutation,
-    singleRewriteMutation,
-    referencesQuery,
+    scenarios,
     scenariosQuery,
     heygenCatalogQuery,
+    scenarioPage,
+    setScenarioPage,
+    scenarioPageSize,
+    setScenarioPageSize,
+    scenarioSearch,
+    setScenarioSearch,
+    referencePage,
+    setReferencePage,
+    referencePageSize,
+    setReferencePageSize,
+    referenceSearch,
+    setReferenceSearch,
+    referenceStatusFilter,
+    setReferenceStatusFilter,
+    totalScenarios,
+    totalReferences,
+    costStats,
   } = useWorkspaceData(selectedClientId);
 
   const activeClientId = selectedClientId || clients[0]?.id?.toString() || "";
@@ -219,22 +221,6 @@ export default function CuratorDashboard() {
     }},
     [selectedClient]
   );
-
-  const filteredReferences = useMemo(() => {
-    return references.filter((ref) => {
-      const matchesSearch =
-        !searchQuery ||
-        ref.transcript?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        ref.audit_json?.atoms?.verbal_hook?.toLowerCase().includes(searchQuery.toLowerCase());
-
-      const matchesStatus =
-        scenarioFilter === "all" ||
-        (scenarioFilter === "with" && ref.scenario_json?.script) ||
-        (scenarioFilter === "without" && !ref.scenario_json?.script);
-
-      return matchesSearch && matchesStatus;
-    });
-  }, [references, searchQuery, scenarioFilter]);
 
   const selectedReference = useMemo(
     () => references.find((r) => r.id === selectedReferenceId) || null,
@@ -508,31 +494,36 @@ export default function CuratorDashboard() {
           {screen === "dashboard" && (
             <DashboardScreen
               selectedClient={selectedClient}
-              references={references}
-              scenarios={scenarios}
+              totalReferences={totalReferences}
+              totalScenarios={totalScenarios}
               topicCards={topicCards}
-              generatedCount={scenarios.length}
+              costStats={costStats}
               setScreen={setScreen}
             />
           )}
 
           {screen === "references" && (
             <LibraryScreen
-              references={filteredReferences}
+              references={references}
               topicCards={topicCards}
               structureCards={structureCards}
-              isLoading={referencesQuery.isLoading}
-              scenarioFilter={scenarioFilter}
-              setScenarioFilter={setScenarioFilter}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              onRefresh={refreshWorkspace}
+              isLoading={references.length === 0 && !selectedClientId}
+              scenarioFilter={referenceStatusFilter}
+              setScenarioFilter={setReferenceStatusFilter}
+              searchQuery={referenceSearch}
+              setSearchQuery={setReferenceSearch}
+              onRefresh={() => {}}
               onReferenceClick={handleReferenceClick}
               onDeleteTopicCard={handleDeleteTopicCard}
               onDeleteStructureCard={handleDeleteStructureCard}
               canDeleteCards={Boolean(authUser?.isSuperAdmin)}
               isDeletingTopicCard={deleteTopicCardMutation.isPending}
               isDeletingStructureCard={deleteStructureCardMutation.isPending}
+              totalCount={totalReferences}
+              page={referencePage}
+              pageSize={referencePageSize}
+              onPageChange={setReferencePage}
+              onPageSizeChange={setReferencePageSize}
             />
           )}
 
@@ -541,6 +532,14 @@ export default function CuratorDashboard() {
               scenarios={scenarios}
               isLoading={scenariosQuery.isLoading}
               onRefresh={() => scenariosQuery.refetch()}
+              totalCount={totalScenarios}
+              page={scenarioPage}
+              pageSize={scenarioPageSize}
+              onPageChange={setScenarioPage}
+              onPageSizeChange={(size) => {
+                setScenarioPageSize(size);
+                setScenarioPage(0);
+              }}
             />
           )}
 

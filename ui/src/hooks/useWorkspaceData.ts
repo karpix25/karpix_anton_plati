@@ -40,12 +40,24 @@ export function useWorkspaceData(selectedClientId: string) {
   const queryClient = useQueryClient();
   const [scenarioPolling, setScenarioPolling] = useState<{ clientId: string; deadline: number; baselineCount: number } | null>(null);
 
+  // Pagination & Filter State
+  const [scenarioPage, setScenarioPage] = useState(0);
+  const [scenarioPageSize, setScenarioPageSize] = useState(20);
+  const [scenarioSearch, setScenarioSearch] = useState("");
+  
+  const [referencePage, setReferencePage] = useState(0);
+  const [referencePageSize, setReferencePageSize] = useState(20);
+  const [referenceSearch, setReferenceSearch] = useState("");
+  const [referenceStatusFilter, setReferenceStatusFilter] = useState<"all" | "with" | "without">("all");
+
   const startScenarioPolling = () => {
-    const currentScenarios = queryClient.getQueryData<Scenario[]>(["scenarios", selectedClientId]) || [];
+    const currentScenariosData = queryClient.getQueryData<PaginatedResponse<Scenario>>(["scenarios", selectedClientId, scenarioPage, scenarioPageSize]);
+    const currentCount = currentScenariosData?.data?.length || 0;
+    
     setScenarioPolling({
       clientId: selectedClientId,
       deadline: Date.now() + SCENARIO_POLL_WINDOW_MS,
-      baselineCount: currentScenarios.length,
+      baselineCount: currentCount,
     });
     queryClient.invalidateQueries({ queryKey: ["scenarios", selectedClientId] });
   };
@@ -56,33 +68,51 @@ export function useWorkspaceData(selectedClientId: string) {
       const { data } = await axios.get(`${API_BASE}/clients`);
       return data;
     },
+    staleTime: 60000, // 1 minute
   });
 
-  const referencesQuery = useQuery<Reference[]>({
-    queryKey: ["references", selectedClientId],
+  const referencesQuery = useQuery<PaginatedResponse<Reference>>({
+    queryKey: ["references", selectedClientId, referencePage, referencePageSize, referenceSearch, referenceStatusFilter],
     queryFn: async () => {
-      if (!selectedClientId) return [];
-      const { data } = await axios.get(`${API_BASE}/references?clientId=${selectedClientId}`);
+      if (!selectedClientId) return { data: [], totalCount: 0 };
+      const { data } = await axios.get(`${API_BASE}/references`, {
+        params: {
+          clientId: selectedClientId,
+          limit: referencePageSize,
+          offset: referencePage * referencePageSize,
+          q: referenceSearch.trim() || undefined,
+          filter: referenceStatusFilter
+        }
+      });
       return data;
     },
     enabled: !!selectedClientId,
+    staleTime: 30000,
   });
 
-  const scenariosQuery = useQuery<Scenario[]>({
-    queryKey: ["scenarios", selectedClientId],
+  const scenariosQuery = useQuery<PaginatedResponse<Scenario>>({
+    queryKey: ["scenarios", selectedClientId, scenarioPage, scenarioPageSize, scenarioSearch],
     queryFn: async () => {
-      if (!selectedClientId) return [];
-      const { data } = await axios.get(`${API_BASE}/scenarios?clientId=${selectedClientId}`);
+      if (!selectedClientId) return { data: [], totalCount: 0 };
+      const { data } = await axios.get(`${API_BASE}/scenarios`, {
+        params: {
+          clientId: selectedClientId,
+          limit: scenarioPageSize,
+          offset: scenarioPage * scenarioPageSize,
+          q: scenarioSearch.trim() || undefined
+        }
+      });
       return data;
     },
     enabled: !!selectedClientId,
     refetchInterval: () => {
       if (!scenarioPolling || scenarioPolling.clientId !== selectedClientId) return false;
-      const currentCount = scenariosQuery.data?.length || 0;
+      const currentCount = scenariosQuery.data?.data?.length || 0;
       if (currentCount > scenarioPolling.baselineCount) return false;
       return Date.now() < scenarioPolling.deadline ? SCENARIO_POLL_INTERVAL_MS : false;
     },
     refetchIntervalInBackground: true,
+    staleTime: 20000,
   });
 
   const topicCardsQuery = useQuery<TopicCard[]>({
@@ -93,6 +123,7 @@ export function useWorkspaceData(selectedClientId: string) {
       return data;
     },
     enabled: !!selectedClientId,
+    staleTime: 60000,
   });
 
   const structureCardsQuery = useQuery<StructureCard[]>({
@@ -103,6 +134,7 @@ export function useWorkspaceData(selectedClientId: string) {
       return data;
     },
     enabled: !!selectedClientId,
+    staleTime: 60000,
   });
 
   const heygenAvatarsQuery = useQuery<HeygenAvatarConfig[]>({
@@ -113,6 +145,7 @@ export function useWorkspaceData(selectedClientId: string) {
       return data;
     },
     enabled: !!selectedClientId,
+    staleTime: 60000,
   });
 
   const heygenCatalogQuery = useQuery<HeygenAvatarConfig[]>({
@@ -121,7 +154,7 @@ export function useWorkspaceData(selectedClientId: string) {
       const { data } = await axios.get(`${API_BASE}/heygen/catalog`);
       return data;
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 30, // 30 minutes
   });
 
   const minimaxVoicesQuery = useQuery<MinimaxVoiceOption[]>({
@@ -130,7 +163,7 @@ export function useWorkspaceData(selectedClientId: string) {
       const { data } = await axios.get(`${API_BASE}/minimax/voices`);
       return data;
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 60, // 1 hour
   });
 
   const elevenlabsVoicesQuery = useQuery<ElevenLabsVoiceOption[]>({
@@ -139,7 +172,7 @@ export function useWorkspaceData(selectedClientId: string) {
       const { data } = await axios.get(`${API_BASE}/elevenlabs/voices`);
       return data;
     },
-    staleTime: 1000 * 60 * 5,
+    staleTime: 1000 * 60 * 60, // 1 hour
   });
 
   const saveSettingsMutation = useMutation({
@@ -262,8 +295,10 @@ export function useWorkspaceData(selectedClientId: string) {
   return {
     clients: clientsQuery.data || [],
     isLoadingClients: clientsQuery.isLoading,
-    references: referencesQuery.data || [],
-    scenarios: scenariosQuery.data || [],
+    references: referencesQuery.data?.data || [],
+    totalReferences: referencesQuery.data?.totalCount || 0,
+    scenarios: scenariosQuery.data?.data || [],
+    totalScenarios: scenariosQuery.data?.totalCount || 0,
     topicCards: topicCardsQuery.data || [],
     structureCards: structureCardsQuery.data || [],
     heygenAvatars: heygenAvatarsQuery.data || [],
@@ -271,6 +306,7 @@ export function useWorkspaceData(selectedClientId: string) {
     minimaxVoices: minimaxVoicesQuery.data || [],
     elevenlabsVoices: elevenlabsVoicesQuery.data || [],
     refreshWorkspace: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
       queryClient.invalidateQueries({ queryKey: ["references", selectedClientId] });
       queryClient.invalidateQueries({ queryKey: ["scenarios", selectedClientId] });
       queryClient.invalidateQueries({ queryKey: ["topic-cards", selectedClientId] });
@@ -292,5 +328,33 @@ export function useWorkspaceData(selectedClientId: string) {
     heygenCatalogQuery,
     minimaxVoicesQuery,
     elevenlabsVoicesQuery,
+    
+    // Pagination & Filter Controls
+    scenarioPage,
+    setScenarioPage,
+    scenarioPageSize,
+    setScenarioPageSize,
+    scenarioSearch,
+    setScenarioSearch: (q: string) => {
+      setScenarioSearch(q);
+      setScenarioPage(0);
+    },
+    referencePage,
+    setReferencePage,
+    referencePageSize,
+    setReferencePageSize,
+    referenceSearch,
+    setReferenceSearch: (q: string) => {
+      setReferenceSearch(q);
+      setReferencePage(0);
+    },
+    referenceStatusFilter,
+    setReferenceStatusFilter: (filter: "all" | "with" | "without") => {
+      setReferenceStatusFilter(filter);
+      setReferencePage(0);
+    },
+    // Stats
+    costStats: costStatsQuery.data || { totalPrompts: 0, totalHeygenDuration: 0, totalCostUsd: 0 },
+    isLoadingStats: costStatsQuery.isLoading,
   };
 }

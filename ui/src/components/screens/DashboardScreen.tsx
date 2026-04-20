@@ -4,24 +4,27 @@ import { formatUsd, getTotalGenerationCosts } from "@/lib/generation-costs";
 
 interface DashboardScreenProps {
   selectedClient?: Client;
-  references: Reference[];
-  scenarios: Scenario[];
+  totalReferences: number;
+  totalScenarios: number;
   topicCards: TopicCard[];
-  generatedCount: number;
+  costStats: {
+    totalPrompts: number;
+    totalHeygenDuration: number;
+    totalCostUsd: number;
+  };
   setScreen: (screen: Screen) => void;
 }
 
 export function DashboardScreen({
   selectedClient,
-  references,
-  scenarios,
+  totalReferences,
+  totalScenarios,
   topicCards,
-  generatedCount,
+  costStats,
   setScreen
 }: DashboardScreenProps) {
-  const totalCosts = getTotalGenerationCosts(scenarios);
-  const heygenDurationSeconds = Number(totalCosts.heygenDurationSeconds);
-  const safeHeygenDurationSeconds = Number.isFinite(heygenDurationSeconds) ? heygenDurationSeconds : 0;
+  const totalCostUsd = costStats.totalCostUsd;
+  const heygenDurationSeconds = costStats.totalHeygenDuration;
 
   return (
     <div className="max-w-7xl space-y-10">
@@ -41,10 +44,10 @@ export function DashboardScreen({
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
         {[
-          { label: "Референсы", value: references.length, helper: "Исходные материалы" },
-          { label: "Сценарии", value: generatedCount, helper: "Готовые тексты" },
+          { label: "Референсы", value: totalReferences, helper: "Исходные материалы" },
+          { label: "Сценарии", value: totalScenarios, helper: "Готовые тексты" },
           { label: "Темы", value: topicCards.length, helper: "Карточки тем" },
-          { label: "Общий расход", value: formatUsd(totalCosts.totalCostUsd), helper: `${totalCosts.generatedPromptCount} prompts • ${safeHeygenDurationSeconds.toFixed(1)}s HeyGen` },
+          { label: "Общий расход", value: formatUsd(totalCostUsd), helper: `${costStats.totalPrompts} prompts • ${heygenDurationSeconds.toFixed(1)}s HeyGen` },
         ].map((item) => (
           <div key={item.label} className="rounded-xl bg-white p-6 shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{item.label}</p>

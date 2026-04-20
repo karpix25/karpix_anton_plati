@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
+let isDbInitialized = false;
+
 async function ensureScenarioDurationColumn() {
+  if (isDbInitialized) return;
+  
   await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_audio_duration_seconds NUMERIC(10,3)');
   await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS background_audio_tag TEXT DEFAULT 'neutral'");
   await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_name TEXT");
@@ -15,12 +19,17 @@ async function ensureScenarioDurationColumn() {
   await pool.query(
     "CREATE INDEX IF NOT EXISTS idx_generated_scenarios_client_created_at ON generated_scenarios (client_id, created_at DESC, id DESC)"
   );
+  
+  isDbInitialized = true;
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get('clientId');
   const niche = searchParams.get('niche');
+  const limit = parseInt(searchParams.get('limit') || '50', 10);
+  const offset = parseInt(searchParams.get('offset') || '0', 10);
+  const q = searchParams.get('q');
 
   try {
     await ensureScenarioDurationColumn();
@@ -33,7 +42,7 @@ export async function GET(request: Request) {
     }
 
     const whereClauses: string[] = [];
-    const values: string[] = [];
+    const values: any[] = [];
 
     values.push(clientId);
     whereClauses.push(`client_id = $${values.length}`);
@@ -43,15 +52,48 @@ export async function GET(request: Request) {
       whereClauses.push(`niche = $${values.length}`);
     }
 
+    if (q) {
+      values.push(`%${q}%`);
+      whereClauses.push(`(scenario_json->>'script' ILIKE $${values.length} OR tts_script ILIKE $${values.length})`);
+    }
+
     whereClauses.push(`COALESCE(TRIM(scenario_json->>'script'), '') <> ''`);
     whereClauses.push(`COALESCE(scenario_json->>'script', '') NOT ILIKE 'Error %'`);
 
     const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const query = `SELECT * FROM generated_scenarios ${whereSql} ORDER BY created_at DESC, id DESC`;
+    
+    // 1. Total Count for Pagination
+    const countQuery = `SELECT COUNT(*) as total FROM generated_scenarios ${whereSql}`;
+    const { rows: countRows } = await pool.query(countQuery, values);
+    const totalCount = parseInt(countRows[0].total, 10);
 
-    const { rows } = await pool.query(query, values);
+    // 2. Summary for Dashboard (Costs, Duration)
+    const summaryQuery = `
+      SELECT 
+        SUM(CASE 
+          WHEN (scenario_json->>'script') IS NOT NULL 
+          THEN (scenario_json->>'script')::text 
+          ELSE '' 
+        END) as dummy_sum, -- Placeholder if needed
+        COUNT(*) as scenarios_count
+      FROM generated_scenarios ${whereSql}`;
+    
+    // Note: Costs calculation is complex and client-side usually. 
+    // We'll return the total count and the paginated rows.
+    
+    // 3. Paginated Data
+    const dataQuery = `
+      SELECT * FROM generated_scenarios 
+      ${whereSql} 
+      ORDER BY created_at DESC, id DESC 
+      LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+    
+    const { rows } = await pool.query(dataQuery, [...values, limit, offset]);
 
-    return NextResponse.json(rows);
+    return NextResponse.json({
+      data: rows,
+      totalCount
+    });
   } catch (error) {
     console.error('Database error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

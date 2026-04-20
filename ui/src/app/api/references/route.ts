@@ -17,8 +17,13 @@ export async function GET(request: Request) {
       );
     }
 
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const offset = parseInt(searchParams.get('offset') || '0', 10);
+    const q = searchParams.get('q');
+    const filter = searchParams.get('filter') || 'all';
+
     const whereClauses: string[] = [];
-    const values: string[] = [];
+    const values: any[] = [];
 
     values.push(clientId);
     whereClauses.push(`client_id = $${values.length}`);
@@ -38,11 +43,37 @@ export async function GET(request: Request) {
       whereClauses.push(`audit_json->'reference_strategy'->>'topic_angle' = $${values.length}`);
     }
 
-    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
-    const query = `SELECT * FROM processed_content ${whereSql} ORDER BY created_at DESC`;
+    if (q) {
+      values.push(`%${q}%`);
+      whereClauses.push(`(transcript ILIKE $${values.length} OR audit_json->'atoms'->>'verbal_hook' ILIKE $${values.length})`);
+    }
 
-    const { rows } = await pool.query(query, values);
-    return NextResponse.json(rows);
+    if (filter === 'with') {
+      whereClauses.push(`COALESCE(scenario_json->>'script', '') <> ''`);
+    } else if (filter === 'without') {
+      whereClauses.push(`COALESCE(scenario_json->>'script', '') = ''`);
+    }
+
+    const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    
+    // 1. Total Count
+    const countQuery = `SELECT COUNT(*) as total FROM processed_content ${whereSql}`;
+    const { rows: countRows } = await pool.query(countQuery, values);
+    const totalCount = parseInt(countRows[0].total, 10);
+
+    // 2. Paginated Data
+    const dataQuery = `
+      SELECT * FROM processed_content 
+      ${whereSql} 
+      ORDER BY created_at DESC 
+      LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+
+    const { rows } = await pool.query(dataQuery, [...values, limit, offset]);
+    
+    return NextResponse.json({
+      data: rows,
+      totalCount
+    });
   } catch (error) {
     console.error('Database error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
