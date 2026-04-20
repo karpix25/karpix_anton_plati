@@ -1041,11 +1041,11 @@ def choose_next_client_avatar_variant(client_id: int) -> Optional[Dict[str, Any]
             WHERE client_avatar_id = %s
               AND is_active = TRUE
             ORDER BY
+                COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
                 CASE
                     WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
                     ELSE 1
                 END ASC,
-                COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
                 sort_order ASC,
                 created_at ASC,
                 id ASC
