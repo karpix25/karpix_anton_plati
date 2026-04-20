@@ -10,11 +10,15 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from services.v1.automation.batch_generator import run_batch_generation
-from services.v1.automation.notifier_service import notify_service_payment_issue
+from services.v1.automation.notifier_service import (
+    is_payment_issue_message,
+    notify_service_payment_issue,
+)
 from services.v1.automation.poll_kie_tasks import poll_saved_kie_tasks
 from services.v1.automation.submit_kie_tasks import submit_saved_kie_tasks
 from services.v1.database.db_service import (
     complete_final_video_job,
+    fail_final_video_job,
     get_final_video_job,
     get_generated_scenario_by_id,
     get_generated_scenario_by_job_id,
@@ -89,6 +93,21 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _is_non_retryable_error(message: str) -> bool:
+    normalized = str(message or "").strip().lower()
+    if not normalized:
+        return False
+    if is_payment_issue_message(message):
+        return True
+    non_retryable_markers = (
+        "kie payment error",
+        "exceeded kie re-submit limit",
+        "kie submission failed without tasks",
+        "all kie tasks failed",
+    )
+    return any(marker in normalized for marker in non_retryable_markers)
 
 
 def _extract_scenario_script(scenario: Dict[str, Any]) -> str:
@@ -240,8 +259,32 @@ def process_scenario_stage(job: Dict[str, Any]) -> None:
     if not resolved_scenario_id:
         raise RuntimeError(f"Scenario job_id={scenario_job_id} has empty id; cannot continue final video pipeline")
 
+    # Persist ownership ASAP so retries do not generate new scenarios.
+    update_final_video_job(
+        int(job["id"]),
+        scenario_id=resolved_scenario_id,
+        scenario_job_id=scenario_job_id,
+    )
+
     submit_result = submit_saved_kie_tasks(scenario_job_id)
-    next_stage = "waiting_kie" if submit_result.get("pending_count", 0) > 0 else "avatar_submit"
+    if submit_result.get("has_payment_error"):
+        raise RuntimeError(f"KIE payment error: {submit_result.get('payment_error') or 'unknown payment issue'}")
+
+    prompts_total = _safe_int(submit_result.get("prompts_total"), 0)
+    ready_asset_count = _safe_int(submit_result.get("ready_asset_count"), 0)
+    submitted_count = _safe_int(submit_result.get("submitted_count"), 0)
+    pending_count = _safe_int(submit_result.get("pending_count"), 0)
+    failed_count = _safe_int(submit_result.get("failed_count"), 0)
+
+    if pending_count > 0:
+        next_stage = "waiting_kie"
+    elif (prompts_total - ready_asset_count) > 0 and submitted_count == 0:
+        raise RuntimeError(
+            "KIE submission failed without tasks. "
+            f"total={prompts_total} ready_asset={ready_asset_count} failed={failed_count}"
+        )
+    else:
+        next_stage = "avatar_submit"
     next_schedule = datetime.utcnow()
 
     update_final_video_job(
@@ -283,6 +326,15 @@ def poll_waiting_kie_stage(job: Dict[str, Any]) -> None:
         job["id"], counts["total"], counts["success"], counts["fail"],
         counts["pending"], counts["unsubmitted"], counts["ready_asset"],
     )
+
+    prompt_items = ((scenario.get("video_generation_prompts") or {}).get("prompts") or [])
+    payment_errors = [
+        str(item.get("error")).strip()
+        for item in prompt_items
+        if item.get("error") and is_payment_issue_message(item.get("error"))
+    ]
+    if payment_errors:
+        raise RuntimeError(f"KIE payment error: {payment_errors[0]}")
 
     if _scenario_has_pending_kie_tasks(scenario):
         requeue_final_video_job(
@@ -401,14 +453,21 @@ def handle_job_exception(job: Dict[str, Any], error: Exception) -> None:
     except Exception as notify_error:
         logger.warning("Payment alert notification failed for final_video_job=%s: %s", job.get("id"), notify_error)
 
+    if _is_non_retryable_error(message):
+        update_final_video_job(
+            int(job["id"]),
+            lease_until=None,
+            worker_id=None,
+        )
+        fail_final_video_job(int(job["id"]), message)
+        return
+
     if attempts >= max_attempts:
         update_final_video_job(
             int(job["id"]),
             lease_until=None,
             worker_id=None,
         )
-        from services.v1.database.db_service import fail_final_video_job
-
         fail_final_video_job(int(job["id"]), message)
         return
 

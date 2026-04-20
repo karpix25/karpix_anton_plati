@@ -164,6 +164,10 @@ def _is_payment_issue(message: str) -> bool:
         return False
     return any(pattern.search(message) for pattern in PAYMENT_ERROR_PATTERNS)
 
+
+def is_payment_issue_message(error: object) -> bool:
+    return _is_payment_issue(_stringify_error(error))
+
 def notify_service_payment_issue(client_id: int | None, provider: str, error: object) -> bool:
     message = _stringify_error(error)
     if not _is_payment_issue(message):

@@ -68,12 +68,10 @@ def run_scheduler_cycle() -> int:
             if limit <= 0 or daily_limit <= 0:
                 continue
 
-            # Gate by completed + in-flight jobs so failures can be recovered by
-            # creating fresh jobs without blocking the rest of the current day.
-            in_flight_today = completed_today + open_jobs
-            in_flight_month = completed + open_jobs
-            remaining_today = max(0, daily_limit - in_flight_today)
-            remaining_month = max(0, limit - in_flight_month)
+            # STRICT GATE: count already-created final_video_jobs in day/month.
+            # This prevents endless auto-generation retries when upstream services fail.
+            remaining_today = max(0, daily_limit - daily_job_count)
+            remaining_month = max(0, limit - monthly_job_count)
             remaining = min(remaining_today, remaining_month)
             backlog_room = max(0, max_backlog_per_client - open_jobs)
             to_enqueue = min(max_batch_per_client, remaining, backlog_room)
