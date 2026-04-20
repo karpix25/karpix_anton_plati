@@ -175,6 +175,26 @@ export function useWorkspaceData(selectedClientId: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["references", selectedClientId] });
+      queryClient.invalidateQueries({ queryKey: ["topic-cards", selectedClientId] });
+      queryClient.invalidateQueries({ queryKey: ["structure-cards", selectedClientId] });
+    },
+  });
+
+  const deleteTopicCardMutation = useMutation({
+    mutationFn: async (topicCardId: number) => {
+      await axios.delete(`${API_BASE}/topic-cards?id=${topicCardId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["topic-cards", selectedClientId] });
+    },
+  });
+
+  const deleteStructureCardMutation = useMutation({
+    mutationFn: async (structureCardId: number) => {
+      await axios.delete(`${API_BASE}/structure-cards?id=${structureCardId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["structure-cards", selectedClientId] });
     },
   });
 
@@ -260,6 +280,8 @@ export function useWorkspaceData(selectedClientId: string) {
     saveSettingsMutation,
     deleteClientMutation,
     deleteReferenceMutation,
+    deleteTopicCardMutation,
+    deleteStructureCardMutation,
     saveHeygenAvatarsMutation,
     batchRewriteMutation,
     batchMixMutation,

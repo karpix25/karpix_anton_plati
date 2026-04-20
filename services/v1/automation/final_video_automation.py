@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from services.v1.automation.batch_generator import run_batch_generation
+from services.v1.automation.notifier_service import notify_service_payment_issue
 from services.v1.automation.poll_kie_tasks import poll_saved_kie_tasks
 from services.v1.automation.submit_kie_tasks import submit_saved_kie_tasks
 from services.v1.database.db_service import (
@@ -46,6 +47,15 @@ def get_retry_delay_seconds(attempt_count: int) -> int:
     return min(base * max(1, attempt_count), ceiling)
 
 
+def get_kie_resubmit_attempt_limit() -> int:
+    raw_value = (
+        os.getenv("FINAL_VIDEO_KIE_RESUBMIT_ATTEMPTS")
+        or os.getenv("KIE_RESUBMIT_ATTEMPTS")
+        or "3"
+    )
+    return max(1, int(raw_value))
+
+
 def _build_internal_headers() -> Dict[str, str]:
     headers: Dict[str, str] = {}
     token = (os.getenv("AUTOMATION_INTERNAL_TOKEN") or "").strip()
@@ -72,6 +82,13 @@ def _internal_request(method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
         raise RuntimeError(str(payload.get("error") or f"Internal API {path} failed with status {response.status_code}"))
 
     return payload
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _extract_scenario_script(scenario: Dict[str, Any]) -> str:
@@ -116,10 +133,12 @@ def _ensure_tts_audio(scenario_id: int) -> None:
 
 
 def _scenario_has_pending_kie_tasks(scenario: Dict[str, Any]) -> bool:
+    max_resubmit_attempts = get_kie_resubmit_attempt_limit()
     prompts = ((scenario.get("video_generation_prompts") or {}).get("prompts") or [])
     for item in prompts:
         if item.get("use_ready_asset"):
             continue
+        resubmit_attempts = _safe_int(item.get("resubmit_attempts"), 0)
         # Task submitted and still running — genuinely pending
         if item.get("task_id") and item.get("task_state") not in {"success", "fail"}:
             return True
@@ -131,6 +150,7 @@ def _scenario_has_pending_kie_tasks(scenario: Dict[str, Any]) -> bool:
             and not item.get("video_url")
             and not item.get("use_ready_asset")
             and item.get("submission_status") not in {"failed", "not_applicable"}
+            and resubmit_attempts < max_resubmit_attempts
         ):
             return True
     return False
@@ -138,9 +158,13 @@ def _scenario_has_pending_kie_tasks(scenario: Dict[str, Any]) -> bool:
 
 def _scenario_has_unsubmitted_kie_tasks(scenario: Dict[str, Any]) -> bool:
     """Check if there are prompts that need (re-)submission to KIE."""
+    max_resubmit_attempts = get_kie_resubmit_attempt_limit()
     prompts = ((scenario.get("video_generation_prompts") or {}).get("prompts") or [])
     for item in prompts:
         if item.get("use_ready_asset"):
+            continue
+        resubmit_attempts = _safe_int(item.get("resubmit_attempts"), 0)
+        if resubmit_attempts >= max_resubmit_attempts:
             continue
         if (
             item.get("prompt_json")
@@ -362,6 +386,20 @@ def handle_job_exception(job: Dict[str, Any], error: Exception) -> None:
     attempts = int(fresh_job.get("attempt_count") or 0)
     max_attempts = int(fresh_job.get("max_attempts") or 6)
     message = str(error)
+    stage = str(fresh_job.get("current_stage") or job.get("current_stage") or "").strip().lower()
+    provider_by_stage = {
+        "waiting_kie": "KIE.ai",
+        "scenario": "KIE.ai",
+        "avatar_submit": "HeyGen",
+        "waiting_heygen": "HeyGen",
+        "montage": "Yandex Disk",
+    }
+    provider = provider_by_stage.get(stage, "Final Video Pipeline")
+    client_id = fresh_job.get("client_id") or job.get("client_id")
+    try:
+        notify_service_payment_issue(_safe_int(client_id, 0) or None, provider, message)
+    except Exception as notify_error:
+        logger.warning("Payment alert notification failed for final_video_job=%s: %s", job.get("id"), notify_error)
 
     if attempts >= max_attempts:
         update_final_video_job(

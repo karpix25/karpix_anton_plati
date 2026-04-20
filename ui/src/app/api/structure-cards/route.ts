@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
+import { getTelegramSessionUserFromRequest } from '@/lib/server/telegram-auth';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -23,6 +24,40 @@ export async function GET(request: Request) {
     );
 
     return NextResponse.json(rows);
+  } catch (error) {
+    console.error('Database error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const user = await getTelegramSessionUserFromRequest(request);
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (!user.isSuperAdmin) {
+      return NextResponse.json({ error: 'Only super admin can delete structure cards' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const rawId = searchParams.get('id');
+    const structureCardId = Number(rawId);
+
+    if (!Number.isFinite(structureCardId) || structureCardId <= 0) {
+      return NextResponse.json({ error: 'Valid structure card id is required' }, { status: 400 });
+    }
+
+    const { rowCount, rows } = await pool.query(
+      'DELETE FROM structure_cards WHERE id = $1 RETURNING id, pattern_type, narrator_role',
+      [structureCardId]
+    );
+
+    if (!rowCount) {
+      return NextResponse.json({ error: 'Structure card not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ deleted: rows[0] });
   } catch (error) {
     console.error('Database error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

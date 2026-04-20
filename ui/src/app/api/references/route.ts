@@ -50,6 +50,7 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const client = await pool.connect();
   try {
     const user = await getTelegramSessionUserFromRequest(request);
     if (!user) {
@@ -67,18 +68,68 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'Valid reference id is required' }, { status: 400 });
     }
 
-    const { rowCount, rows } = await pool.query(
-      'DELETE FROM processed_content WHERE id = $1 RETURNING id, reels_url',
+    await client.query('BEGIN');
+
+    const referenceResult = await client.query<{
+      id: number;
+      reels_url: string;
+      client_id: number | null;
+      topic_card_id: number | null;
+      structure_card_id: number | null;
+    }>(
+      `
+      SELECT id, reels_url, client_id, topic_card_id, structure_card_id
+      FROM processed_content
+      WHERE id = $1
+      FOR UPDATE
+      `,
       [referenceId]
     );
 
-    if (!rowCount) {
+    if (!referenceResult.rowCount) {
+      await client.query('ROLLBACK');
       return NextResponse.json({ error: 'Reference not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ deleted: rows[0] });
+    const reference = referenceResult.rows[0];
+
+    await client.query('DELETE FROM processed_content WHERE id = $1', [referenceId]);
+
+    // Delete topic card tied to this reference.
+    if (reference.topic_card_id) {
+      await client.query('DELETE FROM topic_cards WHERE id = $1', [reference.topic_card_id]);
+    }
+    await client.query(
+      'DELETE FROM topic_cards WHERE source_content_id = $1',
+      [referenceId]
+    );
+
+    // Delete structure card tied to this reference.
+    if (reference.structure_card_id) {
+      await client.query('DELETE FROM structure_cards WHERE id = $1', [reference.structure_card_id]);
+    }
+    await client.query(
+      'DELETE FROM structure_cards WHERE source_content_id = $1',
+      [referenceId]
+    );
+
+    await client.query('COMMIT');
+
+    return NextResponse.json({
+      deleted: {
+        id: reference.id,
+        reels_url: reference.reels_url,
+      },
+    });
   } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback errors
+    }
     console.error('Database error:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  } finally {
+    client.release();
   }
 }

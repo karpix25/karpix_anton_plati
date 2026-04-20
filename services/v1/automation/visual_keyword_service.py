@@ -64,11 +64,6 @@ MIN_PRODUCT_SEGMENT_SECONDS = 3.0
 FIRST_ATTENTION_CUT_MIN_SECONDS = 2.6
 FIRST_ATTENTION_CUT_MAX_SECONDS = 3.0
 
-PRODUCT_KEYWORD_STOPWORDS = {
-    "и", "или", "для", "в", "во", "на", "по", "с", "со", "к", "ко", "у", "о", "об", "от", "из", "за",
-    "под", "при", "над", "до", "без", "не", "но", "а", "то", "же",
-}
-
 RUSSIAN_STEM_SUFFIXES = (
     "иями", "ями", "ами", "ого", "ему", "ому", "ыми", "ими", "его", "ее",
     "ая", "яя", "ое", "ее", "ов", "ев", "ом", "ем", "ой", "ей", "ам", "ям",
@@ -159,6 +154,23 @@ def _stem_token(token: str) -> str:
     return t
 
 
+def _tokenize(value: str) -> List[str]:
+    normalized = _normalize_text(value)
+    if not normalized:
+        return []
+    return normalized.split()
+
+
+def _contains_contiguous_sequence(haystack: List[str], needle: List[str]) -> bool:
+    if not haystack or not needle or len(needle) > len(haystack):
+        return False
+    window = len(needle)
+    for index in range(0, len(haystack) - window + 1):
+        if haystack[index:index + window] == needle:
+            return True
+    return False
+
+
 def _get_timestamped_transcript(words: List[Word]) -> str:
     """Creates a transcript string with embedded timestamps for the LLM."""
     chunks = []
@@ -168,27 +180,25 @@ def _get_timestamped_transcript(words: List[Word]) -> str:
 
 
 def _keyword_matches_phrase(keyword: str, phrase: str) -> bool:
-    keyword_norm = _normalize_text(keyword)
-    phrase_norm = _normalize_text(phrase)
-    if not keyword_norm or not phrase_norm:
+    keyword_tokens = _tokenize(keyword)
+    phrase_tokens = _tokenize(phrase)
+    if not keyword_tokens or not phrase_tokens:
         return False
-    if keyword_norm in phrase_norm:
+
+    # For multi-word product keys require contiguous phrase match in the same order.
+    if len(keyword_tokens) > 1:
+        if _contains_contiguous_sequence(phrase_tokens, keyword_tokens):
+            return True
+        keyword_stems = [_stem_token(token) for token in keyword_tokens]
+        phrase_stems = [_stem_token(token) for token in phrase_tokens]
+        return _contains_contiguous_sequence(phrase_stems, keyword_stems)
+
+    keyword_token = keyword_tokens[0]
+    if keyword_token in phrase_tokens:
         return True
 
-    phrase_tokens = phrase_norm.split()
-    phrase_stems = {_stem_token(token) for token in phrase_tokens}
-    keyword_tokens = [token for token in keyword_norm.split() if token]
-    if not keyword_tokens:
-        return False
-
-    significant_tokens = [
-        token for token in keyword_tokens
-        if len(token) >= 3 and token not in PRODUCT_KEYWORD_STOPWORDS
-    ]
-    if not significant_tokens:
-        significant_tokens = keyword_tokens
-
-    return all(_stem_token(token) in phrase_stems for token in significant_tokens)
+    keyword_stem = _stem_token(keyword_token)
+    return any(_stem_token(token) == keyword_stem for token in phrase_tokens)
 
 
 def _find_matching_product_keyword(product_keywords: List[str], phrase: str) -> Optional[str]:

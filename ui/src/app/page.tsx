@@ -144,6 +144,8 @@ export default function CuratorDashboard() {
     saveSettingsMutation,
     deleteClientMutation,
     deleteReferenceMutation,
+    deleteTopicCardMutation,
+    deleteStructureCardMutation,
     saveHeygenAvatarsMutation,
     batchMixMutation,
     singleRewriteMutation,
@@ -417,7 +419,7 @@ export default function CuratorDashboard() {
     if (!targetReference) return;
 
     const confirmed = window.confirm(
-      "Удалить этот референс? Связанные темы, паттерны и сценарии останутся, но потеряют ссылку на исходный материал."
+      "Удалить этот референс? Его тема и паттерн также будут удалены из библиотеки. Сценарии останутся, но потеряют ссылку на карточки."
     );
     if (!confirmed) return;
 
@@ -434,6 +436,44 @@ export default function CuratorDashboard() {
   const handleReferenceClick = (ref: Reference) => {
     setSelectedReferenceId(ref.id);
     setIsReferenceModalOpen(true);
+  };
+
+  const handleDeleteTopicCard = (topicCardId: number) => {
+    const targetTopic = topicCards.find((topic) => topic.id === topicCardId);
+    if (!targetTopic) return;
+
+    const title = targetTopic.topic_short || targetTopic.topic_cluster || `#${topicCardId}`;
+    const confirmed = window.confirm(
+      `Удалить тему «${title}» из библиотеки? Связанные пары тема-паттерн будут удалены автоматически.`
+    );
+    if (!confirmed) return;
+
+    deleteTopicCardMutation.mutate(topicCardId, {
+      onSuccess: () => {
+        if (selectedTopic?.id === topicCardId) {
+          setSelectedTopic(null);
+        }
+      },
+    });
+  };
+
+  const handleDeleteStructureCard = (structureCardId: number) => {
+    const targetStructure = structureCards.find((structure) => structure.id === structureCardId);
+    if (!targetStructure) return;
+
+    const title = targetStructure.pattern_type || `#${structureCardId}`;
+    const confirmed = window.confirm(
+      `Удалить паттерн «${title}» из библиотеки? Связанные пары тема-паттерн будут удалены автоматически.`
+    );
+    if (!confirmed) return;
+
+    deleteStructureCardMutation.mutate(structureCardId, {
+      onSuccess: () => {
+        if (selectedStructure?.id === structureCardId) {
+          setSelectedStructure(null);
+        }
+      },
+    });
   };
 
   // --- Render ---
@@ -479,6 +519,8 @@ export default function CuratorDashboard() {
           {screen === "references" && (
             <LibraryScreen
               references={filteredReferences}
+              topicCards={topicCards}
+              structureCards={structureCards}
               isLoading={referencesQuery.isLoading}
               scenarioFilter={scenarioFilter}
               setScenarioFilter={setScenarioFilter}
@@ -486,6 +528,11 @@ export default function CuratorDashboard() {
               setSearchQuery={setSearchQuery}
               onRefresh={refreshWorkspace}
               onReferenceClick={handleReferenceClick}
+              onDeleteTopicCard={handleDeleteTopicCard}
+              onDeleteStructureCard={handleDeleteStructureCard}
+              canDeleteCards={Boolean(authUser?.isSuperAdmin)}
+              isDeletingTopicCard={deleteTopicCardMutation.isPending}
+              isDeletingStructureCard={deleteStructureCardMutation.isPending}
             />
           )}
 

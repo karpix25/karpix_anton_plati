@@ -5,13 +5,52 @@ import os
 import logging
 import json
 import re
+import time
 from telebot import TeleBot
 from services.v1.database.db_service import get_db_connection
 
 logger = logging.getLogger(__name__)
 
-token = os.getenv("TELEGRAM_BOT_TOKEN")
-bot = TeleBot(token) if token else None
+_BOT: TeleBot | None = None
+_BOT_TOKEN: str | None = None
+_LAST_MISSING_TOKEN_WARNING_TS = 0.0
+_LAST_PAYMENT_ALERT_TS: dict[tuple[str, str, str], float] = {}
+_MISSING_TOKEN_WARNING_COOLDOWN_SECONDS = 300
+_PAYMENT_ALERT_COOLDOWN_SECONDS = 900
+
+
+def _resolve_bot_token() -> str | None:
+    for env_key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN", "BOT_TOKEN"):
+        value = str(os.getenv(env_key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _get_bot() -> TeleBot | None:
+    global _BOT, _BOT_TOKEN, _LAST_MISSING_TOKEN_WARNING_TS
+
+    token = _resolve_bot_token()
+    if not token:
+        now_ts = time.time()
+        if now_ts - _LAST_MISSING_TOKEN_WARNING_TS >= _MISSING_TOKEN_WARNING_COOLDOWN_SECONDS:
+            logger.warning("Telegram token missing. Set TELEGRAM_BOT_TOKEN (or TELEGRAM_TOKEN).")
+            _LAST_MISSING_TOKEN_WARNING_TS = now_ts
+        _BOT = None
+        _BOT_TOKEN = None
+        return None
+
+    if _BOT is None or _BOT_TOKEN != token:
+        try:
+            _BOT = TeleBot(token)
+            _BOT_TOKEN = token
+        except Exception as error:
+            logger.error("Failed to initialize Telegram bot client: %s", error)
+            _BOT = None
+            _BOT_TOKEN = None
+            return None
+
+    return _BOT
 
 PAYMENT_ERROR_PATTERNS = [
     re.compile(r"payment_required", re.IGNORECASE),
@@ -31,6 +70,7 @@ PAYMENT_ERROR_PATTERNS = [
 
 def send_admin_notification(message_text):
     """Sends a plain text message directly to the administrative chat."""
+    bot = _get_bot()
     if not bot:
         return False
 
@@ -46,10 +86,10 @@ def send_admin_notification(message_text):
         logger.error(f"Failed to send admin notification: {e}")
         return False
 
-def send_telegram_notification(client_id, message_text, parse_mode="Markdown"):
+def send_telegram_notification(client_id, message_text, parse_mode="Markdown", fallback_to_main_chat=True):
     """Sends a message to all Telegram topics associated with a client."""
+    bot = _get_bot()
     if not bot:
-        logger.warning("Telegram token missing. Cannot send notification.")
         return False
     try:
         conn = get_db_connection()
@@ -65,6 +105,8 @@ def send_telegram_notification(client_id, message_text, parse_mode="Markdown"):
             return False
 
         if not topics:
+            if not fallback_to_main_chat:
+                return False
             bot.send_message(chat_id=chat_id, text=message_text, parse_mode=parse_mode)
             return True
 
@@ -87,8 +129,8 @@ def send_telegram_notification(client_id, message_text, parse_mode="Markdown"):
 
 def send_to_super_admins(message_text, parse_mode="Markdown"):
     """Broadcast a message to all super admin chat IDs defined in TELEGRAM_SUPER_ADMIN_IDS."""
+    bot = _get_bot()
     if not bot:
-        logger.warning("Telegram token missing. Cannot send super admin broadcast.")
         return False
     raw_ids = os.getenv("TELEGRAM_SUPER_ADMIN_IDS", "").strip()
     if not raw_ids:
@@ -127,6 +169,15 @@ def notify_service_payment_issue(client_id: int | None, provider: str, error: ob
     if not _is_payment_issue(message):
         return False
 
+    normalized_provider = (provider or "unknown").strip().lower()
+    normalized_client = str(client_id or "global")
+    normalized_message = (message or "").strip().lower()
+    alert_key = (normalized_client, normalized_provider, normalized_message[:200])
+    now_ts = time.time()
+    last_ts = _LAST_PAYMENT_ALERT_TS.get(alert_key)
+    if last_ts and (now_ts - last_ts) < _PAYMENT_ALERT_COOLDOWN_SECONDS:
+        return False
+
     short_message = message.strip()
     if len(short_message) > 420:
         short_message = f"{short_message[:420]}..."
@@ -138,10 +189,14 @@ def notify_service_payment_issue(client_id: int | None, provider: str, error: ob
     )
 
     # Always notify admins
-    send_admin_notification(text)
+    sent_admin = send_admin_notification(text)
     # Broadcast to super admins
-    send_to_super_admins(text, parse_mode=None)
+    sent_super_admins = send_to_super_admins(text, parse_mode=None)
     # If client context exists, also notify client topics
+    sent_client_topics = False
     if client_id:
-        return send_telegram_notification(client_id, text, parse_mode=None)
-    return True
+        sent_client_topics = send_telegram_notification(client_id, text, parse_mode=None, fallback_to_main_chat=False)
+
+    sent = sent_admin or sent_super_admins or sent_client_topics
+    _LAST_PAYMENT_ALERT_TS[alert_key] = now_ts
+    return sent

@@ -43,6 +43,15 @@ def _get_internal_retry_delay_seconds() -> float:
     return max(0.0, float(os.getenv("KIE_INTERNAL_RETRY_DELAY_SECONDS", "1.5")))
 
 
+def _get_max_resubmit_attempts() -> int:
+    raw_value = (
+        os.getenv("KIE_RESUBMIT_ATTEMPTS")
+        or os.getenv("FINAL_VIDEO_KIE_RESUBMIT_ATTEMPTS")
+        or "3"
+    )
+    return max(1, int(raw_value))
+
+
 def normalize_kie_model(value: str | None) -> str:
     normalized = str(value or DEFAULT_KIE_MODEL).strip()
     return normalized if normalized in SUPPORTED_KIE_MODELS else DEFAULT_KIE_MODEL
@@ -274,16 +283,17 @@ def submit_veo_video_task(prompt_json: Dict[str, Any], model: str | None = None)
     if not task_id:
         error_message = _extract_error_message(response_payload)
 
+    is_submitted = bool(task_id)
     return {
         "provider": "kie.ai",
         "provider_model": resolved_model,
-        "submission_status": "submitted" if task_id else "unknown",
+        "submission_status": "submitted" if is_submitted else "failed",
         "task_id": task_id,
-        "task_state": "waiting" if task_id else None,
+        "task_state": "waiting" if is_submitted else "fail",
         "request_payload": payload,
         "response_payload": response_payload,
         "result_urls": [],
-        "error": None if task_id else (error_message or "Task submitted but taskId missing in response"),
+        "error": None if is_submitted else (error_message or "Task submitted but taskId missing in response"),
     }
 
 
@@ -372,16 +382,17 @@ def submit_kie_video_task(prompt_json: Dict[str, Any], model: str | None = None)
         "waiting" if task_id else "unknown",
     )
 
+    is_submitted = bool(task_id)
     return {
         "provider": "kie.ai",
         "provider_model": resolved_model,
-        "submission_status": "submitted" if task_id else "unknown",
+        "submission_status": "submitted" if is_submitted else "failed",
         "task_id": task_id,
-        "task_state": "waiting" if task_id else None,
+        "task_state": "waiting" if is_submitted else "fail",
         "request_payload": payload,
         "response_payload": response_payload,
         "result_urls": [],
-        "error": None if task_id else (error_message or "Task submitted but taskId missing in response"),
+        "error": None if is_submitted else (error_message or "Task submitted but taskId missing in response"),
     }
 
 
@@ -430,8 +441,10 @@ def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: str | Non
 
 def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: str | None = None) -> List[Dict[str, Any]]:
     enriched_prompts: List[Dict[str, Any]] = []
+    max_resubmit_attempts = _get_max_resubmit_attempts()
 
     for item in prompts or []:
+        resubmit_attempts = max(0, _to_int(item.get("resubmit_attempts")) or 0)
         if item.get("use_ready_asset") or not item.get("prompt_json"):
             enriched_prompts.append({
                 **item,
@@ -444,6 +457,8 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: s
                 "response_payload": item.get("response_payload"),
                 "result_urls": item.get("result_urls") or [],
                 "error": item.get("error"),
+                "resubmit_attempts": resubmit_attempts,
+                "max_resubmit_attempts": max_resubmit_attempts,
             })
             continue
 
@@ -454,19 +469,47 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: s
         failed_task = task_state == "fail" or submission_status == "failed"
 
         if has_video:
-            enriched_prompts.append(item)
+            enriched_prompts.append({
+                **item,
+                "resubmit_attempts": resubmit_attempts,
+                "max_resubmit_attempts": max_resubmit_attempts,
+            })
             continue
 
         # Allow retry for failed tasks even when stale task_id is still present.
         if has_task_id and not failed_task:
-            enriched_prompts.append(item)
+            enriched_prompts.append({
+                **item,
+                "resubmit_attempts": resubmit_attempts,
+                "max_resubmit_attempts": max_resubmit_attempts,
+            })
+            continue
+
+        if resubmit_attempts >= max_resubmit_attempts:
+            enriched_prompts.append({
+                **item,
+                "task_id": None if not has_video else item.get("task_id"),
+                "submission_status": "failed",
+                "task_state": "fail",
+                "error": item.get("error") or f"Exceeded KIE re-submit limit ({max_resubmit_attempts})",
+                "resubmit_attempts": resubmit_attempts,
+                "max_resubmit_attempts": max_resubmit_attempts,
+            })
             continue
 
         try:
             submission = submit_kie_video_task(item["prompt_json"], model=model)
+            next_attempts = resubmit_attempts + 1
+            submission_task_id = submission.get("task_id")
+            submission_error = submission.get("error")
             enriched_prompts.append({
                 **item,
                 **submission,
+                "submission_status": "submitted" if submission_task_id else "failed",
+                "task_state": "waiting" if submission_task_id else "fail",
+                "error": None if submission_task_id else (submission_error or "Task submitted but taskId missing in response"),
+                "resubmit_attempts": next_attempts,
+                "max_resubmit_attempts": max_resubmit_attempts,
             })
         except Exception as error:
             logger.error("Failed to submit KIE task for keyword '%s': %s", item.get("keyword"), error)
@@ -481,6 +524,8 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: s
                 "response_payload": None,
                 "result_urls": [],
                 "error": str(error),
+                "resubmit_attempts": resubmit_attempts + 1,
+                "max_resubmit_attempts": max_resubmit_attempts,
             })
 
     return enriched_prompts

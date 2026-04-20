@@ -104,6 +104,31 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
+function extractFailedVideoError(payload: unknown, data: Record<string, unknown>) {
+  const direct = [
+    data.error,
+    data.error_message,
+    data.fail_reason,
+    data.fail_message,
+    data.failure_reason,
+    data.status_detail,
+    data.status_msg,
+    data.workflow_error,
+    data.moderation_msg,
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .find(Boolean);
+
+  if (direct) {
+    return direct;
+  }
+
+  const fallback = extractErrorMessage(payload, "HeyGen video generation failed");
+  return String(fallback || "").trim().toLowerCase() === "success"
+    ? "HeyGen video generation failed"
+    : fallback;
+}
+
 async function heygenFetch(pathname: string, init: RequestInit = {}) {
   const apiKey = getHeygenApiKey();
   const headers = new Headers(init.headers);
@@ -451,8 +476,7 @@ async function refreshHeygenStatus(scenarioId: number, videoId: string) {
   const status = String(data.status || "").toLowerCase();
   const videoUrl = typeof data.video_url === "string" ? data.video_url : null;
   const thumbnailUrl = typeof data.thumbnail_url === "string" ? data.thumbnail_url : null;
-  const errorMessage =
-    status === "failed" ? extractErrorMessage(payload, "HeyGen video generation failed") : null;
+  const errorMessage = status === "failed" ? extractFailedVideoError(payload, data) : null;
 
   await pool.query(
     `UPDATE generated_scenarios
