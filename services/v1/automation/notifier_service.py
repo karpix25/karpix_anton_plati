@@ -25,17 +25,15 @@ PAYMENT_ERROR_PATTERNS = [
     re.compile(r"subscription|plan\s+required|upgrade", re.IGNORECASE),
     re.compile(r"authorization\s+failed", re.IGNORECASE),
     re.compile(r"unauthorized", re.IGNORECASE),
-    re.compile(r"\b401\b", re.IGNORECASE),
-    re.compile(r"\b402\b", re.IGNORECASE),
+    re.compile(r"\\b401\\b", re.IGNORECASE),
+    re.compile(r"\\b402\\b", re.IGNORECASE),
 ]
 
 def send_admin_notification(message_text):
-    """
-    Sends a plain text message directly to the administrative chat.
-    """
+    """Sends a plain text message directly to the administrative chat."""
     if not bot:
         return False
-    
+
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if not chat_id:
         logger.warning("TELEGRAM_CHAT_ID missing. Cannot send admin notification.")
@@ -49,17 +47,13 @@ def send_admin_notification(message_text):
         return False
 
 def send_telegram_notification(client_id, message_text, parse_mode="Markdown"):
-    """
-    Sends a message to all Telegram topics associated with a client.
-    """
+    """Sends a message to all Telegram topics associated with a client."""
     if not bot:
         logger.warning("Telegram token missing. Cannot send notification.")
         return False
-
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-
         cursor.execute("SELECT topic_id FROM topic_configs WHERE client_id = %s", (client_id,))
         topics = cursor.fetchall()
         cursor.close()
@@ -86,12 +80,32 @@ def send_telegram_notification(client_id, message_text, parse_mode="Markdown"):
                 success = True
             except Exception as e:
                 logger.error(f"Failed to send to topic {topic_id}: {e}")
-
         return success
     except Exception as e:
         logger.error(f"Notification error: {e}")
         return False
 
+def send_to_super_admins(message_text, parse_mode="Markdown"):
+    """Broadcast a message to all super admin chat IDs defined in TELEGRAM_SUPER_ADMIN_IDS."""
+    if not bot:
+        logger.warning("Telegram token missing. Cannot send super admin broadcast.")
+        return False
+    raw_ids = os.getenv("TELEGRAM_SUPER_ADMIN_IDS", "").strip()
+    if not raw_ids:
+        logger.warning("TELEGRAM_SUPER_ADMIN_IDS missing. No super admin broadcast.")
+        return False
+    ids = [tid.strip() for tid in raw_ids.split(",") if tid.strip().isdigit()]
+    if not ids:
+        logger.warning("No valid super admin IDs found in TELEGRAM_SUPER_ADMIN_IDS.")
+        return False
+    success = False
+    for admin_id in ids:
+        try:
+            bot.send_message(chat_id=admin_id, text=message_text, parse_mode=parse_mode)
+            success = True
+        except Exception as e:
+            logger.error(f"Failed to send super admin notification to {admin_id}: {e}")
+    return success
 
 def _stringify_error(error: object) -> str:
     if isinstance(error, str):
@@ -103,12 +117,10 @@ def _stringify_error(error: object) -> str:
             return str(error)
     return str(error)
 
-
 def _is_payment_issue(message: str) -> bool:
     if not message:
         return False
     return any(pattern.search(message) for pattern in PAYMENT_ERROR_PATTERNS)
-
 
 def notify_service_payment_issue(client_id: int | None, provider: str, error: object) -> bool:
     message = _stringify_error(error)
@@ -124,12 +136,12 @@ def notify_service_payment_issue(client_id: int | None, provider: str, error: ob
         f"Похоже, закончился баланс или достигнут лимит.\n"
         f"Детали: {short_message}"
     )
-    
+
     # Always notify admins
     send_admin_notification(text)
-    
+    # Broadcast to super admins
+    send_to_super_admins(text, parse_mode=None)
     # If client context exists, also notify client topics
     if client_id:
         return send_telegram_notification(client_id, text, parse_mode=None)
-    
     return True
