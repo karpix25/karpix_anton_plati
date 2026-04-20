@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getStableHeygenPreviewUrl } from "@/lib/server/heygen-preview-cache";
 
 type HeygenAvatarGroup = {
   id: string;
@@ -167,33 +168,52 @@ export async function GET() {
             return null;
           }
 
-          const avatarPreviewImageUrl = readImageUrl(group)
+          const avatarPreviewSourceUrl = readImageUrl(group)
             || readImageUrl(nonMotionLooks[0])
             || readImageUrl(looks[0]);
+
+          const stableAvatarPreviewImageUrl = await getStableHeygenPreviewUrl({
+            cacheKey: `avatar:${group.id}`,
+            sourceUrl: avatarPreviewSourceUrl,
+            refresh: true,
+          });
+
+          const stableLooks = await Promise.all(
+            nonMotionLooks.map(async (look, lookIndex) => ({
+              look_id: look.id,
+              look_name: look.name || `${group.name || group.id} look ${lookIndex + 1}`,
+              preview_image_url: await getStableHeygenPreviewUrl({
+                cacheKey: `look:${look.id}`,
+                sourceUrl: readImageUrl(look),
+                refresh: true,
+              }),
+              is_active: true,
+              sort_order: lookIndex,
+            }))
+          );
 
           return {
             avatar_id: group.id,
             avatar_name: group.name || group.id,
             folder_name: group.group_type || "HEYGEN",
-            preview_image_url: avatarPreviewImageUrl,
+            preview_image_url: stableAvatarPreviewImageUrl,
             is_active: true,
             sort_order: index,
             gender: nonMotionLooks[0]?.gender || looks[0]?.gender || "female",
-            looks: nonMotionLooks.map((look, lookIndex) => ({
-              look_id: look.id,
-              look_name: look.name || `${group.name || group.id} look ${lookIndex + 1}`,
-              preview_image_url: readImageUrl(look),
-              is_active: true,
-              sort_order: lookIndex,
-            })),
+            looks: stableLooks,
           };
         } catch (error) {
           console.error(`HeyGen group import failed for ${group.id}:`, error);
+          const fallbackPreview = await getStableHeygenPreviewUrl({
+            cacheKey: `avatar:${group.id}`,
+            sourceUrl: readImageUrl(group),
+            refresh: true,
+          });
           return {
             avatar_id: group.id,
             avatar_name: group.name || group.id,
             folder_name: group.group_type || "HEYGEN",
-            preview_image_url: readImageUrl(group),
+            preview_image_url: fallbackPreview,
             is_active: true,
             sort_order: index,
             looks: [],

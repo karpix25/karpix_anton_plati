@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { PoolClient } from 'pg';
+import { getStableHeygenPreviewUrl } from '@/lib/server/heygen-preview-cache';
 
 async function ensureHeygenLookMotionColumns() {
   const statements = [
@@ -55,9 +56,26 @@ export async function GET(request: Request) {
          ORDER BY sort_order ASC, created_at ASC`,
         [avatar.id]
       );
+
+      const stableAvatarPreview = await getStableHeygenPreviewUrl({
+        cacheKey: `avatar:${avatar.avatar_id || avatar.id}`,
+        sourceUrl: avatar.preview_image_url || "",
+      });
+
+      const stableLooks = await Promise.all(
+        lookRows.rows.map(async (look) => ({
+          ...look,
+          preview_image_url: await getStableHeygenPreviewUrl({
+            cacheKey: `look:${look.look_id || look.id}`,
+            sourceUrl: look.preview_image_url || "",
+          }),
+        }))
+      );
+
       avatars.push({
         ...avatar,
-        looks: lookRows.rows,
+        preview_image_url: stableAvatarPreview,
+        looks: stableLooks,
       });
     }
 
