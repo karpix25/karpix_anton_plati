@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
+import { notifyServicePaymentIssue } from "@/lib/server/notifier";
 
 const HEYGEN_API_BASE = "https://api.heygen.com";
 const DEFAULT_MOTION_TYPE = "consistent";
@@ -183,6 +184,17 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("HeyGen motion GET error:", error);
     const message = error instanceof Error ? error.message : "Internal Server Error";
+
+    try {
+      const { searchParams } = new URL(request.url);
+      const clientId = Number.parseInt(String(searchParams.get("clientId")), 10);
+      if (Number.isFinite(clientId)) {
+        await notifyServicePaymentIssue(clientId, "HeyGen (Motion)", message);
+      }
+    } catch (notifierErr) {
+      console.error("Failed to trigger payment notification:", notifierErr);
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -279,6 +291,20 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("HeyGen add motion POST error:", error);
     const message = error instanceof Error ? error.message : "Internal Server Error";
+
+    const resolvedClientId = await (async () => {
+      try {
+        const body = await request.clone().json();
+        return Number.parseInt(String(body.clientId), 10);
+      } catch {
+        return null;
+      }
+    })();
+
+    if (Number.isFinite(resolvedClientId)) {
+      await notifyServicePaymentIssue(resolvedClientId, "HeyGen (Motion)", message);
+    }
+
     if (resolvedLookRowId) {
       await pool.query(
         `UPDATE client_heygen_avatar_looks

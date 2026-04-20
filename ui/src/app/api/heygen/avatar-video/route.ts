@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import pool from "@/lib/db";
+import { notifyServicePaymentIssue } from "@/lib/server/notifier";
 
 const HEYGEN_API_BASE = "https://api.heygen.com";
 const HEYGEN_UPLOAD_BASE = "https://upload.heygen.com";
@@ -594,6 +595,21 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error("HeyGen avatar video POST error:", error);
     const message = error instanceof Error ? error.message : "Internal Server Error";
+
+    try {
+      const body = await request.clone().json();
+      const scenarioId = Number.parseInt(String(body.scenarioId), 10);
+      if (Number.isFinite(scenarioId)) {
+        const { rows } = await pool.query("SELECT client_id FROM generated_scenarios WHERE id = $1", [scenarioId]);
+        const clientId = rows[0]?.client_id;
+        if (clientId) {
+          await notifyServicePaymentIssue(clientId, "HeyGen (Video)", message);
+        }
+      }
+    } catch (notifierErr) {
+      console.error("Failed to trigger payment notification:", notifierErr);
+    }
+
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
@@ -619,6 +635,10 @@ export async function GET(request: Request) {
     }
 
     const result = await refreshHeygenStatus(scenarioId, scenario.heygen_video_id);
+
+    if (result.error) {
+      await notifyServicePaymentIssue(scenario.client_id, "HeyGen (Video)", result.error);
+    }
 
     return NextResponse.json({
       scenarioId,

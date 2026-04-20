@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { spawn } from 'child_process';
 import pool from '@/lib/db';
+import { notifyServicePaymentIssue } from '@/lib/server/notifier';
 
 const DEFAULT_TTS_PROVIDER = "minimax";
 const DEFAULT_MINIMAX_VOICE_ID = "Russian_Engaging_Podcaster_v1";
@@ -615,6 +616,7 @@ export async function POST(request: Request) {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`ElevenLabs HTTP Error ${response.status}: ${errorText}`);
+        await notifyServicePaymentIssue(resolvedClientId, 'ElevenLabs', errorText);
         return NextResponse.json(
           { error: `ElevenLabs HTTP Error ${response.status}: ${errorText}` },
           { status: 500 }
@@ -659,6 +661,7 @@ export async function POST(request: Request) {
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`MiniMax HTTP Error ${response.status}: ${errorText}`);
+        await notifyServicePaymentIssue(resolvedClientId, 'MiniMax', errorText);
         return NextResponse.json(
           { error: `MiniMax HTTP Error ${response.status}: ${errorText}` },
           { status: 500 }
@@ -668,6 +671,7 @@ export async function POST(request: Request) {
       const result = await response.json();
       if (result.base_resp && result.base_resp.status_code !== 0) {
         console.error(`MiniMax Business Error: ${result.base_resp.status_msg}`);
+        await notifyServicePaymentIssue(resolvedClientId, 'MiniMax', result.base_resp.status_msg);
         return NextResponse.json({ error: result.base_resp.status_msg }, { status: 500 });
       }
 
