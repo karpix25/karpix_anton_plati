@@ -547,13 +547,16 @@ export async function POST(request: Request) {
     let selectedPronunciationOverrides: ElevenLabsReplacementRule[] = [];
 
     const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
+    let resolvedClientId: number | null = null;
+
     if (Number.isFinite(resolvedScenarioId)) {
       // Diagnostic: fetch scenario's heygen_avatar_id first
       const { rows: scenarioRows } = await pool.query<{ heygen_avatar_id: string | null; client_id: number | null }>(
         `SELECT heygen_avatar_id, client_id FROM generated_scenarios WHERE id = $1`,
         [resolvedScenarioId]
       );
-      console.log(`[TTS] scenario ${resolvedScenarioId}: heygen_avatar_id=${scenarioRows[0]?.heygen_avatar_id ?? 'NULL'}, client_id=${scenarioRows[0]?.client_id ?? 'NULL'}`);
+      resolvedClientId = scenarioRows[0]?.client_id ?? null;
+      console.log(`[TTS] scenario ${resolvedScenarioId}: heygen_avatar_id=${scenarioRows[0]?.heygen_avatar_id ?? 'NULL'}, client_id=${resolvedClientId ?? 'NULL'}`);
 
       const { rows } = await pool.query<{
         tts_provider: string | null;
