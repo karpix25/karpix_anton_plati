@@ -947,6 +947,65 @@ export function ScenariosScreen({
             Сценарии пока не сгенерированы. Перейдите в Генератор, чтобы создать свою первую подборку.
           </div>
         )}
+
+        {totalCount > 0 && (
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-6 border-t border-[#f0f4f7] pt-8">
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Отображать по:</span>
+              <div className="flex gap-1.5">
+                {[10, 20, 30, 50].map((size) => (
+                  <button
+                    key={size}
+                    onClick={() => onPageSizeChange(size)}
+                    className={`h-8 w-10 rounded-lg text-xs font-bold transition-all ${
+                      pageSize === size
+                        ? "bg-primary text-white shadow-md shadow-primary/20"
+                        : "bg-[#f0f4f7] text-muted-foreground hover:bg-[#e5ebf0]"
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="mr-4 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+                Страница <span className="text-foreground">{page + 1}</span> из <span className="text-foreground">{Math.ceil(totalCount / pageSize)}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => onPageChange(0)}
+                  disabled={page === 0}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#f0f4f7] text-muted-foreground transition-all hover:bg-[#e5ebf0] disabled:opacity-30"
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => onPageChange(Math.max(0, page - 1))}
+                  disabled={page === 0}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#f0f4f7] text-muted-foreground transition-all hover:bg-[#e5ebf0] disabled:opacity-30"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => onPageChange(Math.min(Math.ceil(totalCount / pageSize) - 1, page + 1))}
+                  disabled={page >= Math.ceil(totalCount / pageSize) - 1}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#f0f4f7] text-muted-foreground transition-all hover:bg-[#e5ebf0] disabled:opacity-30"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => onPageChange(Math.ceil(totalCount / pageSize) - 1)}
+                  disabled={page >= Math.ceil(totalCount / pageSize) - 1}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#f0f4f7] text-muted-foreground transition-all hover:bg-[#e5ebf0] disabled:opacity-30"
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog open={!!selectedScenario} onOpenChange={(open) => !open && handleCloseScenario()}>

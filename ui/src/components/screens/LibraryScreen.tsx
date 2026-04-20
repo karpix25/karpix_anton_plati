@@ -144,7 +144,105 @@ export function LibraryScreen({
         <div className="rounded-2xl border border-zinc-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all">
           <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="bg-[#f0f4f7] p-2 rounded-xl flex items-center max-w-md w-full">
-                  </Table>
+              <Search className="mx-2 h-4 w-4 text-muted-foreground/50" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="w-full border-none bg-transparent text-sm focus:ring-0"
+                placeholder="Фильтр по референсам..."
+              />
+            </div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              {totalCount} записей
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <Skeleton key={index} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : references.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Хук</TableHead>
+                  <TableHead>Тема</TableHead>
+                  <TableHead>Паттерн</TableHead>
+                  <TableHead>Стадия Ханта</TableHead>
+                  <TableHead>Ссылка</TableHead>
+                  <TableHead>Дата</TableHead>
+                  <TableHead>Статус</TableHead>
+                  <TableHead className="w-[90px] text-right">Открыть</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {references.map((ref) => {
+                  const coreThesis =
+                    normalizePlaceholderText(ref.audit_json?.pattern_framework?.core_thesis) ||
+                    normalizePlaceholderText(ref.audit_json?.reference_strategy?.topic_cluster);
+                  const patternType =
+                    normalizePlaceholderText(ref.audit_json?.pattern_framework?.pattern_type) || "other";
+                  const huntStage =
+                    normalizePlaceholderText(ref.audit_json?.hunt_ladder?.stage) || HUNT_STAGE_FALLBACK;
+
+                  return (
+                  <TableRow
+                    key={ref.id}
+                    className="cursor-pointer"
+                    onClick={() => onReferenceClick(ref)}
+                  >
+                    <TableCell className="max-w-[420px] font-medium text-foreground">
+                      <div className="line-clamp-2">{ref.audit_json?.atoms?.verbal_hook || "Хук не определён"}</div>
+                    </TableCell>
+                    <TableCell className="max-w-[220px] text-muted-foreground">
+                      <div className="line-clamp-2">
+                        {coreThesis || "Не выделена"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-flex rounded-lg px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider border border-current/10 ${patternTagStyle(patternType)}`}>
+                        {t(patternType)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className={`inline-flex items-center rounded-lg px-2.5 py-1 text-[11px] font-bold shadow-sm ${huntStageTagStyle(huntStage)}`}>
+                        <div className="mr-1.5 h-1.5 w-1.5 rounded-full bg-current opacity-40" />
+                        {t(huntStage)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="max-w-[260px] text-muted-foreground">
+                      <div className="flex items-center gap-1 truncate">
+                        <LinkIcon className="h-3 w-3 shrink-0 text-primary" />
+                        <span className="truncate">{ref.reels_url}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {new Date(ref.created_at).toLocaleDateString("ru-RU")}
+                    </TableCell>
+                    <TableCell>
+                      {ref.audit_json?.pattern_framework?.core_thesis ? (
+                        <Badge className="border-none bg-primary/10 text-primary">
+                          <CheckCircle2 className="mr-1 h-3 w-3" />
+                          Размечено
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-border text-muted-foreground">
+                          В очереди
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="inline-flex rounded-lg bg-[#f0f4f7] p-2 text-muted-foreground">
+                        <ArrowRight className="h-4 w-4" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           ) : (
             <div className="rounded-2xl border border-dashed border-border bg-white p-10 text-center text-sm text-muted-foreground">
               Ничего не найдено.
@@ -207,21 +305,6 @@ export function LibraryScreen({
                   </button>
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-f7] p-2 text-muted-foreground">
-                        <ArrowRight className="h-4 w-4" />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border bg-white p-10 text-center text-sm text-muted-foreground">
-              Ничего не найдено.
             </div>
           )}
         </div>
