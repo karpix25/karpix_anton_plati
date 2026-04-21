@@ -1,3 +1,8 @@
+export interface PaginatedResponse<T> {
+  data: T[];
+  totalCount: number;
+}
+
 export interface Client {
   id: number;
   name: string;
