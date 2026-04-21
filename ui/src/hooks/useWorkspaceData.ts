@@ -6,6 +6,11 @@ import { Client, ElevenLabsVoiceOption, Reference, Scenario, TopicCard, Structur
 const API_BASE = "/api";
 const SCENARIO_POLL_WINDOW_MS = 90_000;
 const SCENARIO_POLL_INTERVAL_MS = 4_000;
+const EMPTY_COST_STATS = {
+  totalPrompts: 0,
+  totalHeygenDuration: 0,
+  totalCostUsd: 0,
+};
 
 const normalizeProductMediaAssets = (value: unknown) => {
   if (!Array.isArray(value)) {
@@ -173,6 +178,27 @@ export function useWorkspaceData(selectedClientId: string) {
       return data;
     },
     staleTime: 1000 * 60 * 60, // 1 hour
+  });
+
+  const costStatsQuery = useQuery<{
+    totalPrompts: number;
+    totalHeygenDuration: number;
+    totalCostUsd: number;
+  }>({
+    queryKey: ["reports-costs", selectedClientId],
+    queryFn: async () => {
+      if (!selectedClientId) return EMPTY_COST_STATS;
+      const { data } = await axios.get(`${API_BASE}/reports/costs`, {
+        params: { clientId: selectedClientId },
+      });
+      return {
+        totalPrompts: Number(data?.totalPrompts || 0),
+        totalHeygenDuration: Number(data?.totalHeygenDuration || 0),
+        totalCostUsd: Number(data?.totalCostUsd || 0),
+      };
+    },
+    enabled: !!selectedClientId,
+    staleTime: 60_000,
   });
 
   const saveSettingsMutation = useMutation({
@@ -354,7 +380,7 @@ export function useWorkspaceData(selectedClientId: string) {
       setReferencePage(0);
     },
     // Stats
-    costStats: costStatsQuery.data || { totalPrompts: 0, totalHeygenDuration: 0, totalCostUsd: 0 },
+    costStats: costStatsQuery.data || EMPTY_COST_STATS,
     isLoadingStats: costStatsQuery.isLoading,
   };
 }
