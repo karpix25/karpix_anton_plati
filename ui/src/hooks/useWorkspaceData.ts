@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { Client, ElevenLabsVoiceOption, Reference, Scenario, TopicCard, StructureCard, Settings, HeygenAvatarConfig, MinimaxVoiceOption } from "@/types";
+import { Client, ElevenLabsVoiceOption, Reference, Scenario, TopicCard, StructureCard, Settings, HeygenAvatarConfig, MinimaxVoiceOption, PaginatedResponse } from "@/types";
 
 const API_BASE = "/api";
 const SCENARIO_POLL_WINDOW_MS = 90_000;
