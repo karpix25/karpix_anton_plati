@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
+let isDbInitialized = false;
+
+async function ensureCostColumns() {
+  if (isDbInitialized) return;
+
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS video_generation_prompts JSONB");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_audio_duration_seconds NUMERIC(10,3)");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS heygen_requested_at TIMESTAMP");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS heygen_video_id TEXT");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS heygen_video_url TEXT");
+  await pool.query("ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS heygen_status TEXT");
+
+  isDbInitialized = true;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get('clientId');
@@ -10,9 +25,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // We calculate costs based on prompt counts and heygen duration stored in processed_content table
-    // For prompt counts, we look into scenario_json->'video_generation_prompts'->'prompts'
-    // For heygen, we look into heygen_video_id and tts_audio_duration_seconds
+    await ensureCostColumns();
+
+    // We calculate costs based on prompt counts and heygen duration stored in generated_scenarios table
+    // For prompt counts, we look into video_generation_prompts->'prompts' (fallback to scenario_json)
+    // For heygen, we look into heygen_* fields and tts_audio_duration_seconds
     
     // Note: This matches the logic in @/lib/generation-costs.ts but implemented in SQL for performance
     
@@ -22,7 +39,13 @@ export async function GET(req: NextRequest) {
           id,
           (
             SELECT count(*) 
-            FROM jsonb_array_elements(COALESCE(scenario_json->'video_generation_prompts'->'prompts', '[]'::jsonb)) as p
+            FROM jsonb_array_elements(
+              COALESCE(
+                video_generation_prompts->'prompts',
+                scenario_json->'video_generation_prompts'->'prompts',
+                '[]'::jsonb
+              )
+            ) as p
             WHERE (p->>'use_ready_asset')::boolean IS NOT TRUE 
             AND (
               p->>'video_url' IS NOT NULL 
@@ -42,8 +65,12 @@ export async function GET(req: NextRequest) {
               ELSE 0
             END
           ) as heygen_duration,
-          COALESCE(scenario_json->'video_generation_prompts'->>'generator_model', 'veo3_lite') as model
-        FROM processed_content
+          COALESCE(
+            video_generation_prompts->>'generator_model',
+            scenario_json->'video_generation_prompts'->>'generator_model',
+            'veo3_lite'
+          ) as model
+        FROM generated_scenarios
         WHERE client_id = $1
         AND COALESCE(TRIM(scenario_json->>'script'), '') <> ''
         AND COALESCE(scenario_json->>'script', '') NOT ILIKE 'Error %'
