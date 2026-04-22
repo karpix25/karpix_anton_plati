@@ -556,11 +556,6 @@ function resolvePromptSource(
   const looksLikeImage = (url: string) => looksLikeByHints(url, IMAGE_URL_HINTS);
   const looksLikeVideo = (url: string) => looksLikeByHints(url, VIDEO_URL_HINTS);
 
-  if (item.use_ready_asset) {
-    const readyAsset = normalizeUrl(item.asset_url);
-    return readyAsset || null;
-  }
-
   const candidates = [
     normalizeUrl(item.video_url),
     ...(item.result_urls || []).map((url) => normalizeUrl(url)),

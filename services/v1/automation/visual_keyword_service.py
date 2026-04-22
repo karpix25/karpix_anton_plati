@@ -399,10 +399,22 @@ class ProductAssetManager:
                 "name": str(asset.get("name") or asset.get("id") or "Product Asset").strip(),
                 "source_type": str(asset.get("source_type") or "video").strip(),
             })
-        if normalized: return random.choice(normalized)
-        fallback_url = str(self.config.product_video_url or "").strip()
-        if not fallback_url: return None
-        return {"id": fallback_url, "url": fallback_url, "name": "Product Video", "source_type": "video"}
+
+        primary_url = str(self.config.product_video_url or "").strip()
+        if primary_url:
+            primary_asset = next((asset for asset in normalized if str(asset.get("url") or "").strip() == primary_url), None)
+            if primary_asset:
+                return primary_asset
+            return {"id": primary_url, "url": primary_url, "name": "Product Video", "source_type": "video"}
+
+        video_assets = [asset for asset in normalized if str(asset.get("source_type") or "").strip().lower() != "image"]
+        if video_assets:
+            return random.choice(video_assets)
+
+        if normalized:
+            return random.choice(normalized)
+
+        return None
 
     def apply_assets(self, segments: List[VisualSegment], words: List[Word], slots: List[TimingSlot]) -> List[VisualSegment]:
         product_keywords = _parse_product_keywords(self.config.product_keyword)
