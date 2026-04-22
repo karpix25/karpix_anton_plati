@@ -538,6 +538,48 @@ export const useSettingsState = ({
     }
   };
 
+  const handleRollbackPrompt = async (category: "scenario" | "visual" | "video") => {
+    if (!selectedClientId) return;
+    
+    // First fetch the latest history for this category
+    try {
+      setOptimizingCategory(category);
+      const histRes = await fetch(`/api/clients/prompt-history?clientId=${selectedClientId}&category=${category}`);
+      if (!histRes.ok) throw new Error("Не удалось загрузить историю промптов");
+      
+      const histData = await histRes.json();
+      if (!histData.history || histData.history.length === 0) {
+        alert("Нет сохраненной истории для отката.");
+        return;
+      }
+      
+      const latestHistoryId = histData.history[0].id;
+      
+      if (!window.confirm("Откатить правила на предыдущую версию? Текущие правила сохранятся в историю.")) {
+        return;
+      }
+
+      const rbRes = await fetch('/api/clients/prompt-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: selectedClientId, category, historyId: latestHistoryId })
+      });
+      
+      if (!rbRes.ok) {
+        const errorData = await rbRes.json().catch(() => ({ error: "Unknown error" }));
+        throw new Error(errorData.error || "Не удалось откатить промпт");
+      }
+      
+      alert("Правила успешно восстановлены из истории.");
+      if (onRefreshWorkspace) onRefreshWorkspace();
+    } catch (e) {
+      console.error("Rollback error:", e);
+      alert(`Ошибка: ${e instanceof Error ? e.message : "Неизвестная ошибка"}`);
+    } finally {
+      setOptimizingCategory(null);
+    }
+  };
+
   const handleManualFinalAutomationRun = async () => {
     if (!selectedClientId || isManualFinalRunPending) return;
 
@@ -618,6 +660,7 @@ export const useSettingsState = ({
     handleRemoveProductAsset,
     handleDeleteProject,
     handleOptimizePrompts,
+    handleRollbackPrompt,
     handleManualFinalAutomationRun,
     handleSaveSettings,
   };

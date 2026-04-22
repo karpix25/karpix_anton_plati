@@ -9,11 +9,13 @@ type MinimaxVoiceResponse = {
   }>;
   voice_cloning?: Array<{
     voice_id: string;
+    voice_name?: string;
     description?: string[];
     created_time?: string;
   }>;
   voice_generation?: Array<{
     voice_id: string;
+    voice_name?: string;
     description?: string[];
     created_time?: string;
   }>;
@@ -59,21 +61,21 @@ export async function GET() {
     const voices = [
       ...(payload?.system_voice || []).map((voice) => ({
         voice_id: voice.voice_id,
-        voice_name: voice.voice_name || voice.voice_id,
+        voice_name: voice.voice_name?.trim() || voice.voice_id,
         category: "system" as const,
         description: voice.description || [],
         created_time: voice.created_time,
       })),
       ...(payload?.voice_cloning || []).map((voice) => ({
         voice_id: voice.voice_id,
-        voice_name: voice.voice_id,
+        voice_name: voice.voice_name?.trim() || voice.voice_id,
         category: "voice_cloning" as const,
         description: voice.description || [],
         created_time: voice.created_time,
       })),
       ...(payload?.voice_generation || []).map((voice) => ({
         voice_id: voice.voice_id,
-        voice_name: voice.voice_id,
+        voice_name: voice.voice_name?.trim() || voice.voice_id,
         category: "voice_generation" as const,
         description: voice.description || [],
         created_time: voice.created_time,

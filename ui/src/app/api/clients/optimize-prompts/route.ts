@@ -140,6 +140,17 @@ export async function POST(request: Request) {
 
     const dbField = CATEGORY_FIELD_MAP[category];
 
+    // Ensure history table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS client_learned_rules_history (
+        id SERIAL PRIMARY KEY,
+        client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+        category TEXT NOT NULL,
+        rules_text TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Get current rules
     const clientResult = await pool.query(
       `SELECT ${dbField} FROM clients WHERE id = $1`,
@@ -165,6 +176,14 @@ export async function POST(request: Request) {
 
     // Run LLM optimization
     const newRules = await optimizeRules(category, currentRules, feedbackResult.rows);
+
+    // Save current rules to history before overwriting (if they exist)
+    if (currentRules && currentRules.trim().length > 0) {
+      await pool.query(
+        `INSERT INTO client_learned_rules_history (client_id, category, rules_text) VALUES ($1, $2, $3)`,
+        [resolvedClientId, category, currentRules]
+      );
+    }
 
     // Save new rules
     await pool.query(

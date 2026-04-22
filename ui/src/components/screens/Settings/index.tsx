@@ -7,6 +7,7 @@ import { AutomationSettings } from "./components/AutomationSettings";
 import { VideoLogicSettings } from "./components/VideoLogicSettings";
 import { SilenceHandlingSettings } from "./components/SilenceHandlingSettings";
 import { PronunciationSettings } from "./components/PronunciationSettings";
+import { PromptEvolutionSettings } from "./components/PromptEvolutionSettings";
 import { HeygenSettings } from "./components/HeygenSettings";
 import { Button } from "@/components/ui/button";
 import { 
@@ -50,6 +51,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
     { id: "subtitles", label: "Субтитры", icon: Type },
     { id: "automation", label: "Автоматика", icon: Zap },
     { id: "logic", label: "Логика видео", icon: Video },
+    { id: "evolution", label: "AI Эволюция", icon: BrainCircuit },
     { id: "heygen", label: "HeyGen Pool", icon: Users },
   ] as const;
 
@@ -209,6 +211,22 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                   <PronunciationSettings
                     draftSettings={state.draftSettings}
                     setDraftSettings={state.setDraftSettings}
+                  />
+                </div>
+             )}
+
+             {activeTab === "evolution" && (
+                <div className="space-y-8">
+                  <header>
+                    <h2 className="text-2xl font-black text-foreground uppercase italic tracking-tight">AI Эволюция</h2>
+                    <p className="text-sm text-slate-500 font-medium mt-1">Самообучаемая система правил на основе обратной связи.</p>
+                  </header>
+                  <PromptEvolutionSettings 
+                    draftSettings={state.draftSettings}
+                    selectedClientId={props.selectedClientId}
+                    optimizingCategory={state.optimizingCategory}
+                    handleOptimizePrompts={state.handleOptimizePrompts}
+                    onRollbackPrompt={state.handleRollbackPrompt}
                   />
                 </div>
              )}
