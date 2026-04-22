@@ -130,6 +130,15 @@ function extractFailedVideoError(payload: unknown, data: Record<string, unknown>
     : fallback;
 }
 
+function isPhotarNotFoundError(error: unknown) {
+  const message = String(error instanceof Error ? error.message : error || "").toLowerCase();
+  return (
+    message.includes("photar not found") ||
+    message.includes("photo avatar not found") ||
+    message.includes("photo_avatar not found")
+  );
+}
+
 async function heygenFetch(pathname: string, init: RequestInit = {}) {
   const apiKey = getHeygenApiKey();
   const headers = new Headers(init.headers);
@@ -436,14 +445,27 @@ async function resolveTalkingPhoto(look: LookRow | null): Promise<SelectedTalkin
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Motion look is not ready";
-    await pool.query(
-      `UPDATE client_heygen_avatar_looks
-       SET motion_status = 'pending',
-           motion_error = $2,
-           motion_updated_at = CURRENT_TIMESTAMP
-       WHERE id = $1`,
-      [look.id, message]
-    );
+    const isNotFound = isPhotarNotFoundError(error);
+    if (isNotFound) {
+      await pool.query(
+        `UPDATE client_heygen_avatar_looks
+         SET motion_look_id = NULL,
+             motion_status = 'failed',
+             motion_error = $2,
+             motion_updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [look.id, message]
+      );
+    } else {
+      await pool.query(
+        `UPDATE client_heygen_avatar_looks
+         SET motion_status = 'pending',
+             motion_error = $2,
+             motion_updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [look.id, message]
+      );
+    }
 
     return {
       talkingPhotoId: look.look_id,

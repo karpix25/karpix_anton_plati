@@ -30,6 +30,15 @@ function normalizeMotionPrompt(value: unknown) {
     : DEFAULT_MOTION_PROMPT;
 }
 
+function isPhotarNotFoundError(error: unknown) {
+  const message = String(error instanceof Error ? error.message : error || "").toLowerCase();
+  return (
+    message.includes("photar not found") ||
+    message.includes("photo avatar not found") ||
+    message.includes("photo_avatar not found")
+  );
+}
+
 async function ensureMotionColumns() {
   const statements = [
     "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_look_id TEXT",
@@ -146,41 +155,67 @@ export async function GET(request: Request) {
       });
     }
 
-    const payload = await heygenFetch(`/v2/photo_avatar/${encodeURIComponent(look.motion_look_id)}`);
-    const details = (payload.data || {}) as Record<string, unknown>;
-    const rawStatus = String(details.status || "").toLowerCase();
-    const isMotionAvatar = details.is_motion === true;
-    const workflowError = typeof details.workflow_error === "string" ? details.workflow_error : "";
-    const moderationMessage = typeof details.moderation_msg === "string" ? details.moderation_msg : "";
-    const motionError = workflowError || moderationMessage || "";
+    try {
+      const payload = await heygenFetch(`/v2/photo_avatar/${encodeURIComponent(look.motion_look_id)}`);
+      const details = (payload.data || {}) as Record<string, unknown>;
+      const rawStatus = String(details.status || "").toLowerCase();
+      const isMotionAvatar = details.is_motion === true;
+      const workflowError = typeof details.workflow_error === "string" ? details.workflow_error : "";
+      const moderationMessage = typeof details.moderation_msg === "string" ? details.moderation_msg : "";
+      const motionError = workflowError || moderationMessage || "";
 
-    const motionStatus =
-      isMotionAvatar && rawStatus === "completed"
-        ? "ready"
-        : rawStatus === "failed"
-          ? "failed"
-          : rawStatus || "pending";
+      const motionStatus =
+        isMotionAvatar && rawStatus === "completed"
+          ? "ready"
+          : rawStatus === "failed"
+            ? "failed"
+            : rawStatus || "pending";
 
-    await saveMotionLookState({
-      lookRowId,
-      motionLookId: look.motion_look_id,
-      motionPrompt: normalizeMotionPrompt(look.motion_prompt),
-      motionType: look.motion_type || DEFAULT_MOTION_TYPE,
-      motionStatus,
-      motionError: motionStatus === "failed" ? motionError || "HeyGen motion generation failed" : null,
-    });
+      await saveMotionLookState({
+        lookRowId,
+        motionLookId: look.motion_look_id,
+        motionPrompt: normalizeMotionPrompt(look.motion_prompt),
+        motionType: look.motion_type || DEFAULT_MOTION_TYPE,
+        motionStatus,
+        motionError: motionStatus === "failed" ? motionError || "HeyGen motion generation failed" : null,
+      });
 
-    return NextResponse.json({
-      ok: true,
-      lookRowId,
-      motionLookId: look.motion_look_id,
-      motionPrompt: normalizeMotionPrompt(look.motion_prompt),
-      motionType: look.motion_type || DEFAULT_MOTION_TYPE,
-      motionStatus,
-      motionError: motionStatus === "failed" ? motionError || "HeyGen motion generation failed" : "",
-      rawStatus,
-      isMotionAvatar,
-    });
+      return NextResponse.json({
+        ok: true,
+        lookRowId,
+        motionLookId: look.motion_look_id,
+        motionPrompt: normalizeMotionPrompt(look.motion_prompt),
+        motionType: look.motion_type || DEFAULT_MOTION_TYPE,
+        motionStatus,
+        motionError: motionStatus === "failed" ? motionError || "HeyGen motion generation failed" : "",
+        rawStatus,
+        isMotionAvatar,
+      });
+    } catch (motionFetchError) {
+      if (!isPhotarNotFoundError(motionFetchError)) {
+        throw motionFetchError;
+      }
+
+      const notFoundMessage = "Photar not found";
+      await saveMotionLookState({
+        lookRowId,
+        motionLookId: null,
+        motionPrompt: normalizeMotionPrompt(look.motion_prompt),
+        motionType: look.motion_type || DEFAULT_MOTION_TYPE,
+        motionStatus: "failed",
+        motionError: notFoundMessage,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        lookRowId,
+        motionLookId: null,
+        motionPrompt: normalizeMotionPrompt(look.motion_prompt),
+        motionType: look.motion_type || DEFAULT_MOTION_TYPE,
+        motionStatus: "failed",
+        motionError: notFoundMessage,
+      });
+    }
   } catch (error) {
     console.error("HeyGen motion GET error:", error);
     const message = error instanceof Error ? error.message : "Internal Server Error";
@@ -188,7 +223,7 @@ export async function GET(request: Request) {
     try {
       const { searchParams } = new URL(request.url);
       const clientId = Number.parseInt(String(searchParams.get("clientId")), 10);
-      if (Number.isFinite(clientId)) {
+      if (Number.isFinite(clientId) && !isPhotarNotFoundError(error)) {
         await notifyServicePaymentIssue(clientId, "HeyGen (Motion)", message);
       }
     } catch (notifierErr) {

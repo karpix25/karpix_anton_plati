@@ -255,7 +255,10 @@ ${events
 `;
 }
 
-function buildFontFallbackUrls(url: string) {
+function buildFontFallbackUrls(
+  url: string,
+  fontFamilyKey: SubtitleRenderSettings["subtitle_font_family"]
+) {
   const fallbacks: string[] = [];
   if (url.startsWith("https://raw.githubusercontent.com/google/fonts/main/")) {
     fallbacks.push(
@@ -265,6 +268,19 @@ function buildFontFallbackUrls(url: string) {
       )
     );
   }
+
+  if (fontFamilyKey === "pt_sans") {
+    const isBold = url.toLowerCase().includes("bold");
+    const weight = isBold ? "Bold" : "Regular";
+
+    fallbacks.push(
+      `https://raw.githubusercontent.com/paratype/pt-sans/master/fonts/ttf/PTSans-${weight}.ttf`,
+      `https://github.com/paratype/pt-sans/raw/master/fonts/ttf/PTSans-${weight}.ttf`,
+      `https://raw.githubusercontent.com/google/fonts/main/ofl/ptsans/PT_Sans-Web-${weight}.ttf`,
+      `https://github.com/google/fonts/raw/main/ofl/ptsans/PT_Sans-Web-${weight}.ttf`
+    );
+  }
+
   return fallbacks;
 }
 
@@ -304,11 +320,17 @@ async function ensureSubtitleFontAssets(fontFamilyKey: SubtitleRenderSettings["s
 
   try {
     await downloadFileIfMissing(
-      [fontDefinition.regularUrl, ...buildFontFallbackUrls(fontDefinition.regularUrl)],
+      [
+        fontDefinition.regularUrl,
+        ...buildFontFallbackUrls(fontDefinition.regularUrl, fontFamilyKey),
+      ],
       path.join(fontsDir, "Regular.ttf")
     );
     await downloadFileIfMissing(
-      [fontDefinition.boldUrl, ...buildFontFallbackUrls(fontDefinition.boldUrl)],
+      [
+        fontDefinition.boldUrl,
+        ...buildFontFallbackUrls(fontDefinition.boldUrl, fontFamilyKey),
+      ],
       path.join(fontsDir, "Bold.ttf")
     );
     return {
