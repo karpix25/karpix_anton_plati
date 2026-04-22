@@ -157,6 +157,19 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
           <div className="flex flex-col justify-between gap-2 py-1">
              <Button
                 type="button"
+                variant="outline"
+                size="sm"
+                className={`text-[10px] font-black uppercase tracking-widest ${
+                  look.is_active
+                    ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                    : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                }`}
+                onClick={() => updateLook(avatarIndex, lookIndex, "is_active", !(look.is_active ?? true))}
+              >
+                {look.is_active ? "Выключить" : "Включить"}
+              </Button>
+             <Button
+                type="button"
                 variant="ghost"
                 size="icon"
                 className="text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-full"
