@@ -8,6 +8,7 @@ import {
   DEFAULT_MINIMAX_VOICE_ID,
   DEFAULT_ELEVENLABS_VOICE_ID,
 } from "../SettingsConstants";
+import { getMotionIndicator } from "../SettingsUtils";
 
 interface HeygenAvatarItemProps {
   avatar: HeygenAvatarConfig;
@@ -55,6 +56,8 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
   setSelectedLookTabs,
 }) => {
   const activeLooksCount = avatar.looks.filter((l) => l.is_active ?? true).length;
+  const motionReadyLooksCount = avatar.looks.filter((look) => getMotionIndicator(look.motion_look_id, look.motion_status).tone === "ready").length;
+  const motionPendingLooksCount = avatar.looks.filter((look) => getMotionIndicator(look.motion_look_id, look.motion_status).tone === "pending").length;
   const selectedLookIndex = parseInt(selectedLookTabs[avatarIndex] || "0", 10);
   const avatarTtsProvider = avatar.tts_provider || "minimax";
   const currentVoiceId = avatarTtsProvider === "minimax" 
@@ -98,6 +101,18 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                  <span className="rounded-full bg-slate-50 border border-slate-100 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
                     Looks: {avatar.looks.length} ({activeLooksCount} active)
                  </span>
+                 <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${
+                   motionReadyLooksCount > 0
+                     ? "bg-emerald-50 text-emerald-600"
+                     : "bg-slate-100 text-slate-500"
+                 }`}>
+                    Motion: {motionReadyLooksCount}/{avatar.looks.length}
+                 </span>
+                 {motionPendingLooksCount > 0 && (
+                   <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-700">
+                      Pending: {motionPendingLooksCount}
+                   </span>
+                 )}
                </div>
             </div>
           </div>

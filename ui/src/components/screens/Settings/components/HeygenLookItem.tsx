@@ -9,7 +9,7 @@ import {
   HEYGEN_MOTION_PROMPT_MAX_LENGTH,
   HEYGEN_MOTION_TYPE_OPTIONS,
 } from "../SettingsConstants";
-import { isPendingMotionStatus } from "../SettingsUtils";
+import { getMotionIndicator, isPendingMotionStatus } from "../SettingsUtils";
 
 interface HeygenLookItemProps {
   avatar: HeygenAvatarConfig;
@@ -44,6 +44,8 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
   handleGenerateMotionPrompt,
   onSelect,
 }) => {
+  const motionIndicator = getMotionIndicator(look.motion_look_id, look.motion_status);
+
   return (
     <div className={`space-y-4 rounded-2xl border bg-white p-4 transition-all ${isSelected ? "border-primary shadow-lg ring-1 ring-primary/20" : "border-[#e5ebf0] opacity-90 hover:opacity-100"}`}>
        <div className="grid gap-4 md:grid-cols-[120px_1fr_1fr_1fr_auto]">
@@ -70,6 +72,19 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
               >
                 {look.is_active ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
               </button>
+              <div
+                className={`absolute left-2 top-2 rounded-full px-2 py-1 text-[8px] font-black uppercase tracking-widest shadow-sm ${
+                  motionIndicator.tone === "ready"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : motionIndicator.tone === "pending"
+                      ? "bg-amber-100 text-amber-700"
+                      : motionIndicator.tone === "failed"
+                        ? "bg-rose-100 text-rose-700"
+                        : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {motionIndicator.label}
+              </div>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2 text-[9px] font-black uppercase tracking-widest text-white text-center">
                  {look.is_active ? "Live" : "Inactive"}
               </div>
@@ -167,8 +182,19 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-4">
             <div className="space-y-1">
                  <div className="text-[10px] font-black uppercase tracking-widest text-foreground flex items-center gap-2">
-                    <span className={`h-1.5 w-1.5 rounded-full ${look.motion_status === 'ready' ? 'bg-emerald-500' : isPendingMotionStatus(look.motion_status) ? 'bg-amber-400' : 'bg-slate-300'}`} />
-                    Status: {look.motion_status || "No Motion"}
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        motionIndicator.tone === "ready"
+                          ? "bg-emerald-500"
+                          : motionIndicator.tone === "pending"
+                            ? "bg-amber-400"
+                            : motionIndicator.tone === "failed"
+                              ? "bg-rose-500"
+                              : "bg-slate-300"
+                      }`}
+                    />
+                    {motionIndicator.label}
+                    {look.motion_status ? ` (${look.motion_status})` : ""}
                  </div>
                  {look.motion_error && <p className="text-[10px] text-rose-500 font-bold">{look.motion_error}</p>}
                  {look.motion_look_id && <p className="text-[9px] font-mono text-slate-400">ID: {look.motion_look_id}</p>}

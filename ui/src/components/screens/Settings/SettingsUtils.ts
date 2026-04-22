@@ -16,6 +16,28 @@ export const safeTrim = (value: unknown) => (typeof value === "string" ? value.t
 export const isPendingMotionStatus = (value: unknown) =>
   ["pending", "queued", "processing", "in_progress"].includes(safeTrim(value).toLowerCase());
 
+export const isReadyMotionStatus = (value: unknown) =>
+  ["ready", "completed", "success"].includes(safeTrim(value).toLowerCase());
+
+export function getMotionIndicator(motionLookId: unknown, motionStatus: unknown) {
+  const hasMotionLook = Boolean(safeTrim(motionLookId));
+  const normalizedStatus = safeTrim(motionStatus).toLowerCase();
+
+  if (hasMotionLook && isReadyMotionStatus(normalizedStatus)) {
+    return { label: "Motion Active", tone: "ready" as const };
+  }
+
+  if (isPendingMotionStatus(normalizedStatus)) {
+    return { label: "Motion Pending", tone: "pending" as const };
+  }
+
+  if (normalizedStatus === "failed") {
+    return { label: "Motion Failed", tone: "failed" as const };
+  }
+
+  return { label: "No Motion", tone: "none" as const };
+}
+
 export const normalizeMotionPrompt = (value: unknown) => safeTrim(value).slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH);
 
 export const normalizeProductMediaAssets = (value: unknown): ProductMediaAsset[] => {
