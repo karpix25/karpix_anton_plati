@@ -1095,20 +1095,24 @@ async function buildMontage(scenarioId: number) {
   // Build filter_complex: overlay B-roll at exact timestamps on avatar base
   const filterParts: string[] = [];
 
-  // Reset PTS for each B-roll input
+  // Rebase each B-roll clip to its absolute timeline position.
+  // Without this offset, the overlay stream can be "consumed" before
+  // enable=between(...) becomes true, causing a frozen last frame.
   for (let i = 0; i < brollClips.length; i++) {
-    filterParts.push(`[${i + 1}:v]setpts=PTS-STARTPTS[b${i}]`);
+    const clip = brollClips[i];
+    filterParts.push(
+      `[${i + 1}:v]setpts=PTS-STARTPTS+${clip.start.toFixed(3)}/TB[b${i}]`
+    );
   }
 
-  // Chain overlays on avatar base at exact timestamps
-  // eof_action=repeat keeps the last frame visible if B-roll is slightly
-  // shorter than the slot due to frame-boundary quantization.
+  // Chain overlays on avatar base at exact timestamps.
+  // eof_action=pass ensures avatar shows through when overlay clip ends.
   let currentVideoLabel = "0:v";
   for (let i = 0; i < brollClips.length; i++) {
     const clip = brollClips[i];
     const outLabel = `ov${i}`;
     filterParts.push(
-      `[${currentVideoLabel}][b${i}]overlay=0:0:eof_action=repeat:enable='between(t,${clip.start.toFixed(3)},${clip.end.toFixed(3)})'[${outLabel}]`
+      `[${currentVideoLabel}][b${i}]overlay=0:0:eof_action=pass:enable='between(t,${clip.start.toFixed(3)},${clip.end.toFixed(3)})'[${outLabel}]`
     );
     currentVideoLabel = outLabel;
   }
