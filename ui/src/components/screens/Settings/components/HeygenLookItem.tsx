@@ -178,24 +178,26 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
           </div>
        </div>
 
+       <div className="flex items-center gap-2 border-t border-slate-100 pt-3 text-[10px] font-black uppercase tracking-widest text-foreground">
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              motionIndicator.tone === "ready"
+                ? "bg-emerald-500"
+                : motionIndicator.tone === "pending"
+                  ? "bg-amber-400"
+                  : motionIndicator.tone === "failed"
+                    ? "bg-rose-500"
+                    : "bg-slate-300"
+            }`}
+          />
+          {motionIndicator.label}
+          {look.motion_status ? ` (${look.motion_status})` : ""}
+       </div>
+
        {isSelected && (
           <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-4">
             <div className="space-y-1">
-                 <div className="text-[10px] font-black uppercase tracking-widest text-foreground flex items-center gap-2">
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        motionIndicator.tone === "ready"
-                          ? "bg-emerald-500"
-                          : motionIndicator.tone === "pending"
-                            ? "bg-amber-400"
-                            : motionIndicator.tone === "failed"
-                              ? "bg-rose-500"
-                              : "bg-slate-300"
-                      }`}
-                    />
-                    {motionIndicator.label}
-                    {look.motion_status ? ` (${look.motion_status})` : ""}
-                 </div>
+                 <div className="text-[10px] font-black uppercase tracking-widest text-foreground">Motion Actions</div>
                  {look.motion_error && <p className="text-[10px] text-rose-500 font-bold">{look.motion_error}</p>}
                  {look.motion_look_id && <p className="text-[9px] font-mono text-slate-400">ID: {look.motion_look_id}</p>}
             </div>
