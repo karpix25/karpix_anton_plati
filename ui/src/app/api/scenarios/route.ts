@@ -57,8 +57,10 @@ export async function GET(request: Request) {
       whereClauses.push(`(scenario_json->>'script' ILIKE $${values.length} OR tts_script ILIKE $${values.length})`);
     }
 
-    whereClauses.push(`COALESCE(TRIM(scenario_json->>'script'), '') <> ''`);
-    whereClauses.push(`COALESCE(scenario_json->>'script', '') NOT ILIKE 'Error %'`);
+    whereClauses.push(`COALESCE(TRIM(scenario_json->>'script'), TRIM(tts_script), '') <> ''`);
+    whereClauses.push(
+      `COALESCE(scenario_json->>'script', tts_script, '') NOT ILIKE 'Error %'`
+    );
 
     const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
     

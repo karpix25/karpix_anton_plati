@@ -72,8 +72,8 @@ export async function GET(req: NextRequest) {
           ) as model
         FROM generated_scenarios
         WHERE client_id = $1
-        AND COALESCE(TRIM(scenario_json->>'script'), '') <> ''
-        AND COALESCE(scenario_json->>'script', '') NOT ILIKE 'Error %'
+        AND COALESCE(TRIM(scenario_json->>'script'), TRIM(tts_script), '') <> ''
+        AND COALESCE(scenario_json->>'script', tts_script, '') NOT ILIKE 'Error %'
       )
       SELECT 
         SUM(prompt_count) as total_prompts,
