@@ -26,6 +26,8 @@ type TelegramSessionUser = {
   expiresAt: string;
 };
 
+const PREFERRED_PROJECT_NAME_FRAGMENTS = ["plati", "плати"];
+
 const normalizeProductMediaAssets = (value: unknown) => {
   const normalizeItem = (item: unknown): ProductMediaAsset | null => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -174,7 +176,17 @@ export default function CuratorDashboard() {
     singleRewriteMutation,
   } = useWorkspaceData(selectedClientId);
 
-  const activeClientId = selectedClientId || clients[0]?.id?.toString() || "";
+  const defaultClient = useMemo(() => {
+    if (!clients.length) return undefined;
+    return (
+      clients.find((client) => {
+        const normalizedName = String(client.name || "").toLowerCase();
+        return PREFERRED_PROJECT_NAME_FRAGMENTS.some((fragment) => normalizedName.includes(fragment));
+      }) || clients[0]
+    );
+  }, [clients]);
+
+  const activeClientId = selectedClientId || defaultClient?.id?.toString() || "";
 
   // --- Derived State ---
   const selectedClient = useMemo(
@@ -253,10 +265,11 @@ export default function CuratorDashboard() {
   useEffect(() => {
     if (clients.length > 0 && !selectedClientId) {
       startTransition(() => {
-        setSelectedClientId(clients[0].id.toString());
+        const resolvedDefaultClientId = defaultClient?.id?.toString() || clients[0].id.toString();
+        setSelectedClientId(resolvedDefaultClientId);
       });
     }
-  }, [clients, selectedClientId]);
+  }, [clients, defaultClient, selectedClientId]);
 
   const checkTelegramSession = useCallback(async () => {
     try {
