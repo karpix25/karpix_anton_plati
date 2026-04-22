@@ -45,18 +45,16 @@ export async function POST(request: Request) {
           c.id,
           GREATEST(0, COALESCE(c.daily_final_video_limit, 0))::int AS daily_limit,
           GREATEST(0, COALESCE(c.monthly_final_video_limit, 0))::int AS monthly_limit,
-          COALESCE(job_stats.monthly_job_count, 0)::int AS monthly_job_count
-        FROM clients c
-        LEFT JOIN LATERAL (
-          SELECT COUNT(*) FILTER (
-            WHERE DATE_TRUNC(
+          COALESCE((
+            SELECT COUNT(*)::int
+            FROM final_video_jobs fvj
+            WHERE fvj.client_id = c.id
+              AND DATE_TRUNC(
                     'month',
                     ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                   ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
-          ) AS monthly_job_count
-          FROM final_video_jobs fvj
-          WHERE fvj.client_id = c.id
-        ) job_stats ON TRUE
+          ), 0)::int AS monthly_job_count
+        FROM clients c
         WHERE c.id = $1
         FOR UPDATE
         `,
