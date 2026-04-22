@@ -28,6 +28,9 @@ SUPPORTED_KIE_MODELS = {
     VEO3_FAST,
     VEO3_LITE,
 }
+
+VIDEO_URL_HINTS = (".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8")
+IMAGE_URL_HINTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".svg")
 VEO3_MODELS = {VEO3_QUALITY, VEO3_FAST, VEO3_LITE}
 
 
@@ -594,6 +597,26 @@ def _parse_result_urls(result_json: Any) -> List[str]:
     return []
 
 
+def _pick_preferred_video_url(urls: List[str]) -> str | None:
+    normalized = [str(url or "").strip() for url in (urls or []) if str(url or "").strip()]
+    if not normalized:
+        return None
+
+    def _looks_like_by_hints(url: str, hints: tuple[str, ...]) -> bool:
+        lower = url.lower()
+        return any(hint in lower for hint in hints)
+
+    for url in normalized:
+        if _looks_like_by_hints(url, VIDEO_URL_HINTS):
+            return url
+
+    for url in normalized:
+        if not _looks_like_by_hints(url, IMAGE_URL_HINTS):
+            return url
+
+    return normalized[0]
+
+
 def _parse_veo3_task_state(data: Dict[str, Any]) -> tuple[str, List[str], str | None]:
     """Parse Veo 3.1 response format into (task_state, result_urls, fail_msg).
 
@@ -704,7 +727,7 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
             "task_state": task_state,
             "response_payload": response_payload,
             "result_urls": result_urls,
-            "video_url": result_urls[0] if result_urls else None,
+            "video_url": _pick_preferred_video_url(result_urls),
             "progress": data.get("progress"),
             "cost_time": data.get("costTime"),
             "create_time": data.get("createTime") or data.get("completeTime"),

@@ -104,6 +104,9 @@ const MIN_AVATAR_GAP_SECONDS = 2.0;
 const AVATAR_FACE_FALLBACK_Y = 0.40;
 const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || "").trim() === "1";
 
+const VIDEO_URL_HINTS = [".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8"];
+const IMAGE_URL_HINTS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".svg"];
+
 function pickFirstAvatarIntroSeconds(totalDuration: number) {
   if (!Number.isFinite(totalDuration) || totalDuration <= 0) return 0;
   // Use deterministic value aligned with FIRST_ATTENTION_CUT_MIN_SECONDS
@@ -544,10 +547,34 @@ async function resolveAccurateSubtitleWords(
 function resolvePromptSource(
   item: ScenarioPromptItem
 ) {
-  if (item.use_ready_asset && item.asset_url) return item.asset_url;
-  if (item.video_url) return item.video_url;
-  if (item.result_urls?.length) return item.result_urls[0];
-  if (item.asset_url) return item.asset_url;
+  const normalizeUrl = (value: string | null | undefined) => String(value || "").trim();
+  const toLowerUrl = (value: string) => value.toLowerCase();
+  const looksLikeByHints = (url: string, hints: string[]) => {
+    const lower = toLowerUrl(url);
+    return hints.some((hint) => lower.includes(hint));
+  };
+  const looksLikeImage = (url: string) => looksLikeByHints(url, IMAGE_URL_HINTS);
+  const looksLikeVideo = (url: string) => looksLikeByHints(url, VIDEO_URL_HINTS);
+
+  if (item.use_ready_asset) {
+    const readyAsset = normalizeUrl(item.asset_url);
+    return readyAsset || null;
+  }
+
+  const candidates = [
+    normalizeUrl(item.video_url),
+    ...(item.result_urls || []).map((url) => normalizeUrl(url)),
+    normalizeUrl(item.asset_url),
+  ].filter((url) => Boolean(url));
+
+  const explicitVideo = candidates.find((url) => looksLikeVideo(url));
+  if (explicitVideo) return explicitVideo;
+
+  const nonImageCandidate = candidates.find((url) => !looksLikeImage(url));
+  if (nonImageCandidate) return nonImageCandidate;
+
+  const firstCandidate = candidates[0];
+  if (firstCandidate) return firstCandidate;
   return null;
 }
 
