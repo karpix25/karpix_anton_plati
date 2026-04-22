@@ -188,6 +188,8 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                   <AutomationSettings 
                     draftSettings={state.draftSettings}
                     setDraftSettings={state.setDraftSettings}
+                    isManualFinalRunPending={state.isManualFinalRunPending}
+                    onManualFinalRun={state.handleManualFinalAutomationRun}
                   />
                 </div>
              )}

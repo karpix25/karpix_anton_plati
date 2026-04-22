@@ -1,14 +1,19 @@
 import React from "react";
 import { Settings } from "@/types";
+import { LoaderCircle, Play } from "lucide-react";
 
 interface AutomationSettingsProps {
   draftSettings: Settings;
   setDraftSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  isManualFinalRunPending: boolean;
+  onManualFinalRun: () => void;
 }
 
 export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   draftSettings,
   setDraftSettings,
+  isManualFinalRunPending,
+  onManualFinalRun,
 }) => {
   const autoActive = draftSettings.auto_generate_final_videos ?? false;
   const dailyCount = draftSettings.daily_final_video_count || 0;
@@ -26,6 +31,7 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
 
   const dailyProgress = Math.min(100, Math.round((dailyCount / Math.max(1, dailyLimit)) * 100));
   const monthlyProgress = Math.min(100, Math.round((monthlyCount / Math.max(1, monthlyLimit)) * 100));
+  const manualRunHint = `Ручной запуск добавляет до ${dailyLimit} задач в очередь (игнорируя дневной остаток, но с учетом месячного лимита).`;
 
   return (
     <div className="space-y-6">
@@ -39,17 +45,34 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
               Включает контур автопроизводства: сценарий, озвучка, перебивки, аватар, монтаж.
             </p>
           </div>
-          <label className="flex items-center gap-3 rounded-xl bg-white border border-[#e5ebf0] px-4 py-2.5 text-sm font-semibold text-foreground cursor-pointer hover:bg-[#f8fafc] transition-colors">
-            <input
-              type="checkbox"
-              checked={autoActive}
-              onChange={(event) =>
-                setDraftSettings((prev) => ({ ...prev, auto_generate_final_videos: event.target.checked }))
-              }
-              className="h-4 w-4 rounded border-[#d6e0e8] text-primary focus:ring-primary/20"
-            />
-            {autoActive ? "Активен" : "Выключен"}
-          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onManualFinalRun}
+              disabled={isManualFinalRunPending}
+              title={manualRunHint}
+              className="inline-flex items-center gap-2 rounded-xl border border-[#d6e0e8] bg-white px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isManualFinalRunPending ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              {isManualFinalRunPending ? "Запускаю..." : "Запуск вручную"}
+            </button>
+
+            <label className="flex items-center gap-3 rounded-xl bg-white border border-[#e5ebf0] px-4 py-2.5 text-sm font-semibold text-foreground cursor-pointer hover:bg-[#f8fafc] transition-colors">
+              <input
+                type="checkbox"
+                checked={autoActive}
+                onChange={(event) =>
+                  setDraftSettings((prev) => ({ ...prev, auto_generate_final_videos: event.target.checked }))
+                }
+                className="h-4 w-4 rounded border-[#d6e0e8] text-primary focus:ring-primary/20"
+              />
+              {autoActive ? "Активен" : "Выключен"}
+            </label>
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">

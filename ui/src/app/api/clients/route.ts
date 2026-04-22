@@ -176,7 +176,8 @@ export async function GET() {
       SELECT
         c.*,
         COALESCE(stats.daily_final_video_count, 0) AS daily_final_video_count,
-        COALESCE(stats.monthly_final_video_count, 0) AS monthly_final_video_count
+        COALESCE(stats.monthly_final_video_count, 0) AS monthly_final_video_count,
+        COALESCE(open_jobs.open_final_video_jobs, 0) AS open_final_video_jobs
       FROM clients c
       LEFT JOIN (
         SELECT
@@ -216,6 +217,14 @@ export async function GET() {
           )
         GROUP BY gs.client_id
       ) stats ON stats.client_id = c.id
+      LEFT JOIN (
+        SELECT
+          fvj.client_id,
+          COUNT(*)::int AS open_final_video_jobs
+        FROM final_video_jobs fvj
+        WHERE fvj.status IN ('queued', 'processing')
+        GROUP BY fvj.client_id
+      ) open_jobs ON open_jobs.client_id = c.id
       ORDER BY c.created_at DESC
     `);
     return NextResponse.json(

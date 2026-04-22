@@ -61,6 +61,7 @@ export const useSettingsState = ({
   const [motionLookRequestKey, setMotionLookRequestKey] = useState<string | null>(null);
   const [motionPromptRequestKey, setMotionPromptRequestKey] = useState<string | null>(null);
   const [optimizingCategory, setOptimizingCategory] = useState<"scenario" | "visual" | "video" | null>(null);
+  const [isManualFinalRunPending, setIsManualFinalRunPending] = useState(false);
   const [subtitlePreviewScale, setSubtitlePreviewScale] = useState(0.24);
 
   const subtitlePreviewRef = useRef<HTMLDivElement>(null);
@@ -537,6 +538,50 @@ export const useSettingsState = ({
     }
   };
 
+  const handleManualFinalAutomationRun = async () => {
+    if (!selectedClientId || isManualFinalRunPending) return;
+
+    try {
+      setIsManualFinalRunPending(true);
+
+      const response = await fetch("/api/automation/final-videos/manual-run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId: Number(selectedClientId) }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || "Не удалось запустить ручной прогон автоматики.");
+      }
+
+      const queuedCount = Number(payload?.queuedCount || 0);
+      const requestedBatchSize = Number(payload?.requestedBatchSize || 0);
+      const remainingMonthlyAfter = Number(payload?.remainingMonthlyAfter || 0);
+
+      setDraftSettings((prev) => ({
+        ...prev,
+        open_final_video_jobs: Math.max(0, Number(prev.open_final_video_jobs || 0) + queuedCount),
+      }));
+
+      if (queuedCount > 0) {
+        alert(
+          `Ручной запуск выполнен: в очередь добавлено ${queuedCount} задач (пакет ${requestedBatchSize}). ` +
+            `Остаток месячного лимита по запросам: ${remainingMonthlyAfter}.`
+        );
+      } else {
+        alert("Ручной запуск не добавил задач: месячный лимит уже исчерпан.");
+      }
+
+      if (onRefreshWorkspace) onRefreshWorkspace();
+    } catch (error) {
+      console.error("Manual final automation run error:", error);
+      alert(error instanceof Error ? error.message : "Не удалось запустить ручной прогон автоматики.");
+    } finally {
+      setIsManualFinalRunPending(false);
+    }
+  };
+
   const handleSaveSettings = () => {
     onSave(draftSettings);
   };
@@ -554,6 +599,7 @@ export const useSettingsState = ({
     motionLookRequestKey,
     motionPromptRequestKey,
     optimizingCategory,
+    isManualFinalRunPending,
     subtitlePreviewScale,
     subtitlePreviewRef,
     updateAvatar,
@@ -572,6 +618,7 @@ export const useSettingsState = ({
     handleRemoveProductAsset,
     handleDeleteProject,
     handleOptimizePrompts,
+    handleManualFinalAutomationRun,
     handleSaveSettings,
   };
 };
