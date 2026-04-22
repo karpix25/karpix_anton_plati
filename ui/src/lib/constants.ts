@@ -65,7 +65,6 @@ export const navItems: Array<{
   { id: "references", icon: FolderOpen, label: "Библиотека (Темы и паттерны)" },
   { id: "scenarios", icon: FileText, label: "Сценарии" },
   { id: "generator", icon: Zap, label: "Генератор" },
-  { id: "graph", icon: FolderOpen, label: "Карта контента" },
   { id: "settings", icon: Settings, label: "Настройки" },
 ];
 

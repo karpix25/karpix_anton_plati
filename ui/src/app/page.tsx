@@ -9,7 +9,6 @@ import { LibraryScreen } from "@/components/screens/LibraryScreen";
 import { ScenariosScreen } from "@/components/screens/ScenariosScreen";
 import { GeneratorScreen } from "@/components/screens/GeneratorScreen";
 import { SettingsScreen } from "@/components/screens/SettingsScreen";
-import { GraphScreen } from "@/components/screens/GraphScreen";
 
 import { ReferenceModal } from "@/components/ReferenceModal";
 import { Screen, Reference, TopicCard, StructureCard, Settings, ProductMediaAsset, TtsPronunciationOverride } from "@/types";
@@ -592,12 +591,6 @@ export default function CuratorDashboard() {
               onGenerateRandomBatch={handleGenerateRandomMixBatch}
             />
           )}
-
-          {screen === "graph" && (
-            <GraphScreen clientId={selectedClientId} />
-          )}
-
-
 
           {screen === "settings" && (
             <SettingsScreen
