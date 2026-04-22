@@ -45,15 +45,35 @@ export async function POST(request: Request) {
           c.id,
           GREATEST(0, COALESCE(c.daily_final_video_limit, 0))::int AS daily_limit,
           GREATEST(0, COALESCE(c.monthly_final_video_limit, 0))::int AS monthly_limit,
-          COALESCE((
-            SELECT COUNT(*)::int
-            FROM final_video_jobs fvj
-            WHERE fvj.client_id = c.id
-              AND DATE_TRUNC(
-                    'month',
-                    ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
-                  ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
-          ), 0)::int AS monthly_job_count
+          (
+            COALESCE((
+              SELECT COUNT(*)::int
+              FROM generated_scenarios gs
+              WHERE gs.client_id = c.id
+                AND gs.montage_status = 'completed'
+                AND DATE_TRUNC(
+                  'month',
+                  ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
+                ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+                AND EXISTS (
+                  SELECT 1
+                  FROM final_video_jobs fvj
+                  WHERE fvj.client_id = gs.client_id
+                    AND (
+                      fvj.scenario_id = gs.id
+                      OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
+                    )
+                    AND DATE_TRUNC('month', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
+                )
+            ), 0)
+            +
+            COALESCE((
+              SELECT COUNT(*)::int
+              FROM final_video_jobs fvj
+              WHERE fvj.client_id = c.id
+                AND fvj.status IN ('queued', 'processing')
+            ), 0)
+          )::int AS monthly_job_count
         FROM clients c
         WHERE c.id = $1
         FOR UPDATE
