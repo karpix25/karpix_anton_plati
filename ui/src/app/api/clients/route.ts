@@ -128,7 +128,7 @@ async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_timing_mode TEXT DEFAULT 'coverage_percent'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_pacing_profile TEXT DEFAULT 'balanced'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_pause_threshold_seconds NUMERIC(3,2) DEFAULT 0.45");
-  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_coverage_percent NUMERIC(4,1) DEFAULT 35.0");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_coverage_percent NUMERIC(4,1) DEFAULT 75.0");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_semantic_relevance_priority TEXT DEFAULT 'balanced'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_product_clip_policy TEXT DEFAULT 'contextual'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_generator_model TEXT DEFAULT 'veo3_lite'");
@@ -147,6 +147,21 @@ async function ensureClientVoiceColumn() {
        WHERE broll_generator_model IS DISTINCT FROM 'veo3_lite'`
     );
   }
+  const coverageMigrationRes = await pool.query(
+    `INSERT INTO app_migrations(name)
+     VALUES ($1)
+     ON CONFLICT (name) DO NOTHING
+     RETURNING name`,
+    ["2026_04_23_backfill_broll_coverage_75"]
+  );
+  if (coverageMigrationRes.rowCount) {
+    await pool.query(
+      `UPDATE clients
+       SET broll_coverage_percent = 75.0
+       WHERE broll_coverage_percent IS DISTINCT FROM 75.0`
+    );
+  }
+
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb");
 }
 
@@ -341,7 +356,7 @@ export async function POST(request: Request) {
         broll_timing_mode || 'coverage_percent',
         broll_pacing_profile || 'balanced',
         broll_pause_threshold_seconds || 0.45,
-        broll_coverage_percent || 35,
+        broll_coverage_percent || 75,
         broll_semantic_relevance_priority || 'balanced',
         broll_product_clip_policy || 'contextual',
         broll_generator_model || 'veo3_lite',
@@ -496,7 +511,7 @@ export async function PUT(request: Request) {
         broll_timing_mode || 'coverage_percent',
         broll_pacing_profile || 'balanced',
         broll_pause_threshold_seconds || 0.45,
-        broll_coverage_percent || 35,
+        broll_coverage_percent || 75,
         broll_semantic_relevance_priority || 'balanced',
         broll_product_clip_policy || 'contextual',
         broll_generator_model || 'veo3_lite',

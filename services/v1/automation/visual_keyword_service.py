@@ -45,7 +45,7 @@ class GenerationConfig:
     timing_mode: str = "coverage_percent"
     pacing_profile: str = "balanced"
     pause_threshold: float = 0.45
-    coverage_percent: float = 35.0
+    coverage_percent: float = 75.0
     relevance_priority: str = "balanced"
     product_clip_policy: str = "contextual"
     product_keyword: Optional[str] = None

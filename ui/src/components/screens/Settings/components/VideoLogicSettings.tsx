@@ -29,7 +29,7 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
   };
 
   const brollPacingProfile = draftSettings.broll_pacing_profile || "balanced";
-  const brollCoveragePercent = toSafeNumber(draftSettings.broll_coverage_percent, 35);
+  const brollCoveragePercent = toSafeNumber(draftSettings.broll_coverage_percent, 75);
   const brollGeneratorModel = draftSettings.broll_generator_model || "veo3_lite";
   const productClipPolicy = draftSettings.broll_product_clip_policy || "contextual";
 
@@ -136,7 +136,7 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
             />
             <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
               <span>Мало</span>
-              <span>35% (Стандарт)</span>
+              <span>75% (Стандарт)</span>
               <span>Много</span>
             </div>
           </div>

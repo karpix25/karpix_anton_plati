@@ -19,7 +19,7 @@ export const defaultSettings: ClientSettings = {
   broll_timing_mode: "coverage_percent",
   broll_pacing_profile: "balanced",
   broll_pause_threshold_seconds: 0.45,
-  broll_coverage_percent: 35,
+  broll_coverage_percent: 75,
   broll_semantic_relevance_priority: "balanced",
   broll_product_clip_policy: "contextual",
   broll_generator_model: "veo3_lite",
