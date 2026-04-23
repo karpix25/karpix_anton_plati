@@ -34,9 +34,12 @@ export async function GET() {
       }
     ];
 
-    if (!apiKey || apiKey.includes("your_")) {
+    if (!apiKey || apiKey.trim() === "" || apiKey.includes("your_")) {
+      console.warn("[ElevenLabs API] API Key is missing or placeholders used. Returning fallback voices.");
       return NextResponse.json(fallbackVoices);
     }
+
+    console.log(`[ElevenLabs API] Fetching voices using key (len: ${apiKey.length})...`);
 
     const response = await fetch("https://api.elevenlabs.io/v1/voices", {
       headers: {
@@ -45,13 +48,23 @@ export async function GET() {
       cache: "no-store",
     });
 
-    const payload = (await response.json().catch(() => null)) as ElevenLabsVoicePayload | null;
     if (!response.ok) {
-      console.warn(`ElevenLabs list voices failed with status ${response.status}`);
+      const errorText = await response.text();
+      console.error(`[ElevenLabs API] Error fetching voices (Status: ${response.status}):`, errorText);
+      
+      if (response.status === 401) {
+        console.error("[ElevenLabs API] CRITICAL: Invalid API Key provided.");
+      }
+      
       return NextResponse.json(fallbackVoices);
     }
 
-    const voices = (payload?.voices || [])
+    const payload = (await response.json().catch(() => null)) as ElevenLabsVoicePayload | null;
+    const rawVoices = payload?.voices || [];
+    
+    console.log(`[ElevenLabs API] Successfully fetched ${rawVoices.length} voices.`);
+
+    const voices = rawVoices
       .filter((voice) => typeof voice.voice_id === "string" && voice.voice_id.trim())
       .map((voice) => ({
         voice_id: voice.voice_id!.trim(),

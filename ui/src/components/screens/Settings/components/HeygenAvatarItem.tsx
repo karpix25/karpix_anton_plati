@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { HeygenAvatarConfig, Voice, Settings, HeygenLookConfig } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -58,6 +58,16 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
   const activeLooksCount = avatar.looks.filter((l) => l.is_active ?? true).length;
   const motionReadyLooksCount = avatar.looks.filter((look) => getMotionIndicator(look.motion_look_id, look.motion_status).tone === "ready").length;
   const motionPendingLooksCount = avatar.looks.filter((look) => getMotionIndicator(look.motion_look_id, look.motion_status).tone === "pending").length;
+
+  // Diagnostic warning for developer
+  useEffect(() => {
+    if (avatar.tts_provider === 'elevenlabs') {
+      const isFallback = elevenlabsVoices.length === 1 && elevenlabsVoices[0]?.voice_id === DEFAULT_ELEVENLABS_VOICE_ID;
+      if (isFallback) {
+         console.warn(`[ElevenLabs] Only one voice (fallback) is available. Check your ELEVENLABS_API_KEY if you expect more voices.`);
+      }
+    }
+  }, [avatar.tts_provider, elevenlabsVoices]);
   const selectedLookIndex = parseInt(selectedLookTabs[avatarIndex] || "0", 10);
   const avatarTtsProvider = avatar.tts_provider || "minimax";
   const currentVoiceId = avatarTtsProvider === "minimax" 
