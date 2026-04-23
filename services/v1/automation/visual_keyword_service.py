@@ -680,6 +680,10 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
         # 1. Build LLM Segments
         segments = _build_semantic_llm_segments(config, scenario_text, norm_words, slots)
         
+        # 1.5. Fix LLM Hallucinations in Timings
+        if segments:
+            _fix_llm_hallucinated_timings(segments, norm_words)
+        
         # 3. Post-LLM: Adjust slots to actually match word timings if returned
         for seg in (segments or []):
             w_start = seg.get("word_start")
@@ -746,3 +750,58 @@ def _fallback_segments(words: List[Word], slots: List[TimingSlot]) -> List[Visua
             "reason": "fallback"
         })
     return segments
+
+def _fix_llm_hallucinated_timings(segments: List[VisualSegment], words: List[Word]) -> None:
+    if not words:
+        return
+    word_stems = [_stem_token(w["word"]) for w in words]
+
+    for seg in segments:
+        target_text = str(seg.get("phrase") or seg.get("keyword") or "")
+        target_tokens = _tokenize(target_text)
+        if not target_tokens:
+            continue
+            
+        target_stems = [_stem_token(t) for t in target_tokens]
+        window = len(target_stems)
+        
+        llm_start = float(seg.get("word_start", seg.get("slot_start", 0.0)))
+        
+        best_idx = -1
+        min_dist = float('inf')
+        
+        # 1. Try to match the exact phrase stems contiguous sequence
+        if window > 0 and window <= len(word_stems):
+            for i in range(len(word_stems) - window + 1):
+                if word_stems[i:i+window] == target_stems:
+                    dist = abs(words[i]["start"] - llm_start)
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_idx = i
+                    
+        match_len = window
+        
+        # 2. If phrase not found, try to match just the keyword
+        if best_idx == -1 and seg.get("keyword"):
+            kw_tokens = _tokenize(str(seg["keyword"]))
+            if kw_tokens:
+                kw_stems = [_stem_token(t) for t in kw_tokens]
+                kw_window = len(kw_stems)
+                if kw_window > 0 and kw_window <= len(word_stems):
+                    for i in range(len(word_stems) - kw_window + 1):
+                        if word_stems[i:i+kw_window] == kw_stems:
+                            dist = abs(words[i]["start"] - llm_start)
+                            # Be more lenient for the keyword, if it's the only match we'll take it
+                            if dist < min_dist:
+                                min_dist = dist
+                                best_idx = i
+                                match_len = kw_window
+
+        if best_idx != -1:
+            try:
+                seg["word_start"] = words[best_idx]["start"]
+                # Safeguard against index out of bounds
+                end_idx = min(best_idx + match_len - 1, len(words) - 1)
+                seg["word_end"] = words[end_idx]["end"]
+            except Exception as e:
+                logger.warning(f"Failed to apply fixed timing: {e}")
