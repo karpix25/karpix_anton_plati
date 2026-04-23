@@ -10,7 +10,7 @@ import secrets
 import hashlib
 from datetime import datetime
 from contextlib import contextmanager
-from typing import Optional, Dict, List, Any, Union, Tuple
+from typing import Optional, Dict, List, Any, Union, Tuple, Set
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -855,41 +855,59 @@ def save_topic_structure_pair(client_id: int, topic_id: int, str_id: int, source
         """, (client_id, topic_id, str_id, source_content_id))
     return True
 
-def get_random_entity(table: str, client_id: int) -> Optional[Dict[str, Any]]:
+def get_random_entity(table: str, client_id: int, exclude_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
     with DBConnection(use_dict_cursor=True) as cursor:
-        cursor.execute(f"SELECT * FROM {table} WHERE client_id = %s ORDER BY RANDOM() LIMIT 1", (client_id,))
+        if exclude_ids:
+            exclude_params = list(exclude_ids)
+            placeholders = ','.join(['%s'] * len(exclude_params))
+            cursor.execute(f"SELECT * FROM {table} WHERE client_id = %s AND id NOT IN ({placeholders}) ORDER BY RANDOM() LIMIT 1", [client_id] + exclude_params)
+        else:
+            cursor.execute(f"SELECT * FROM {table} WHERE client_id = %s ORDER BY RANDOM() LIMIT 1", (client_id,))
         row = cursor.fetchone()
         return dict(row) if row else None
 
-def get_random_topic_card(cid: int) -> Optional[Dict[str, Any]]:
-    return get_random_entity("topic_cards", cid)
+def get_random_topic_card(cid: int, exclude_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
+    return get_random_entity("topic_cards", cid, exclude_ids)
 
-def get_random_structure_card(cid: int) -> Optional[Dict[str, Any]]:
-    return get_random_entity("structure_cards", cid)
+def get_random_structure_card(cid: int, exclude_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
+    return get_random_entity("structure_cards", cid, exclude_ids)
 
-def get_random_topic_family_card(client_id: int) -> Optional[Dict[str, Any]]:
+def get_random_topic_family_card(client_id: int, exclude_ids: Optional[Set[int]] = None) -> Optional[Dict[str, Any]]:
     with DBConnection(use_dict_cursor=True) as cursor:
-        cursor.execute("""
-            SELECT DISTINCT ON (canonical_topic_family) * FROM topic_cards
-            WHERE client_id = %s ORDER BY canonical_topic_family, created_at DESC
-        """, (client_id,))
+        if exclude_ids:
+            exclude_params = list(exclude_ids)
+            placeholders = ','.join(['%s'] * len(exclude_params))
+            cursor.execute(f"""
+                SELECT DISTINCT ON (canonical_topic_family) * FROM topic_cards
+                WHERE client_id = %s AND id NOT IN ({placeholders}) ORDER BY canonical_topic_family, created_at DESC
+            """, [client_id] + exclude_params)
+        else:
+            cursor.execute("""
+                SELECT DISTINCT ON (canonical_topic_family) * FROM topic_cards
+                WHERE client_id = %s ORDER BY canonical_topic_family, created_at DESC
+            """, (client_id,))
         rows = cursor.fetchall()
         if not rows: return None
         return dict(random.choice(rows))
 
-def get_random_compatible_pair(client_id: int) -> Optional[Dict[str, Any]]:
+def get_random_compatible_pair(client_id: int, exclude_pairs: Optional[Set[Tuple[int, int]]] = None) -> Optional[Dict[str, Any]]:
     with DBConnection(use_dict_cursor=True) as cursor:
         cursor.execute("""
             SELECT t.*, s.id AS structure_id, s.pattern_type, s.narrator_role, s.hook_style, s.core_thesis, 
                    s.format_type, s.item_count, s.sequence_logic, s.integration_style, s.reusable_slots, s.forbidden_drifts
             FROM topic_structure_pairs p JOIN topic_cards t ON t.id = p.topic_card_id
             JOIN structure_cards s ON s.id = p.structure_card_id
-            WHERE p.client_id = %s ORDER BY RANDOM() LIMIT 1
+            WHERE p.client_id = %s ORDER BY RANDOM() LIMIT 500
         """, (client_id,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        rows = cursor.fetchall()
+        if not rows: return None
+        if exclude_pairs:
+            valid_rows = [r for r in rows if (r["id"], r["structure_id"]) not in exclude_pairs]
+            if valid_rows:
+                return dict(random.choice(valid_rows))
+        return dict(random.choice(rows))
 
-def get_random_compatible_family_pair(client_id: int) -> Optional[Dict[str, Any]]:
+def get_random_compatible_family_pair(client_id: int, exclude_pairs: Optional[Set[Tuple[int, int]]] = None) -> Optional[Dict[str, Any]]:
     with DBConnection(use_dict_cursor=True) as cursor:
         cursor.execute("""
             SELECT DISTINCT ON (t.canonical_topic_family, s.canonical_pattern_key)
@@ -902,6 +920,10 @@ def get_random_compatible_family_pair(client_id: int) -> Optional[Dict[str, Any]
         """, (client_id,))
         rows = cursor.fetchall()
         if not rows: return None
+        if exclude_pairs:
+            valid_rows = [r for r in rows if (r["id"], r["structure_id"]) not in exclude_pairs]
+            if valid_rows:
+                return dict(random.choice(valid_rows))
         return dict(random.choice(rows))
 
 def create_client(name: str, **kwargs: Any) -> int:

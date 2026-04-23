@@ -434,6 +434,9 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
         return []
 
     generated_scenarios = []
+    used_topic_structure_pairs = set()
+    used_topics = set()
+    used_structures = set()
     
     for i in range(count):
         ref = ranked_references[i % len(ranked_references)] if ranked_references else None
@@ -466,7 +469,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                 structure_card = get_structure_card(structure_id)
 
             if not topic_card or not structure_card:
-                compatible_pair = get_random_compatible_family_pair(client_id) or get_random_compatible_pair(client_id)
+                compatible_pair = get_random_compatible_family_pair(client_id, exclude_pairs=used_topic_structure_pairs) or get_random_compatible_pair(client_id, exclude_pairs=used_topic_structure_pairs)
                 if compatible_pair and not topic_id and not structure_id:
                     topic_card = compatible_pair
                     structure_card = {
@@ -483,8 +486,15 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                         "forbidden_drifts": compatible_pair.get("forbidden_drifts"),
                     }
                 else:
-                    topic_card = topic_card or get_random_topic_family_card(client_id) or get_random_topic_card(client_id)
-                    structure_card = structure_card or get_random_structure_card(client_id)
+                    topic_card = topic_card or get_random_topic_family_card(client_id, exclude_ids=used_topics) or get_random_topic_card(client_id, exclude_ids=used_topics)
+                    structure_card = structure_card or get_random_structure_card(client_id, exclude_ids=used_structures)
+
+            if topic_card and structure_card:
+                used_topic_structure_pairs.add((topic_card.get("id"), structure_card.get("id")))
+            if topic_card:
+                used_topics.add(topic_card.get("id"))
+            if structure_card:
+                used_structures.add(structure_card.get("id"))
 
             if not topic_card or not structure_card:
                 raise ValueError(f"Not enough topic/structure cards to run mix generation for client {client_id}.")
