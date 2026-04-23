@@ -23,11 +23,22 @@ export async function GET() {
   try {
     const apiKey = process.env.ELEVENLABS_API_KEY;
 
+    const fallbackVoices = [
+      {
+        voice_id: DEFAULT_ELEVENLABS_VOICE_ID,
+        name: "Elena Gromova (Default)",
+        category: "professional",
+        description: "Fallback voice in case of API error",
+        preview_url: "",
+        labels: {}
+      }
+    ];
+
     if (!apiKey || apiKey.includes("your_")) {
-      return NextResponse.json({ error: "ELEVENLABS_API_KEY is not configured" }, { status: 500 });
+      return NextResponse.json(fallbackVoices);
     }
 
-    const response = await fetch("https://api.elevenlabs.io/v2/voices?page_size=100&include_total_count=false", {
+    const response = await fetch("https://api.elevenlabs.io/v1/voices", {
       headers: {
         "xi-api-key": apiKey,
       },
@@ -36,10 +47,8 @@ export async function GET() {
 
     const payload = (await response.json().catch(() => null)) as ElevenLabsVoicePayload | null;
     if (!response.ok) {
-      return NextResponse.json(
-        { error: `ElevenLabs list voices failed with status ${response.status}` },
-        { status: 500 }
-      );
+      console.warn(`ElevenLabs list voices failed with status ${response.status}`);
+      return NextResponse.json(fallbackVoices);
     }
 
     const voices = (payload?.voices || [])
@@ -58,7 +67,7 @@ export async function GET() {
         return a.name.localeCompare(b.name);
       });
 
-    return NextResponse.json(voices);
+    return NextResponse.json(voices.length > 0 ? voices : fallbackVoices);
   } catch (error) {
     console.error("ElevenLabs voices GET error:", error);
     return NextResponse.json(
