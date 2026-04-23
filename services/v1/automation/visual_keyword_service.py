@@ -425,8 +425,21 @@ class ProductAssetManager:
         result: List[VisualSegment] = []
         
         for seg in segments:
+            # Check LLM's identified keyword and phrase, and the actual transcript words in this slot
             phrase = str(seg.get("phrase") or "")
+            segment_keyword = str(seg.get("keyword") or "")
+            
+            # 1. Match against LLM fields
             matched_keyword = _find_matching_product_keyword(product_keywords, phrase)
+            if not matched_keyword:
+                matched_keyword = _find_matching_product_keyword(product_keywords, segment_keyword)
+            
+            # 2. Safety net: Match against actual words spoken in this segment
+            if not matched_keyword and words:
+                slot_words = [w["word"] for w in words if w["start"] >= seg["slot_start"] and w["start"] < seg["slot_end"]]
+                combined_transcript = " ".join(slot_words)
+                matched_keyword = _find_matching_product_keyword(product_keywords, combined_transcript)
+
             keyword_match = matched_keyword is not None
             
             # Logic:
