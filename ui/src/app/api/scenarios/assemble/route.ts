@@ -944,11 +944,7 @@ async function buildMontage(scenarioId: number) {
         // ignore
       }
     }
-    const faceCenterX = stableAvatarFaceBox
-      ? stableAvatarFaceBox.x + stableAvatarFaceBox.w / 2
-      : dims
-        ? dims.width / 2
-        : OUTPUT_WIDTH / 2;
+    const faceCenterX = dims ? dims.width / 2 : OUTPUT_WIDTH / 2;
     const faceCenterY = stableAvatarFaceBox
       ? stableAvatarFaceBox.y + stableAvatarFaceBox.h / 2
       : dims
