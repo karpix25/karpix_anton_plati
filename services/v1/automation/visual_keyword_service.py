@@ -689,12 +689,15 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
             w_start = seg.get("word_start")
             w_end = seg.get("word_end")
             if isinstance(w_start, (int, float)) and isinstance(w_end, (int, float)):
-                # If we have word timings, make sure the slot covers them
-                # We usually want the slot to start a bit before the word and end a bit after,
-                # but staying within reasonable bounds.
-                duration = seg["slot_end"] - seg["slot_start"]
-                new_start = round(max(0.0, w_start - 0.5), 1)
-                new_end = round(min(total_dur, new_start + duration), 1)
+                # Expand slot to fully cover words with lead-in and lead-out padding
+                new_start = round(max(0.0, w_start - 0.4), 1)
+                new_end = round(min(total_dur, w_end + 0.4), 1)
+                
+                # Enforce minimum duration constraints
+                min_dur = MIN_PRODUCT_SEGMENT_SECONDS if seg.get("asset_type") == "product_video" else MIN_BROLL_SEGMENT_SECONDS
+                if (new_end - new_start) < min_dur:
+                    # If still too short, expand rightwards
+                    new_end = round(min(total_dur, new_start + min_dur), 1)
                 
                 # Update slot to match reality
                 seg["slot_start"] = new_start
