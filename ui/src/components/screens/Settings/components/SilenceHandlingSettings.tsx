@@ -86,16 +86,20 @@ export const SilenceHandlingSettings: React.FC<SilenceHandlingSettingsProps> = (
   draftSettings,
   setDraftSettings,
 }) => {
-  const pauseOptimizationEnabled =
-    (draftSettings.tts_silence_trim_enabled ?? false) || (draftSettings.tts_sentence_trim_enabled ?? false);
+  const silenceTrimEnabled = draftSettings.tts_silence_trim_enabled ?? false;
+  const sentenceTrimEnabled = draftSettings.tts_sentence_trim_enabled ?? false;
+  const globalEnabled = silenceTrimEnabled || sentenceTrimEnabled;
+
   const sentenceTrimMinGapSeconds = toSafeNumber(draftSettings.tts_sentence_trim_min_gap_seconds, 0.3);
   const sentenceTrimKeepGapSeconds = toSafeNumber(draftSettings.tts_sentence_trim_keep_gap_seconds, 0.1);
+  
   const selectedPreset = detectPausePreset(
     draftSettings,
-    pauseOptimizationEnabled,
+    globalEnabled,
     sentenceTrimMinGapSeconds,
     sentenceTrimKeepGapSeconds
   );
+  
   const selectedPresetMeta = PAUSE_PRESET_CONFIG[selectedPreset];
 
   const applyPreset = (preset: PausePreset) => {
@@ -109,45 +113,74 @@ export const SilenceHandlingSettings: React.FC<SilenceHandlingSettingsProps> = (
     }));
   };
 
+  const handleGlobalToggle = (enabled: boolean) => {
+    if (!enabled) {
+      setDraftSettings((prev) => ({
+        ...prev,
+        tts_silence_trim_enabled: false,
+        tts_sentence_trim_enabled: false,
+      }));
+    } else {
+      // Restore default preset (natural) when enabling
+      applyPreset("natural");
+    }
+  };
+
   return (
     <div className="space-y-6 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
           <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-            Паузы И Вдохи
+            Паузы и вдохи
           </div>
           <p className="text-sm text-muted-foreground">
             Упрощенная настройка безопасного сжатия пауз и вдохов по таймкодам речи.
           </p>
         </div>
-        <div className="rounded-full border border-[#e5ebf0] bg-white px-4 py-1.5 text-[11px] font-bold uppercase tracking-wider text-primary shadow-sm">
-          Smart Trim
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-3 rounded-xl bg-white border border-[#e5ebf0] px-4 py-2.5 text-sm font-semibold text-foreground cursor-pointer hover:bg-[#f8fafc] transition-colors">
+            <input
+              type="checkbox"
+              checked={globalEnabled}
+              onChange={(e) => handleGlobalToggle(e.target.checked)}
+              className="h-4 w-4 rounded border-[#d6e0e8] text-primary focus:ring-primary/20"
+            />
+            Общая обработка
+          </label>
         </div>
       </div>
 
       <div className="rounded-xl border border-white/70 bg-white p-4 text-xs leading-relaxed text-muted-foreground shadow-inner">
-        Система делает речь плотнее: подчищает длинную тишину и аккуратно сокращает лишние паузы между словами, не задевая сами слова.
+        {globalEnabled ? (
+          "Система делает речь плотнее: подчищает длинную тишину и аккуратно сокращает лишние паузы между словами, не задевая сами слова."
+        ) : (
+          <span className="text-amber-600 font-medium italic">
+            Обработка пауз и вдохов отключена. Речь будет генерироваться ровно так, как её выдает HeyGen/Voice Engine, без дополнительного монтажа тишины.
+          </span>
+        )}
       </div>
 
-      <section className="space-y-5 rounded-2xl border border-[#e5ebf0] bg-white p-5 shadow-sm">
+      <section className={`space-y-5 rounded-2xl border border-[#e5ebf0] bg-white p-5 shadow-sm transition-opacity duration-300 ${!globalEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Паузы
+              Пресеты пауз
             </div>
             <p className="text-sm text-muted-foreground">
               Выберите, насколько плотной должна звучать речь.
             </p>
           </div>
-          <div className="rounded-full bg-primary/5 px-3 py-1 text-[11px] font-bold text-primary">
-            {selectedPresetMeta.label}
-          </div>
+          {globalEnabled && (
+            <div className="rounded-full bg-primary/5 px-3 py-1 text-[11px] font-bold text-primary">
+              {selectedPresetMeta.label}
+            </div>
+          )}
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
           {(Object.entries(PAUSE_PRESET_CONFIG) as Array<[PausePreset, (typeof PAUSE_PRESET_CONFIG)[PausePreset]]>).map(
             ([presetKey, preset]) => {
-              const isSelected = selectedPreset === presetKey;
+              const isSelected = selectedPreset === presetKey && globalEnabled;
 
               return (
                 <button
