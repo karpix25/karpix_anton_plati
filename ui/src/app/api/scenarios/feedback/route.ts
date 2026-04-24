@@ -41,29 +41,16 @@ function resolveOptimizationCategories(
   return ["scenario"];
 }
 
+import { processOptimization } from "@/lib/optimize-prompts-service";
+
 async function runOptimization(
-  request: Request,
   clientId: number,
   categories: string[]
 ): Promise<{ attempted: string[]; succeeded: string[]; failed: Array<{ category: string; error: string }> }> {
-  const origin = new URL(request.url).origin;
   const attempted = [...new Set(categories)];
   const results = await Promise.allSettled(
     attempted.map(async (category) => {
-      const response = await fetch(`${origin}/api/clients/optimize-prompts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clientId, category }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        const errorText =
-          (payload && typeof payload.error === "string" ? payload.error : "") ||
-          `HTTP ${response.status}`;
-        throw new Error(errorText);
-      }
-      return category;
+      return await processOptimization(clientId, category);
     })
   );
 
@@ -136,7 +123,7 @@ export async function POST(request: Request) {
     } | null = null;
 
     if (Number.isFinite(resolvedClientId) && resolvedClientId > 0 && optimizeCategories.length > 0) {
-      const results = await runOptimization(request, resolvedClientId, optimizeCategories);
+      const results = await runOptimization(resolvedClientId, optimizeCategories);
       optimization = { ...results, skipReason: null };
     } else {
       // Return reason why optimization was skipped
