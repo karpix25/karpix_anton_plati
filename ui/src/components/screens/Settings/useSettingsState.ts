@@ -538,31 +538,34 @@ export const useSettingsState = ({
     }
   };
 
-  const handleRollbackPrompt = async (category: "scenario" | "visual" | "video") => {
+  const handleRollbackPrompt = async (category: "scenario" | "visual" | "video", historyId?: number) => {
     if (!selectedClientId) return;
     
-    // First fetch the latest history for this category
     try {
       setOptimizingCategory(category);
-      const histRes = await fetch(`/api/clients/prompt-history?clientId=${selectedClientId}&category=${category}`);
-      if (!histRes.ok) throw new Error("Не удалось загрузить историю промптов");
       
-      const histData = await histRes.json();
-      if (!histData.history || histData.history.length === 0) {
-        alert("Нет сохраненной истории для отката.");
-        return;
+      let targetHistoryId = historyId;
+      
+      if (!targetHistoryId) {
+        const histRes = await fetch(`/api/clients/prompt-history?clientId=${selectedClientId}&category=${category}`);
+        if (!histRes.ok) throw new Error("Не удалось загрузить историю промптов");
+        
+        const histData = await histRes.json();
+        if (!histData.history || histData.history.length === 0) {
+          alert("Нет сохраненной истории для отката.");
+          return;
+        }
+        targetHistoryId = histData.history[0].id;
       }
       
-      const latestHistoryId = histData.history[0].id;
-      
-      if (!window.confirm("Откатить правила на предыдущую версию? Текущие правила сохранятся в историю.")) {
+      if (!window.confirm("Откатить правила на выбранную версию? Текущие правила сохранятся в историю.")) {
         return;
       }
 
       const rbRes = await fetch('/api/clients/prompt-history', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId: selectedClientId, category, historyId: latestHistoryId })
+        body: JSON.stringify({ clientId: selectedClientId, category, historyId: targetHistoryId })
       });
       
       if (!rbRes.ok) {

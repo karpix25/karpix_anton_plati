@@ -1164,30 +1164,42 @@ export function ScenariosScreen({
                         const attempted = Array.isArray(optimization?.attempted) ? optimization.attempted : [];
                         const succeeded = Array.isArray(optimization?.succeeded) ? optimization.succeeded : [];
                         const failed = Array.isArray(optimization?.failed) ? optimization.failed : [];
+                        const skipReason = optimization?.skipReason;
 
                         if (attempted.length > 0) {
                           if (failed.length === 0) {
                             setFeedbackOptimizationStatus({
                               tone: "success",
-                              text: `Правила обновлены автоматически: ${succeeded.join(", ")}`,
+                              text: `Оценка сохранена. Система адаптирована: ${succeeded.join(", ")}`,
                             });
                           } else if (succeeded.length > 0) {
                             setFeedbackOptimizationStatus({
                               tone: "warning",
-                              text: `Обновлено частично (${succeeded.join(", ")}). Ошибки: ${failed
-                                .map((item: { category: string; error: string }) => `${item.category}: ${item.error}`)
-                                .join("; ")}`,
+                              text: `Сохранено, но правила обновлены частично (${succeeded.join(", ")})`,
                             });
                           } else {
                             setFeedbackOptimizationStatus({
                               tone: "error",
-                              text: `Фидбэк сохранен, но обновление правил не выполнено: ${failed
+                              text: `Ошибка обновления ИИ: ${failed
                                 .map((item: { category: string; error: string }) => `${item.category}: ${item.error}`)
                                 .join("; ")}`,
                             });
                           }
+                        } else if (skipReason === "TOO_SHORT") {
+                          setFeedbackOptimizationStatus({
+                            tone: "warning",
+                            text: `Оценка сохранена, но комментарий слишком короткий для авто-эволюции (нужно 20+ симв.)`,
+                          });
+                        } else if (skipReason === "NO_COMMENT" && rating === "dislike") {
+                          setFeedbackOptimizationStatus({
+                            tone: "warning",
+                            text: `Оценка сохранена, но без комментария авто-обучение системы невозможно.`,
+                          });
                         } else {
-                          setFeedbackOptimizationStatus(null);
+                          setFeedbackOptimizationStatus({
+                            tone: "success",
+                            text: "Оценка успешно сохранена в статистику.",
+                          });
                         }
 
                         setFeedbackSaved(true);

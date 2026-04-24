@@ -124,12 +124,28 @@ export async function POST(request: Request) {
     );
 
     const resolvedClientId = Number.parseInt(String(rows[0].client_id), 10);
+    const isDislike = normalizedRating === "dislike";
+    const hasComment = commentText.trim().length > 0;
+    const isShort = commentText.trim().length < AUTO_OPTIMIZE_MIN_COMMENT_LENGTH;
 
-    let optimization:
-      | { attempted: string[]; succeeded: string[]; failed: Array<{ category: string; error: string }> }
-      | null = null;
+    let optimization: {
+      attempted: string[];
+      succeeded: string[];
+      failed: Array<{ category: string; error: string }>;
+      skipReason: "TOO_SHORT" | "NOT_DISLIKE" | "NO_COMMENT" | null;
+    } | null = null;
+
     if (Number.isFinite(resolvedClientId) && resolvedClientId > 0 && optimizeCategories.length > 0) {
-      optimization = await runOptimization(request, resolvedClientId, optimizeCategories);
+      const results = await runOptimization(request, resolvedClientId, optimizeCategories);
+      optimization = { ...results, skipReason: null };
+    } else {
+      // Return reason why optimization was skipped
+      optimization = {
+        attempted: [],
+        succeeded: [],
+        failed: [],
+        skipReason: (!isDislike) ? "NOT_DISLIKE" : (!hasComment ? "NO_COMMENT" : (isShort ? "TOO_SHORT" : null))
+      };
     }
 
     return NextResponse.json({ ok: true, ...rows[0], optimization });
