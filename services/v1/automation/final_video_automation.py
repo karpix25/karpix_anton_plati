@@ -266,6 +266,15 @@ def process_scenario_stage(job: Dict[str, Any]) -> None:
         scenario_job_id=scenario_job_id,
     )
 
+    # Validate that we actually have prompts to submit. 
+    # If they are missing, it means batch_generator failed during TTS/LLM steps.
+    prompts_payload = scenario.get("video_generation_prompts") or {}
+    if not prompts_payload.get("prompts"):
+        raise RuntimeError(
+            f"Generation failed: No video prompts found for scenario job_id={scenario_job_id}. "
+            "Check TTS provider (Minimax/ElevenLabs) and LLM (OpenRouter) logs/configuration."
+        )
+
     submit_result = submit_saved_kie_tasks(scenario_job_id)
     if submit_result.get("has_payment_error"):
         raise RuntimeError(f"KIE payment error: {submit_result.get('payment_error') or 'unknown payment issue'}")
