@@ -232,7 +232,6 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                         <Select
                           value={isCustomId ? "custom" : currentVoiceId}
                           onValueChange={(val) => {
-                            if (val === "custom") return;
                             updateAvatar(avatarIndex, avatarTtsProvider === 'minimax' ? 'tts_voice_id' : 'elevenlabs_voice_id', val);
                           }}
                         >
