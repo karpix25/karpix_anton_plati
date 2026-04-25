@@ -168,7 +168,8 @@ export function useWorkspaceData(selectedClientId: string) {
       const { data } = await axios.get(`${API_BASE}/minimax/voices`);
       return data;
     },
-    staleTime: 1000 * 60 * 60, // 1 hour
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const elevenlabsVoicesQuery = useQuery<ElevenLabsVoiceOption[]>({
@@ -177,7 +178,8 @@ export function useWorkspaceData(selectedClientId: string) {
       const { data } = await axios.get(`${API_BASE}/elevenlabs/voices`);
       return data;
     },
-    staleTime: 1000 * 60 * 60, // 1 hour
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const costStatsQuery = useQuery<{

@@ -75,9 +75,12 @@ export async function GET() {
         labels: voice.labels || {},
       }))
       .sort((a, b) => {
+        // Force default ID to the absolute top
         if (a.voice_id === DEFAULT_ELEVENLABS_VOICE_ID) return -1;
         if (b.voice_id === DEFAULT_ELEVENLABS_VOICE_ID) return 1;
-        return a.name.localeCompare(b.name);
+        
+        // Sort others alphabetically by name
+        return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
       });
 
     return NextResponse.json(voices.length > 0 ? voices : fallbackVoices);

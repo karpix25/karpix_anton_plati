@@ -80,7 +80,7 @@ export async function GET() {
         description: voice.description || [],
         created_time: voice.created_time,
       })),
-    ];
+    ].sort((a, b) => a.voice_name.toLowerCase().localeCompare(b.voice_name.toLowerCase()));
 
     return NextResponse.json(voices);
   } catch (error) {
