@@ -670,6 +670,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'MiniMax API keys are not configured in .env.local' }, { status: 500 });
       }
 
+      requestText = applyElevenLabsReplacements(normalizedText, selectedPronunciationOverrides);
+
       const response = await fetch('https://api.minimax.io/v1/t2a_v2', {
         method: "POST",
         headers: {
@@ -678,7 +680,7 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({
           model: MINIMAX_TTS_MODEL,
-          text: normalizedText,
+          text: requestText,
           stream: false,
           language_boost: "Russian",
           voice_setting: {
@@ -694,7 +696,7 @@ export async function POST(request: Request) {
             channel: 1
           },
           pronunciation_dict: {
-            tone: buildPronunciationTone(normalizedText)
+            tone: buildPronunciationTone(requestText)
           }
         })
       });
@@ -722,7 +724,6 @@ export async function POST(request: Request) {
       }
 
       audioBuffer = decodeAudioPayload(result.data.audio);
-      requestText = normalizedText;
     }
 
     if (audioBuffer) {

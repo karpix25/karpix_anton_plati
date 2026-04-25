@@ -249,7 +249,13 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
                 tts_pronunciation_overrides,
             )
         else:
-            tts_future = executor.submit(text_to_speech_minimax, script_text, selected_tts_voice_id or None)
+            tts_future = executor.submit(
+                text_to_speech_minimax,
+                script_text,
+                selected_tts_voice_id or None,
+                1.1,
+                tts_pronunciation_overrides,
+            )
         editor_future = executor.submit(generate_broll_plan, scenario_json)
         
         try:

@@ -5,6 +5,10 @@ import logging
 import uuid
 import re
 from dotenv import load_dotenv
+from services.v1.providers.elevenlabs_service import (
+    apply_elevenlabs_replacements,
+    normalize_elevenlabs_pronunciation_overrides,
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -56,11 +60,16 @@ DEFAULT_MINIMAX_VOICE_ID = "Russian_Engaging_Podcaster_v1"
 MINIMAX_TTS_MODEL = "speech-2.8-hd"
 
 
-def prepare_text_for_minimax_tts(text):
-    return text or ""
+def prepare_text_for_minimax_tts(text, pronunciation_overrides=None):
+    prepared = text or ""
+    replacement_rules = normalize_elevenlabs_pronunciation_overrides(pronunciation_overrides)
+    prepared = apply_elevenlabs_replacements(prepared, replacement_rules)
+    prepared = re.sub(r"\s+([,.;:!?])", r"\1", prepared)
+    prepared = re.sub(r"\s+", " ", prepared).strip()
+    return prepared
 
 
-def text_to_speech_minimax(text, voice_id=DEFAULT_MINIMAX_VOICE_ID, speed=1.1):
+def text_to_speech_minimax(text, voice_id=DEFAULT_MINIMAX_VOICE_ID, speed=1.1, pronunciation_overrides=None):
     """
     Generates high-quality TTS using MiniMax T2A V2 API.
     Returns path to local audio file.
@@ -81,7 +90,7 @@ def text_to_speech_minimax(text, voice_id=DEFAULT_MINIMAX_VOICE_ID, speed=1.1):
         "Content-Type": "application/json"
     }
     
-    prepared_text = prepare_text_for_minimax_tts(text)
+    prepared_text = prepare_text_for_minimax_tts(text, pronunciation_overrides=pronunciation_overrides)
 
     payload = {
         "model": MINIMAX_TTS_MODEL,

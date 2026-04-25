@@ -784,8 +784,15 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                         pronunciation_overrides=tts_pronunciation_overrides,
                     )
                 else:
-                    tts_request_text = prepare_text_for_minimax_tts(tts_script)
-                    tts_audio_path = text_to_speech_minimax(tts_script, voice_id=selected_tts_voice_id or None)
+                    tts_request_text = prepare_text_for_minimax_tts(
+                        tts_script,
+                        pronunciation_overrides=tts_pronunciation_overrides,
+                    )
+                    tts_audio_path = text_to_speech_minimax(
+                        tts_script,
+                        voice_id=selected_tts_voice_id or None,
+                        pronunciation_overrides=tts_pronunciation_overrides,
+                    )
                 if tts_silence_trim_enabled is None:
                     tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
                 # Do not stack amplitude-based trim and word-timestamp trim together.
