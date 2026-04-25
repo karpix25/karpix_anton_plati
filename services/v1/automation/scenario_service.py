@@ -339,6 +339,16 @@ def _spoken_numbers_guardrail() -> str:
     """
 
 
+def _forbidden_tags_guardrail() -> str:
+    return """
+    FORBIDDEN TAGS RULE:
+    - DO NOT use any interjection or emotion tags in the script.
+    - Strictly forbidden: (breath), (inhale), (chuckle), (chuckles), (sighs), (snorts), (gasps), (emm), (hum), (laughter), (pause).
+    - Do not put any instructions in parentheses inside the script.
+    - The output must be pure spoken text only.
+    """
+
+
 def _split_sentences(text: str):
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
     if not cleaned:
@@ -496,6 +506,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Do NOT default to generic anti-pattern hooks or stock openers that were NOT present in the source.
     {_asset_visibility_guardrails()}
     {_spoken_numbers_guardrail()}
+    {_forbidden_tags_guardrail()}
 
     GENDER AGREEMENT (FOR RUSSIAN LANGUAGE):
     - The narrator's gender is: {gender}.

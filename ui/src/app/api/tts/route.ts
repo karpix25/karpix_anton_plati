@@ -300,7 +300,14 @@ function attachInterjectionAfterFirst(text: string, pattern: RegExp, interjectio
 }
 
 function attachInterjectionToSentenceLead(sentence: string, interjection: string) {
-  return sentence.replace(/^([^\s,.;:!?()]+)/, `$1${interjection}`);
+  // Only attach if the first word is substantial (>4 chars)
+  const words = sentence.split(/\s+/);
+  if (words.length > 0 && words[0].length > 4) {
+    return sentence.replace(/^([^\s,.;:!?()]{5,})/, `$1${interjection}`);
+  }
+  
+  // If first word is short, try to find a better spot after the first or second word if followed by a space
+  return sentence.replace(/^([^\s,.;:!?()]+\s+[^\s,.;:!?()]{4,})/, `$1${interjection}`);
 }
 
 function enrichMiniMaxTextWithInterjections(text: string) {
@@ -369,6 +376,11 @@ function enrichMiniMaxTextWithInterjections(text: string) {
       return rawSentence;
     }
 
+    // Limit to max 2 auto-injected interjections for the whole text to avoid "heavy breathing"
+    if (injectedCount >= 2) {
+        return rawSentence;
+    }
+
     injectedCount += 1;
     const punctMatch = rawSentence.match(/[.!?]\s*$/);
     const punctuation = punctMatch ? punctMatch[0].trim() : "";
@@ -399,7 +411,8 @@ function sanitizeBaseTtsText(text: string) {
 }
 
 function prepareMiniMaxText(text: string) {
-  return enrichMiniMaxTextWithInterjections(sanitizeBaseTtsText(text));
+  // Disabled auto-interjections by user request
+  return sanitizeBaseTtsText(text);
 }
 
 function prepareElevenLabsText(text: string) {
@@ -472,6 +485,31 @@ async function probeDurationSeconds(filePath: string) {
 
   const duration = Number(raw);
   return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+async function normalizeAudioBuffer(buffer: Buffer): Promise<Buffer> {
+  const tempDir = path.join('/tmp', 'platipo-miru-tts-norm');
+  await mkdir(tempDir, { recursive: true });
+  const inputPath = path.join(tempDir, `input_${Date.now()}.mp3`);
+  const outputPath = path.join(tempDir, `output_${Date.now()}.mp3`);
+
+  try {
+    await writeFile(inputPath, buffer);
+    // Simple pass-through via ffmpeg to fix headers and duration metadata
+    await runCommandCapture('ffmpeg', ['-i', inputPath, '-y', outputPath]);
+    const normalizedBuffer = await require('fs/promises').readFile(outputPath);
+    return normalizedBuffer;
+  } catch (err) {
+    console.error('[TTS] Audio normalization failed, using raw buffer:', err);
+    return buffer;
+  } finally {
+    // Clean up temp files
+    try {
+      const { unlink } = require('fs/promises');
+      await unlink(inputPath).catch(() => {});
+      await unlink(outputPath).catch(() => {});
+    } catch {}
+  }
 }
 
 function normalizeDeepgramWords(words: DeepgramWord[] = []) {
@@ -688,16 +726,19 @@ export async function POST(request: Request) {
     }
 
     if (audioBuffer) {
+      // FIX: Normalize audio to ensure Deepgram and Player have the same timeline
+      const finalAudioBuffer = await normalizeAudioBuffer(audioBuffer);
+
       if (Number.isFinite(resolvedScenarioId)) {
         const targetDir = path.join('/tmp', 'platipo-miru-tts');
         await mkdir(targetDir, { recursive: true });
         const filePath = path.join(targetDir, `scenario_${resolvedScenarioId}.mp3`);
-        await writeFile(filePath, audioBuffer);
+        await writeFile(filePath, finalAudioBuffer);
         const audioDurationSeconds = await probeDurationSeconds(filePath);
         let timestampPayloadJson: string | null = null;
 
         try {
-          const deepgramData = await transcribeAudioWithDeepgram(audioBuffer, "audio/mpeg");
+          const deepgramData = await transcribeAudioWithDeepgram(finalAudioBuffer, "audio/mpeg");
           timestampPayloadJson = JSON.stringify({
             transcript: deepgramData.transcript || "",
             words: deepgramData.words || [],
@@ -722,7 +763,7 @@ export async function POST(request: Request) {
         );
       }
 
-      return new Response(new Uint8Array(audioBuffer), {
+      return new Response(new Uint8Array(finalAudioBuffer), {
         headers: {
           'Content-Type': 'audio/mpeg',
           'Content-Disposition': `attachment; filename="scenario_${scenarioId}_audio.mp3"`,

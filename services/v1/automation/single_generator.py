@@ -148,7 +148,7 @@ def _build_timing_safe_removal_intervals(
         return intervals
 
     resolved_min_gap = max(0.0, min(2.0, float(min_gap_seconds)))
-    resolved_keep_gap = max(0.0, min(0.5, float(keep_gap_seconds)))
+    resolved_keep_gap = max(0.05, min(0.5, float(keep_gap_seconds))) # Minimal gap is now 0.05 for safety
 
     for idx in range(len(words) - 1):
         current = words[idx]
@@ -160,6 +160,7 @@ def _build_timing_safe_removal_intervals(
             next_end = float(nxt.get("end", 0))
         except (TypeError, ValueError):
             continue
+        
         gap = next_start - end_time
         if gap < resolved_min_gap:
             continue
@@ -168,30 +169,40 @@ def _build_timing_safe_removal_intervals(
         is_sentence_end = _is_sentence_end(boundary_word)
         is_soft_boundary = bool(SOFT_BOUNDARY_RE.search(boundary_word))
 
+        # Dynamic target gap based on punctuation
         if is_sentence_end:
-            target_keep_gap = resolved_keep_gap
+            target_keep_gap = resolved_keep_gap # e.g. 0.3s
         elif is_soft_boundary:
-            target_keep_gap = min(0.5, max(resolved_keep_gap + 0.05, resolved_keep_gap * 1.45))
+            target_keep_gap = max(0.2, resolved_keep_gap * 0.6) # e.g. 0.2s
         else:
-            target_keep_gap = min(0.5, max(resolved_keep_gap + 0.1, resolved_keep_gap * 1.9))
+            target_keep_gap = max(0.12, resolved_keep_gap * 0.4) # e.g. 0.12s for internal pauses
 
-        previous_word_duration = max(0.04, min(0.6, end_time - start_time))
-        next_word_duration = max(0.04, min(0.6, next_end - next_start))
-        tail_guard = min(0.07, max(0.02, previous_word_duration * 0.12))
-        head_guard = min(0.07, max(0.02, next_word_duration * 0.12))
+        # Improved guards to prevent clipping first/last phonemes
+        # We increase the guard for the start of the next word to avoid cutting "breaths" or sharp starts
+        previous_word_duration = max(0.04, min(1.0, end_time - start_time))
+        next_word_duration = max(0.04, min(1.0, next_end - next_start))
+        
+        tail_guard = min(0.1, max(0.04, previous_word_duration * 0.15))
+        head_guard = min(0.12, max(0.06, next_word_duration * 0.2)) # More generous head guard
+        
         available_gap = gap - tail_guard - head_guard
 
-        if available_gap <= target_keep_gap + 0.03:
+        if available_gap <= target_keep_gap + 0.05:
             continue
 
-        extra_keep_gap = min(target_keep_gap, max(0.0, available_gap - 0.02))
-        tail_keep_ratio = 0.45 if is_sentence_end else 0.5
+        extra_keep_gap = max(0.0, target_keep_gap - (tail_guard + head_guard))
+        # Keep more space after sentence ends
+        tail_keep_ratio = 0.6 if is_sentence_end else 0.5
+        
         keep_tail = tail_guard + (extra_keep_gap * tail_keep_ratio)
-        keep_head = head_guard + (extra_keep_gap - (extra_keep_gap * tail_keep_ratio))
+        keep_head = head_guard + (extra_keep_gap * (1.0 - tail_keep_ratio))
+        
         remove_start = end_time + keep_tail
         remove_end = next_start - keep_head
-        if remove_end - remove_start >= 0.03:
+        
+        if remove_end - remove_start >= 0.05:
             intervals.append((remove_start, remove_end))
+            
     return intervals
 
 def _trim_sentence_gaps(
