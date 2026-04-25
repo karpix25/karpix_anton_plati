@@ -283,16 +283,25 @@ function buildAvatarFilter(options: {
     duration >= AVATAR_ZOOM_MIN_SECONDS
       ? `${zoomStart}+(${zoomEnd}-${zoomStart})*min(t,${duration})/${duration}`
       : `${zoomStart}`;
+  
   const zoomExpr = escapeFilterExpr(zoomExprRaw);
+  
+  // Use face position as the anchor point for transformation
+  // Formula: target_x = face_x * zoom - screen_center_x
+  // We keep the face at the same relative horizontal position or slightly center it
   const xExpr = escapeFilterExpr(
     `max(0,min(iw-ow,${options.faceCenterX}*(${zoomExprRaw})-ow/2))`
   );
+  
+  // For vertical position, we target slightly above the face center (eyes/forehead area)
+  // but keep it within bounds to prevent showing black bars
   const yExpr = escapeFilterExpr(
-    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.40))`
+    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.42))`
   );
+  
   return [
     "setpts=PTS-STARTPTS",
-    `scale=iw*(${zoomExpr}):ih*(${zoomExpr}):eval=frame`,
+    `scale=iw*(${zoomExpr}):-1:eval=frame`, // Use -1 for height to maintain aspect ratio
     `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}`,
     `fps=${OUTPUT_FPS}`,
     "format=yuv420p",
@@ -342,16 +351,19 @@ function buildCyclingAvatarFilter(options: {
   }
 
   const zoomExpr = escapeFilterExpr(zoomExprRaw);
+  
+  // CRITICAL FIX: The anchor point for zoom must be derived from the ORIGINAL person position.
+  // We use faceCenterX to keep the person as the center of the viewport regardless of the scale.
   const xExpr = escapeFilterExpr(
     `max(0,min(iw-ow,${options.faceCenterX}*(${zoomExprRaw})-ow/2))`
   );
   const yExpr = escapeFilterExpr(
-    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.40))`
+    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.42))`
   );
 
   return [
     "setpts=PTS-STARTPTS",
-    `scale=iw*(${zoomExpr}):ih*(${zoomExpr}):eval=frame`,
+    `scale=iw*(${zoomExpr}):-1:eval=frame`, // Use -1 to keep aspect ratio perfect
     `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}`,
     `fps=${OUTPUT_FPS}`,
     "format=yuv420p",
@@ -944,12 +956,16 @@ async function buildMontage(scenarioId: number) {
         // ignore
       }
     }
-    const faceCenterX = dims ? dims.width / 2 : OUTPUT_WIDTH / 2;
+    const faceCenterX = stableAvatarFaceBox
+      ? stableAvatarFaceBox.x + stableAvatarFaceBox.w / 2
+      : dims
+        ? dims.width / 2
+        : OUTPUT_WIDTH / 2;
     const faceCenterY = stableAvatarFaceBox
       ? stableAvatarFaceBox.y + stableAvatarFaceBox.h / 2
       : dims
         ? dims.height * AVATAR_FACE_FALLBACK_Y
-        : OUTPUT_HEIGHT * 0.4;
+        : OUTPUT_HEIGHT * 0.42;
     const avatarBaseFilter = buildCyclingAvatarFilter({
       totalDuration,
       faceCenterX,
