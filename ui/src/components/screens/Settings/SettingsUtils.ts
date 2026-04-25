@@ -97,9 +97,10 @@ export const normalizeSettings = (settings: Settings): Settings => {
   const silenceTrimThresholdDb = Number(settings.tts_silence_trim_threshold_db);
   const sentenceTrimMinGapSeconds = Number(settings.tts_sentence_trim_min_gap_seconds);
   const sentenceTrimKeepGapSeconds = Number(settings.tts_sentence_trim_keep_gap_seconds);
-  const pauseOptimizationEnabled =
-    (typeof settings.tts_silence_trim_enabled === "boolean" && settings.tts_silence_trim_enabled) ||
-    (typeof settings.tts_sentence_trim_enabled === "boolean" && settings.tts_sentence_trim_enabled);
+  const silenceTrimEnabled =
+    typeof settings.tts_silence_trim_enabled === "boolean" ? settings.tts_silence_trim_enabled : true;
+  const sentenceTrimEnabled =
+    typeof settings.tts_sentence_trim_enabled === "boolean" ? settings.tts_sentence_trim_enabled : false;
   const normalizePronunciationRule = (item: unknown): TtsPronunciationOverride | null => {
     if (!item || typeof item !== "object" || Array.isArray(item)) {
       return null;
@@ -136,8 +137,8 @@ export const normalizeSettings = (settings: Settings): Settings => {
       Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds >= 0 ? silenceTrimMinSeconds : 0.35,
     tts_silence_trim_threshold_db:
       Number.isFinite(silenceTrimThresholdDb) ? silenceTrimThresholdDb : -45,
-    tts_silence_trim_enabled: pauseOptimizationEnabled,
-    tts_sentence_trim_enabled: pauseOptimizationEnabled,
+    tts_silence_trim_enabled: silenceTrimEnabled,
+    tts_sentence_trim_enabled: sentenceTrimEnabled,
     tts_sentence_trim_min_gap_seconds:
       Number.isFinite(sentenceTrimMinGapSeconds) && sentenceTrimMinGapSeconds >= 0 ? sentenceTrimMinGapSeconds : 0.3,
     tts_sentence_trim_keep_gap_seconds:

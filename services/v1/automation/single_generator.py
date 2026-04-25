@@ -100,7 +100,8 @@ def _trim_tts_silence(
     filter_expr = (
         "silenceremove="
         f"start_periods=1:start_duration={resolved_min_duration}:start_threshold={resolved_threshold}dB:"
-        f"stop_periods=-1:stop_duration={resolved_min_duration}:stop_threshold={resolved_threshold}dB"
+        f"stop_periods=-1:stop_duration={resolved_min_duration}:stop_threshold={resolved_threshold}dB:"
+        "start_silence=0.08:stop_silence=0.10"
     )
 
     try:
@@ -148,7 +149,7 @@ def _build_timing_safe_removal_intervals(
         return intervals
 
     resolved_min_gap = max(0.0, min(2.0, float(min_gap_seconds)))
-    resolved_keep_gap = max(0.05, min(0.5, float(keep_gap_seconds))) # Minimal gap is now 0.05 for safety
+    resolved_keep_gap = max(0.08, min(0.5, float(keep_gap_seconds))) # Keep at least a small natural gap for safety
 
     for idx in range(len(words) - 1):
         current = words[idx]
@@ -173,21 +174,21 @@ def _build_timing_safe_removal_intervals(
         if is_sentence_end:
             target_keep_gap = resolved_keep_gap # e.g. 0.3s
         elif is_soft_boundary:
-            target_keep_gap = max(0.2, resolved_keep_gap * 0.6) # e.g. 0.2s
+            target_keep_gap = max(0.22, resolved_keep_gap * 0.75) # keep safer pauses around commas/semicolons
         else:
-            target_keep_gap = max(0.12, resolved_keep_gap * 0.4) # e.g. 0.12s for internal pauses
+            target_keep_gap = max(0.16, resolved_keep_gap * 0.6) # keep safer internal pauses to protect consonant attacks
 
         # Improved guards to prevent clipping first/last phonemes
         # We increase the guard for the start of the next word to avoid cutting "breaths" or sharp starts
         previous_word_duration = max(0.04, min(1.0, end_time - start_time))
         next_word_duration = max(0.04, min(1.0, next_end - next_start))
         
-        tail_guard = min(0.1, max(0.04, previous_word_duration * 0.15))
-        head_guard = min(0.12, max(0.06, next_word_duration * 0.2)) # More generous head guard
+        tail_guard = min(0.14, max(0.06, previous_word_duration * 0.22))
+        head_guard = min(0.18, max(0.09, next_word_duration * 0.30))
         
         available_gap = gap - tail_guard - head_guard
 
-        if available_gap <= target_keep_gap + 0.05:
+        if available_gap <= target_keep_gap + 0.08:
             continue
 
         extra_keep_gap = max(0.0, target_keep_gap - (tail_guard + head_guard))
@@ -200,7 +201,7 @@ def _build_timing_safe_removal_intervals(
         remove_start = end_time + keep_tail
         remove_end = next_start - keep_head
         
-        if remove_end - remove_start >= 0.05:
+        if remove_end - remove_start >= 0.08:
             intervals.append((remove_start, remove_end))
             
     return intervals
@@ -527,7 +528,10 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                     tts_audio_path = text_to_speech_minimax(tts_script, voice_id=selected_tts_voice_id or None)
                 if tts_silence_trim_enabled is None:
                     tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
-                if tts_silence_trim_enabled:
+                # Do not stack amplitude-based trim and word-timestamp trim together:
+                # sentence trim is safer for preserving phoneme boundaries.
+                should_run_silence_trim = bool(tts_silence_trim_enabled) and not bool(tts_sentence_trim_enabled)
+                if should_run_silence_trim:
                     tts_audio_path = _trim_tts_silence(
                         tts_audio_path,
                         tts_silence_trim_min_duration_seconds,
