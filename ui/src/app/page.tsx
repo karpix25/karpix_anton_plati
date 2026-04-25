@@ -544,9 +544,11 @@ export default function CuratorDashboard() {
               setSearchQuery={setReferenceSearch}
               onRefresh={() => {}}
               onReferenceClick={handleReferenceClick}
+              onDeleteReference={handleDeleteReference}
               onDeleteTopicCard={handleDeleteTopicCard}
               onDeleteStructureCard={handleDeleteStructureCard}
               canDeleteCards={Boolean(authUser?.isSuperAdmin)}
+              isDeletingReference={deleteReferenceMutation.isPending}
               isDeletingTopicCard={deleteTopicCardMutation.isPending}
               isDeletingStructureCard={deleteStructureCardMutation.isPending}
               totalCount={totalReferences}

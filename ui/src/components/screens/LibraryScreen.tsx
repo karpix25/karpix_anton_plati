@@ -38,9 +38,11 @@ interface LibraryScreenProps {
   setSearchQuery: (query: string) => void;
   onRefresh: () => void;
   onReferenceClick: (ref: Reference) => void;
+  onDeleteReference: (referenceId: number) => void;
   onDeleteTopicCard: (topicCardId: number) => void;
   onDeleteStructureCard: (structureCardId: number) => void;
   canDeleteCards: boolean;
+  isDeletingReference: boolean;
   isDeletingTopicCard: boolean;
   isDeletingStructureCard: boolean;
   totalCount: number;
@@ -59,11 +61,12 @@ export function LibraryScreen({
   setScenarioFilter,
   searchQuery,
   setSearchQuery,
-  onRefresh,
   onReferenceClick,
+  onDeleteReference,
   onDeleteTopicCard,
   onDeleteStructureCard,
   canDeleteCards,
+  isDeletingReference,
   isDeletingTopicCard,
   isDeletingStructureCard,
   totalCount,
@@ -119,26 +122,6 @@ export function LibraryScreen({
         </Button>
       </div>
 
-      <div className="rounded-2xl bg-[#f0f4f7] p-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {(["all", "with", "without"] as const).map((filter) => (
-            <button
-              key={filter}
-              onClick={() => setScenarioFilter(filter)}
-              className={`rounded-xl px-5 py-2 text-sm font-bold shadow-sm transition-all ${
-                scenarioFilter === filter ? "bg-white text-primary" : "text-muted-foreground hover:bg-white/50"
-              }`}
-            >
-              {filter === "all" ? "Все" : filter === "with" ? "Со сценарием" : "Без сценария"}
-            </button>
-          ))}
-          <div className="mx-2 h-6 w-px bg-border/60" />
-          <button className="flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
-            <Settings2 className="h-4 w-4" />
-            Расширенные фильтры
-          </button>
-        </div>
-      </div>
 
       <div className="space-y-6">
         <div className="rounded-2xl border border-zinc-100 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all">
@@ -172,9 +155,10 @@ export function LibraryScreen({
                   <TableHead>Паттерн</TableHead>
                   <TableHead>Стадия Ханта</TableHead>
                   <TableHead>Ссылка</TableHead>
-                  <TableHead>Дата</TableHead>
-                  <TableHead>Статус</TableHead>
-                  <TableHead className="w-[90px] text-right">Открыть</TableHead>
+                  <TableHead className="text-center">Дата</TableHead>
+                  <TableHead className="text-center">Статус</TableHead>
+                  <TableHead className="w-[80px] text-right">Удалить</TableHead>
+                  <TableHead className="w-[80px] text-right">Открыть</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -190,7 +174,7 @@ export function LibraryScreen({
                   return (
                   <TableRow
                     key={ref.id}
-                    className="cursor-pointer"
+                    className="group cursor-pointer"
                     onClick={() => onReferenceClick(ref)}
                   >
                     <TableCell className="max-w-[420px] font-medium text-foreground">
@@ -218,10 +202,10 @@ export function LibraryScreen({
                         <span className="truncate">{ref.reels_url}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="text-center text-muted-foreground">
                       {new Date(ref.created_at).toLocaleDateString("ru-RU")}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-center">
                       {ref.audit_json?.pattern_framework?.core_thesis ? (
                         <Badge className="border-none bg-primary/10 text-primary">
                           <CheckCircle2 className="mr-1 h-3 w-3" />
@@ -234,7 +218,23 @@ export function LibraryScreen({
                       )}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="inline-flex rounded-lg bg-[#f0f4f7] p-2 text-muted-foreground">
+                      {canDeleteCards ? (
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="h-8 w-8 text-rose-400 hover:bg-rose-50 hover:text-rose-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteReference(ref.id);
+                          }}
+                          disabled={isDeletingReference}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="inline-flex rounded-lg bg-[#f0f4f7] p-2 text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
                         <ArrowRight className="h-4 w-4" />
                       </div>
                     </TableCell>
