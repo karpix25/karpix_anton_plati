@@ -22,8 +22,14 @@ DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS = float(os.getenv("TTS_SILENCE_TRIM_MI
 DEFAULT_SILENCE_TRIM_THRESHOLD_DB = float(os.getenv("TTS_SILENCE_TRIM_THRESHOLD_DB", "-45"))
 DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_GAP_SECONDS", "0.3"))
 DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.1"))
+DEFAULT_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS", "0.06"))
+DEFAULT_PAUSE_TRIM_SILENCE_THRESHOLD_DB = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_THRESHOLD_DB", "-40"))
+DEFAULT_PAUSE_TRIM_MIN_OVERLAP_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_MIN_OVERLAP_SECONDS", "0.06"))
+DEFAULT_PAUSE_TRIM_MAX_REMOVAL_SHARE = float(os.getenv("TTS_PAUSE_TRIM_MAX_REMOVAL_SHARE", "0.20"))
 SENTENCE_END_RE = re.compile(r'[.!?…]+["»”)]*$')
 SOFT_BOUNDARY_RE = re.compile(r'[,;:—-]+["»”)]*$')
+SILENCE_START_RE = re.compile(r"silence_start:\s*([0-9]+(?:\.[0-9]+)?)")
+SILENCE_END_RE = re.compile(r"silence_end:\s*([0-9]+(?:\.[0-9]+)?)")
 SCRIPT_MIN_WORD_COUNT = 8
 
 
@@ -72,6 +78,129 @@ def _probe_audio_duration_seconds(file_path):
         return duration if duration > 0 else None
     except Exception:
         return None
+
+def _merge_intervals(intervals: list[tuple[float, float]], gap_tolerance: float = 0.015) -> list[tuple[float, float]]:
+    if not intervals:
+        return []
+    ordered = sorted(
+        ((max(0.0, float(start)), max(0.0, float(end))) for start, end in intervals if end - start > 1e-6),
+        key=lambda item: item[0],
+    )
+    if not ordered:
+        return []
+    merged: list[tuple[float, float]] = [ordered[0]]
+    for start, end in ordered[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end + gap_tolerance:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+def _detect_silence_intervals(
+    file_path: str | None,
+    audio_duration: float | None = None,
+    min_duration_seconds: float | None = None,
+    threshold_db: float | None = None,
+) -> list[tuple[float, float]]:
+    if not file_path or not os.path.exists(file_path):
+        return []
+
+    resolved_min_duration = (
+        min_duration_seconds if min_duration_seconds is not None else DEFAULT_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS
+    )
+    try:
+        resolved_min_duration = float(resolved_min_duration)
+    except (TypeError, ValueError):
+        resolved_min_duration = DEFAULT_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS
+    resolved_min_duration = max(0.03, min(0.5, resolved_min_duration))
+
+    resolved_threshold = threshold_db if threshold_db is not None else DEFAULT_PAUSE_TRIM_SILENCE_THRESHOLD_DB
+    try:
+        resolved_threshold = float(resolved_threshold)
+    except (TypeError, ValueError):
+        resolved_threshold = DEFAULT_PAUSE_TRIM_SILENCE_THRESHOLD_DB
+    resolved_threshold = max(-80.0, min(-15.0, resolved_threshold))
+
+    try:
+        output = subprocess.check_output(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-i",
+                file_path,
+                "-af",
+                f"silencedetect=noise={resolved_threshold}dB:d={resolved_min_duration}",
+                "-f",
+                "null",
+                "-",
+            ],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except Exception as error:
+        logger.warning("silencedetect failed for %s: %s", file_path, error)
+        return []
+
+    intervals: list[tuple[float, float]] = []
+    current_start: float | None = None
+    for line in output.splitlines():
+        start_match = SILENCE_START_RE.search(line)
+        if start_match:
+            try:
+                current_start = max(0.0, float(start_match.group(1)))
+            except (TypeError, ValueError):
+                current_start = None
+            continue
+
+        end_match = SILENCE_END_RE.search(line)
+        if end_match and current_start is not None:
+            try:
+                silence_end = max(0.0, float(end_match.group(1)))
+            except (TypeError, ValueError):
+                current_start = None
+                continue
+            if silence_end - current_start >= resolved_min_duration:
+                intervals.append((current_start, silence_end))
+            current_start = None
+
+    if current_start is not None and audio_duration and audio_duration > current_start:
+        if audio_duration - current_start >= resolved_min_duration:
+            intervals.append((current_start, audio_duration))
+
+    return _merge_intervals(intervals, gap_tolerance=0.02)
+
+def _refine_removal_intervals_with_silence(
+    removal_intervals: list[tuple[float, float]],
+    silence_intervals: list[tuple[float, float]],
+    min_overlap_seconds: float | None = None,
+) -> list[tuple[float, float]]:
+    if not removal_intervals or not silence_intervals:
+        return []
+    resolved_min_overlap = (
+        min_overlap_seconds if min_overlap_seconds is not None else DEFAULT_PAUSE_TRIM_MIN_OVERLAP_SECONDS
+    )
+    try:
+        resolved_min_overlap = float(resolved_min_overlap)
+    except (TypeError, ValueError):
+        resolved_min_overlap = DEFAULT_PAUSE_TRIM_MIN_OVERLAP_SECONDS
+    resolved_min_overlap = max(0.03, min(0.3, resolved_min_overlap))
+
+    refined: list[tuple[float, float]] = []
+    for remove_start, remove_end in removal_intervals:
+        best_interval: tuple[float, float] | None = None
+        best_len = 0.0
+        for silence_start, silence_end in silence_intervals:
+            overlap_start = max(remove_start, silence_start)
+            overlap_end = min(remove_end, silence_end)
+            overlap_len = overlap_end - overlap_start
+            if overlap_len >= resolved_min_overlap and overlap_len > best_len:
+                best_interval = (overlap_start, overlap_end)
+                best_len = overlap_len
+        if best_interval:
+            refined.append(best_interval)
+
+    return _merge_intervals(refined, gap_tolerance=0.01)
 
 def _trim_tts_silence(
     file_path: str | None,
@@ -248,6 +377,28 @@ def _trim_sentence_gaps(
         except Exception:
             audio_duration = None
     if not audio_duration or audio_duration <= 0:
+        return file_path, words
+
+    silence_intervals = _detect_silence_intervals(file_path, audio_duration=audio_duration)
+    if not silence_intervals:
+        return file_path, words
+
+    removal_intervals = _refine_removal_intervals_with_silence(removal_intervals, silence_intervals)
+    if not removal_intervals:
+        return file_path, words
+
+    max_removal_share = max(0.05, min(0.5, float(DEFAULT_PAUSE_TRIM_MAX_REMOVAL_SHARE)))
+    total_removed = sum(max(0.0, end - start) for start, end in removal_intervals)
+    if total_removed <= 0.03:
+        return file_path, words
+    if total_removed > audio_duration * max_removal_share:
+        logger.info(
+            "Skip sentence trim for %s: planned removal %.3fs exceeds %.0f%% of audio %.3fs",
+            file_path,
+            total_removed,
+            max_removal_share * 100,
+            audio_duration,
+        )
         return file_path, words
 
     segments: list[tuple[float, float]] = []
@@ -528,9 +679,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                     tts_audio_path = text_to_speech_minimax(tts_script, voice_id=selected_tts_voice_id or None)
                 if tts_silence_trim_enabled is None:
                     tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
-                # Do not stack amplitude-based trim and word-timestamp trim together:
-                # sentence trim is safer for preserving phoneme boundaries.
-                should_run_silence_trim = bool(tts_silence_trim_enabled) and not bool(tts_sentence_trim_enabled)
+                # Do not stack amplitude-based trim and word-timestamp trim together.
+                should_run_silence_trim = (
+                    bool(tts_silence_trim_enabled)
+                    and not bool(tts_sentence_trim_enabled)
+                )
                 if should_run_silence_trim:
                     tts_audio_path = _trim_tts_silence(
                         tts_audio_path,
