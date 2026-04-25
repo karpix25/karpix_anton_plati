@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, ChangeEvent } from "react";
+import { useState, useEffect, useRef, ChangeEvent, useMemo } from "react";
+import { toast } from "sonner";
 import { HeygenAvatarConfig, ProductMediaAsset, Settings, Voice } from "@/types";
 import {
   DEFAULT_HEYGEN_MOTION_PROMPT,
@@ -63,6 +64,8 @@ export const useSettingsState = ({
   const [optimizingCategory, setOptimizingCategory] = useState<"scenario" | "visual" | "video" | null>(null);
   const [isManualFinalRunPending, setIsManualFinalRunPending] = useState(false);
   const [subtitlePreviewScale, setSubtitlePreviewScale] = useState(0.24);
+  const [lastSavedSettings, setLastSavedSettings] = useState<Settings | null>(null);
+  const [lastSavedAvatars, setLastSavedAvatars] = useState<HeygenAvatarConfig[] | null>(null);
 
   const subtitlePreviewRef = useRef<HTMLDivElement>(null);
 
@@ -91,6 +94,62 @@ export const useSettingsState = ({
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+
+  // Debounced Settings Auto-save
+  useEffect(() => {
+    // Skip if basically same as what we just saved or initial load
+    if (JSON.stringify(draftSettings) === JSON.stringify(lastSavedSettings)) return;
+    
+    // Skip initial sync
+    if (!lastSavedSettings) {
+      setLastSavedSettings(draftSettings);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      onSave(draftSettings);
+      setLastSavedSettings(draftSettings);
+      toast.success("Настройки проекта сохранены", {
+        description: "Ваши изменения успешно применены.",
+        duration: 2000,
+      });
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [draftSettings, onSave, lastSavedSettings]);
+
+  // Debounced HeyGen Auto-save
+  useEffect(() => {
+    // Skip if essentially equal or initial
+    if (JSON.stringify(avatarConfigs) === JSON.stringify(lastSavedAvatars)) return;
+
+    if (!lastSavedAvatars) {
+      setLastSavedAvatars(avatarConfigs);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      const sanitized = avatarConfigs
+        .map((avatar, avatarIndex) => normalizeAvatar(avatar, avatarIndex))
+        .map((avatar, avatarIndex) => ({
+          ...avatar,
+          sort_order: avatarIndex,
+          looks: (avatar.looks || [])
+            .map((look, lookIndex) => normalizeLook(look, lookIndex))
+            .filter((look) => look.look_id && look.look_name),
+        }))
+        .filter((avatar) => avatar.avatar_id && avatar.avatar_name);
+
+      onSaveHeygenAvatars(sanitized);
+      setLastSavedAvatars(avatarConfigs);
+      toast.success("HeyGen Pool обновлен", {
+        description: "Конфигурация аватаров сохранена.",
+        duration: 2000,
+      });
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [avatarConfigs, onSaveHeygenAvatars, lastSavedAvatars]);
 
   // HeyGen motion polling
   useEffect(() => {

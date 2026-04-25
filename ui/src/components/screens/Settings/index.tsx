@@ -20,7 +20,9 @@ import {
   Users, 
   Save, 
   Trash2,
-  AlertCircle
+  AlertCircle,
+  CloudCheck,
+  CloudUpload
 } from "lucide-react";
 
 interface SettingsScreenProps {
@@ -86,18 +88,23 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                 </>
               ) : null}
 
-              <Button
-                className="primary-gradient h-11 rounded-xl px-8 text-xs font-black uppercase tracking-widest text-white shadow-lg transition-all hover:shadow-xl hover:translate-y-[-1px] active:translate-y-[0px]"
-                onClick={state.handleSaveSettings}
-                disabled={props.isSaving}
-              >
-                {props.isSaving ? (
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+              <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-50 border border-slate-100 shadow-inner min-w-[140px] justify-center transition-all duration-300">
+                {props.isSaving || props.isSavingHeygenAvatars ? (
+                  <>
+                    <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                      Сохранение...
+                    </span>
+                  </>
                 ) : (
-                  <Save className="mr-2 h-4 w-4" />
+                  <>
+                    <CloudCheck className="h-4 w-4 text-emerald-500" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
+                      Сохранено
+                    </span>
+                  </>
                 )}
-                {props.isSaving ? "Сохраняю..." : "Сохранить всё"}
-              </Button>
+              </div>
           </div>
         </div>
       </header>

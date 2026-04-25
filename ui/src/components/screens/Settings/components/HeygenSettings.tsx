@@ -100,21 +100,6 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
                <Plus className="mr-2 h-4 w-4" />
                Добавить аватара
             </Button>
-            <Button
-              type="button"
-              className="primary-gradient h-11 rounded-xl text-xs font-black uppercase tracking-widest text-white shadow-lg hover:shadow-xl"
-              onClick={handleSaveHeygen}
-              disabled={!selectedClientId || isSavingHeygenAvatars}
-            >
-              {isSavingHeygenAvatars ? (
-                <>
-                  <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-                  Сохраняю...
-                </>
-              ) : (
-                "Сохранить HeyGen Pool"
-              )}
-            </Button>
         </div>
       </div>
 
