@@ -74,8 +74,9 @@ C4Container
 - **Действие**: Извлекает метаданные поста и загружает видеофайл для последующей транскрибации.
 - **Библиотека**: `Telethon` (Telegram Client Library).
 
-### 2. Instagram Reels Downloader
+### 2. Instagram Reels Downloader (RapidAPI)
 Интегрированный парсер для обработки ссылок на Reels, отправляемых пользователями в бот.
+- **Технология**: Использует `RapidAPI` для обхода ограничений и получения прямых ссылок на MP4.
 - **Логика**: При получении ссылки бот автоматически загружает ролик, извлекает текст через Whisper/Deepgram и создает «Карточку референса» в БД.
 
 ### 3. Telegram Management Bot
@@ -93,6 +94,7 @@ C4Container
 | **MiniMax** | TTS (Лучшая для RU) | `MINIMAX_API_KEY` |
 | **ElevenLabs** | TTS (Клонирование голоса) | `ELEVENLABS_API_KEY` |
 | **Deepgram** | Тайминги слов (STT) | `DEEPGRAM_API_KEY` |
+| **RapidAPI** | Парсинг Instagram Reels | `RAPIDAPI_KEY` |
 | **Yandex Disk** | Хранилище готовых видео | `YANDEX_TOKEN` |
 
 ---
