@@ -61,6 +61,7 @@ export function LibraryScreen({
   setScenarioFilter,
   searchQuery,
   setSearchQuery,
+  onRefresh,
   onReferenceClick,
   onDeleteReference,
   onDeleteTopicCard,
