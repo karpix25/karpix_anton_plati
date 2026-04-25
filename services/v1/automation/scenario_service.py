@@ -121,8 +121,9 @@ Rules:
 TEXT:
 {raw_content}
 """
+    model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
     repaired = client.chat.completions.create(
-        model="google/gemini-2.5-flash",
+        model=model,
         messages=[{"role": "user", "content": repair_prompt}],
         response_format={"type": "json_object"},
     )
@@ -134,10 +135,11 @@ def _chat_json(prompt):
     client = _openrouter_client()
     last_error = None
 
+    model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
     for attempt in range(1, 3):
         try:
             response = client.chat.completions.create(
-                model="google/gemini-2.5-flash",
+                model=model,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"}
             )
@@ -162,9 +164,10 @@ def _chat_json(prompt):
 
 def _chat_text(prompt: str) -> str:
     client = _openrouter_client()
+    model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
     try:
         response = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
+            model=model,
             messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content.strip()

@@ -253,9 +253,10 @@ KEYWORD SEGMENTS:
 """
 
     try:
+        model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
         client = _openrouter_client()
         response = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
         )

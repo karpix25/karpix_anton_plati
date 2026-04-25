@@ -162,8 +162,9 @@ def classify_hunt_ladder(transcript, niche="General", target_product_info=None):
     }}
     """
 
+    model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
     response = client.chat.completions.create(
-        model="google/gemini-2.5-flash",
+        model=model,
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"}
     )
@@ -282,8 +283,9 @@ def get_transcript_audit(transcript, niche="General", target_product_info=None, 
     logger.info("Requesting viral audit from OpenAI")
     
     try:
+        model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
         response = client.chat.completions.create(
-            model="google/gemini-2.5-flash",
+            model=model,
             messages=[
                 {"role": "user", "content": prompt}
             ],
