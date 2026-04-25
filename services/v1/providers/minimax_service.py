@@ -54,99 +54,13 @@ def _build_pronunciation_tone(text):
 
 DEFAULT_MINIMAX_VOICE_ID = "Russian_Engaging_Podcaster_v1"
 MINIMAX_TTS_MODEL = "speech-2.8-hd"
-SUPPORTED_INTERJECTION_RE = re.compile(
-    r"\((?:laughs|chuckle|coughs|clear-throat|groans|breath|pant|inhale|exhale|gasps|sniffs|sighs|snorts|burps|lip-smacking|humming|hissing|emm|sneezes)\)",
-    re.IGNORECASE,
-)
-
-
-def _attach_interjection_after_first(text, pattern, interjection):
-    return pattern.sub(lambda match: f"{match.group(1)}{interjection}{match.group(2) or ''}", text, count=1)
-
-
-def _attach_interjection_to_sentence_lead(sentence, interjection):
-    return re.sub(r"^([^\s,.;:!?()]+)", rf"\1{interjection}", sentence, count=1)
-
-
-def _inject_interjections(text):
-    editor_cue_map = {
-        "surprise": "(gasps)",
-        "whisper": "(breath)",
-        "joy": "(chuckle)",
-        "sad": "(sighs)",
-        "angry": "(snorts)",
-        "excited": "(inhale)",
-        "soft": "(breath)",
-        "dramatic": "(inhale)",
-    }
-
-    def replace_editor_cue(match):
-        cue = (match.group(1) or "").lower()
-        return editor_cue_map.get(cue, "")
-
-    enriched = re.sub(r"\s*\[(surprise|whisper|joy|sad|angry|excited|soft|dramatic)\]", replace_editor_cue, text or "", flags=re.IGNORECASE)
-
-    if not SUPPORTED_INTERJECTION_RE.search(enriched):
-        direct_rules = [
-            (re.compile(r"(\b(?:ха-?ха|хаха|усмехнувшись|усмехается|смешно)\b)([,.;:!?]?)", re.IGNORECASE), "(chuckle)"),
-            (re.compile(r"(\b(?:эх|увы|к сожалению)\b)([,.;:!?]?)", re.IGNORECASE), "(sighs)"),
-            (re.compile(r"(\b(?:ничего себе|вот это да|неужели|серьёзно|серьезно)\b)([,.;:!?]?)", re.IGNORECASE), "(gasps)"),
-        ]
-
-        for pattern, interjection in direct_rules:
-            if pattern.search(enriched):
-                enriched = _attach_interjection_after_first(enriched, pattern, interjection)
-                break
-
-        sentences = re.findall(r"[^.!?]+[.!?]?", enriched) or [enriched]
-        injected_count = enriched.count("(")
-        rebuilt_sentences = []
-
-        for raw_sentence in sentences:
-            sentence = raw_sentence.strip()
-            if not sentence or SUPPORTED_INTERJECTION_RE.search(sentence) or injected_count >= 3:
-                rebuilt_sentences.append(raw_sentence)
-                continue
-
-            lower = sentence.lower()
-            interjection = None
-
-            if re.search(r"\b(?:давайте|смотрите|представьте|теперь)\b", sentence, re.IGNORECASE):
-                interjection = "(inhale)"
-            elif re.search(r"\b(?:кстати|ну|знаете)\b", sentence, re.IGNORECASE):
-                interjection = "(emm)"
-            elif re.search(r"\b(?:ошибка|разочар|депрессив|проблем|санкц|налог|риск|тяжело|сложно)\b", sentence, re.IGNORECASE):
-                interjection = "(sighs)"
-            elif len(sentence) > 90 or re.search(r"\b(?:автоматически|финансов|независим|благополуч)\b", lower, re.IGNORECASE):
-                interjection = "(breath)"
-
-            if not interjection:
-                rebuilt_sentences.append(raw_sentence)
-                continue
-
-            injected_count += 1
-            punctuation_match = re.search(r"[.!?]\s*$", raw_sentence)
-            punctuation = punctuation_match.group(0).strip() if punctuation_match else ""
-            body = sentence[:-len(punctuation)] if punctuation else sentence
-            rebuilt_sentences.append(_attach_interjection_to_sentence_lead(body, interjection) + punctuation)
-
-        enriched = " ".join(part.strip() for part in rebuilt_sentences if part.strip())
-
-    return (
-        re.sub(r"\s+\(", "(", enriched)
-        .replace(") ,", "),")
-        .replace(") .", ").")
-        .replace(") !", ")!")
-        .replace(") ?", ")?")
-        .strip()
-    )
 
 
 def prepare_text_for_minimax_tts(text):
-    return _inject_interjections(text or "")
+    return text or ""
 
 
-def text_to_speech_minimax(text, voice_id=DEFAULT_MINIMAX_VOICE_ID, speed=1.1, emotion=None):
+def text_to_speech_minimax(text, voice_id=DEFAULT_MINIMAX_VOICE_ID, speed=1.1):
     """
     Generates high-quality TTS using MiniMax T2A V2 API.
     Returns path to local audio file.
@@ -157,8 +71,6 @@ def text_to_speech_minimax(text, voice_id=DEFAULT_MINIMAX_VOICE_ID, speed=1.1, e
     
     if not api_key or not group_id or api_key.startswith("your_"):
         logger.error("MINIMAX_API_KEY or MINIMAX_GROUP_ID missing or not configured")
-        # For now, return a mock path to avoid crashing the pipeline if we just want a placeholder
-        # return "/tmp/tts_output.mp3"
         raise ValueError("MiniMax API keys are not configured in .env")
 
     # MiniMax T2A V2 URL
@@ -193,9 +105,6 @@ def text_to_speech_minimax(text, voice_id=DEFAULT_MINIMAX_VOICE_ID, speed=1.1, e
         payload["pronunciation_dict"] = {
             "tone": pronunciation_tone
         }
-    
-    if emotion:
-        payload["voice_setting"]["emotion"] = emotion
     
     try:
         logger.info(f"Connecting to MiniMax for TTS (Text length: {len(text)} characters)")
