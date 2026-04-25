@@ -386,22 +386,25 @@ class ProductAssetManager:
     def __init__(self, config: GenerationConfig):
         self.config = config
 
-    def pick_asset(self) -> Optional[Dict[str, Any]]:
+    def pick_asset(self, exclude_ids: Optional[set[str]] = None) -> Optional[Dict[str, Any]]:
         assets = self.config.product_media_assets or []
         normalized: List[Dict[str, Any]] = []
         for asset in assets:
             if not isinstance(asset, dict): continue
             url = str(asset.get("url") or "").strip()
+            aid = str(asset.get("id") or url).strip()
             if not url: continue
+            if exclude_ids and aid in exclude_ids and len(assets) > len(exclude_ids):
+                continue
             normalized.append({
-                "id": str(asset.get("id") or url).strip(),
+                "id": aid,
                 "url": url,
                 "name": str(asset.get("name") or asset.get("id") or "Product Asset").strip(),
                 "source_type": str(asset.get("source_type") or "video").strip(),
             })
 
         primary_url = str(self.config.product_video_url or "").strip()
-        if primary_url:
+        if primary_url and (not exclude_ids or primary_url not in exclude_ids):
             primary_asset = next((asset for asset in normalized if str(asset.get("url") or "").strip() == primary_url), None)
             if primary_asset:
                 return primary_asset
@@ -424,10 +427,15 @@ class ProductAssetManager:
         policy = self.config.product_clip_policy # "required" or "contextual"
         result: List[VisualSegment] = []
         
+        last_product_end = -100.0 # Track when the last product clip ended
+        used_asset_ids: set[str] = set()
+        product_cooldown = 12.0 # Minimum gap between two product clips
+        
         for seg in segments:
             # Check LLM's identified keyword and phrase, and the actual transcript words in this slot
             phrase = str(seg.get("phrase") or "")
             segment_keyword = str(seg.get("keyword") or "")
+            slot_start = float(seg.get("slot_start", 0.0))
             
             # 1. Match against LLM fields
             matched_keyword = _find_matching_product_keyword(product_keywords, phrase)
@@ -436,7 +444,7 @@ class ProductAssetManager:
             
             # 2. Safety net: Match against actual words spoken in this segment
             if not matched_keyword and words:
-                slot_words = [w["word"] for w in words if w["start"] >= seg["slot_start"] and w["start"] < seg["slot_end"]]
+                slot_words = [w["word"] for w in words if w["start"] >= slot_start and w["start"] < seg.get("slot_end", slot_start + 3.0)]
                 combined_transcript = " ".join(slot_words)
                 matched_keyword = _find_matching_product_keyword(product_keywords, combined_transcript)
 
@@ -450,21 +458,35 @@ class ProductAssetManager:
             if policy == "required":
                 use_product = keyword_match
             else: # contextual
-                # In contextual mode, keep AI decision but force product clip for explicit keyword mentions.
                 use_product = bool(seg.get("should_use_product_clip", False) or keyword_match)
 
+            # --- COOLDOWN & DUPLICATE PROTECTION ---
             if use_product:
-                asset = self.pick_asset()
-                seg.update({
-                    "asset_type": "product_video",
-                    "asset_url": asset["url"] if asset else self.config.product_video_url,
-                    "asset_id": asset["id"] if asset else None,
-                    "asset_name": asset["name"] if asset else None,
-                    "generate_video": False,
-                    "keyword": matched_keyword or self.config.product_keyword,
-                })
-            else:
+                # If we are in cooldown, force back to generated video unless it's 'required' and we have no choice
+                if (slot_start < last_product_end + product_cooldown) and policy != "required":
+                    use_product = False
+                    seg["reason"] = f"{seg.get('reason', '')}; product_cooldown_active".strip("; ")
+
+            if use_product:
+                asset = self.pick_asset(exclude_ids=used_asset_ids)
+                if asset:
+                    used_asset_ids.add(asset["id"])
+                    last_product_end = float(seg.get("slot_end", slot_start + 3.0))
+                    seg.update({
+                        "asset_type": "product_video",
+                        "asset_url": asset["url"],
+                        "asset_id": asset["id"],
+                        "asset_name": asset["name"],
+                        "generate_video": False,
+                        "keyword": matched_keyword or self.config.product_keyword,
+                    })
+                else:
+                    # No more unique assets or failed to pick one? Fallback to generation
+                    use_product = False
+
+            if not use_product:
                 seg.update({"asset_type": "generated_video", "generate_video": True})
+            
             result.append(seg)
         return result
 
@@ -639,6 +661,7 @@ TASK:
 1. Identify up to {len(slots)} key segments from the transcript.
 2. For each segment, find EXACT word timings from the transcript above.
 3. Map them to the closest available slot or provide the exact word timings.
+4. ОСОБОЕ ТРЕБОВАНИЕ: Обязательно найди и заполни первый доступный временной слот (обычно начиная с 2.6s - 4.5s). Даже если в начале нет ярких действий, подбери визуальный образ, соответствующий теме вступления.
 
 CRITICAL: You MUST provide 'word_start' and 'word_end' based on the timestamps in the transcript.
 """
