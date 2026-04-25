@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
-import { getTelegramSessionUserFromRequest } from '@/lib/server/telegram-auth';
+import { getTelegramSessionUserFromRequest, validateApiRequest } from '@/lib/server/telegram-auth';
 
 type TtsPronunciationOverride = {
   search: string;
@@ -183,8 +183,11 @@ function resolveFinalVideoLimits(dailyLimit: unknown, monthlyLimit: unknown) {
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { user, errorResponse } = await validateApiRequest(request);
+    if (errorResponse) return errorResponse;
+
     await ensureClientVoiceColumn();
     await ensureScenarioStatsColumns();
     const { rows } = await pool.query(`
@@ -257,6 +260,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const { user, errorResponse } = await validateApiRequest(request);
+    if (errorResponse) return errorResponse;
+
     await ensureClientVoiceColumn();
     const {
       name,
@@ -415,6 +421,9 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const { user, errorResponse } = await validateApiRequest(request);
+    if (errorResponse) return errorResponse;
+
     await ensureClientVoiceColumn();
     const {
       id,
@@ -571,11 +580,11 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const { user, errorResponse } = await validateApiRequest(request);
+    if (errorResponse) return errorResponse;
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     await ensureClientVoiceColumn();
-    const user = await getTelegramSessionUserFromRequest(request);
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (!user.isSuperAdmin) {
       return NextResponse.json({ error: "Only super admin can delete projects" }, { status: 403 });
     }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { PoolClient } from 'pg';
 import { getStableHeygenPreviewUrl } from '@/lib/server/heygen-preview-cache';
+import { validateApiRequest } from '@/lib/server/telegram-auth';
 
 async function ensureHeygenLookMotionColumns() {
   const statements = [
@@ -30,6 +31,9 @@ function normalizeAvatarGender(value: unknown): "male" | "female" {
 }
 
 export async function GET(request: Request) {
+  const { user, errorResponse } = await validateApiRequest(request);
+  if (errorResponse) return errorResponse;
+
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get('clientId');
 
@@ -87,6 +91,9 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  const { user, errorResponse } = await validateApiRequest(request);
+  if (errorResponse) return errorResponse;
+
   const client: PoolClient = await pool.connect();
 
   try {

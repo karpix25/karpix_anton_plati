@@ -1,5 +1,7 @@
 import crypto from "crypto";
 import pool from "@/lib/db";
+import { rateLimit, getClientIp } from "./rate-limit";
+import { NextResponse } from "next/server";
 
 export const TELEGRAM_SESSION_COOKIE = "tg_session";
 
@@ -354,4 +356,39 @@ export async function revokeTelegramSession(rawToken: string) {
      WHERE session_token_hash = $1`,
     [tokenHash]
   );
+}
+
+/**
+ * Unified API security wrapper.
+ * Checks rate limits and authentication.
+ */
+export async function validateApiRequest(request: Request, config: { limit?: number; windowMs?: number } = {}) {
+  const ip = getClientIp(request);
+  const user = await getTelegramSessionUserFromRequest(request);
+  
+  // Rate limit by User ID if logged in, otherwise by IP
+  const rateLimitKey = user ? `user:${user.telegramUserId}` : `ip:${ip}`;
+  const rl = rateLimit(rateLimitKey, config.limit ?? 100, config.windowMs ?? 60000);
+
+  if (!rl.success) {
+    return {
+      user: null,
+      errorResponse: NextResponse.json(
+        { error: "Too many requests", retryAfter: Math.ceil((rl.reset - Date.now()) / 1000) },
+        { 
+          status: 429,
+          headers: { "Retry-After": Math.ceil((rl.reset - Date.now()) / 1000).toString() }
+        }
+      )
+    };
+  }
+
+  if (!user) {
+    return {
+      user: null,
+      errorResponse: NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    };
+  }
+
+  return { user, errorResponse: null };
 }

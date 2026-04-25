@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { HeygenAvatarConfig, Voice, Settings, HeygenLookConfig } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -73,6 +73,14 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
   const currentVoiceId = avatarTtsProvider === "minimax" 
     ? (avatar.tts_voice_id || DEFAULT_MINIMAX_VOICE_ID)
     : (avatar.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID);
+
+  const availableVoices = useMemo(() => {
+    return avatarTtsProvider === 'minimax' ? minimaxVoices : elevenlabsVoices;
+  }, [avatarTtsProvider, minimaxVoices, elevenlabsVoices]);
+
+  const isCustomId = useMemo(() => {
+    return currentVoiceId && !availableVoices.some((v: Voice) => v.voice_id === currentVoiceId);
+  }, [currentVoiceId, availableVoices]);
 
   return (
     <div className={`rounded-2xl border transition-all duration-300 ${avatar.is_active ? "border-primary/20 bg-white shadow-sm ring-1 ring-primary/5" : "border-[#e5ebf0] bg-[#fbfcfd]"}`}>
@@ -218,24 +226,46 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                          </SelectContent>
                       </Select>
                    </div>
-                   <div className="space-y-1.5">
+                    <div className="space-y-1.5 min-w-0 flex-1">
                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Voice ID</label>
-                      <Select
-                        value={currentVoiceId}
-                        onValueChange={(val) => updateAvatar(avatarIndex, avatarTtsProvider === 'minimax' ? 'tts_voice_id' : 'elevenlabs_voice_id', val)}
-                      >
-                         <SelectTrigger className="h-11 w-full rounded-xl border-none bg-slate-100 px-4 text-sm font-bold">
-                            <SelectValue />
-                         </SelectTrigger>
-                         <SelectContent className="max-h-80">
-                            {avatarTtsProvider === 'minimax' ? (
-                               minimaxVoices.map(v => <SelectItem key={v.voice_id} value={v.voice_id}>{v.voice_name}</SelectItem>)
-                            ) : (
-                               elevenlabsVoices.map(v => <SelectItem key={v.voice_id} value={v.voice_id}>{v.name}</SelectItem>)
-                            )}
-                         </SelectContent>
-                      </Select>
-                   </div>
+                      <div className="flex flex-col gap-2">
+                        <Select
+                          value={isCustomId ? "custom" : currentVoiceId}
+                          onValueChange={(val) => {
+                            if (val === "custom") return;
+                            updateAvatar(avatarIndex, avatarTtsProvider === 'minimax' ? 'tts_voice_id' : 'elevenlabs_voice_id', val);
+                          }}
+                        >
+                           <SelectTrigger className="h-11 w-full rounded-xl border-none bg-slate-100 px-4 text-sm font-bold">
+                              <SelectValue placeholder="Выберите голос" />
+                           </SelectTrigger>
+                           <SelectContent className="max-h-80">
+                              <SelectItem value="custom" className="font-bold text-primary italic">
+                                 [+] Ввести ID вручную...
+                              </SelectItem>
+                              {avatarTtsProvider === 'minimax' ? (
+                                 minimaxVoices.map(v => <SelectItem key={v.voice_id} value={v.voice_id}>{v.voice_name}</SelectItem>)
+                              ) : (
+                                 elevenlabsVoices.map(v => <SelectItem key={v.voice_id} value={v.voice_id}>{v.name}</SelectItem>)
+                              )}
+                           </SelectContent>
+                        </Select>
+                        
+                        {isCustomId && (
+                           <div className="space-y-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                             <input
+                                value={currentVoiceId === "custom" ? "" : currentVoiceId}
+                                onChange={(e) => updateAvatar(avatarIndex, avatarTtsProvider === 'minimax' ? 'tts_voice_id' : 'elevenlabs_voice_id', e.target.value.trim())}
+                                className="w-full rounded-xl border-none bg-slate-100 px-4 py-2.5 text-xs font-mono outline-none ring-2 ring-primary/20 focus:ring-primary/40 transition-shadow"
+                                placeholder="Вставьте ID голоса здесь..."
+                             />
+                             <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest px-1">
+                                Активен ручной ввод ID
+                             </p>
+                           </div>
+                        )}
+                      </div>
+                    </div>
                 </div>
              </div>
           </div>
