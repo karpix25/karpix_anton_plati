@@ -36,9 +36,9 @@ export function Sidebar({
             <BarChart3 className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-xl font-black leading-none text-foreground">Precision Layer</h1>
-            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Контент-движок
+            <h1 className="text-xl font-black leading-none text-foreground uppercase tracking-tight">Контент машина</h1>
+            <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground whitespace-nowrap">
+              Для ИИ аватаров с B-roll
             </p>
           </div>
         </div>

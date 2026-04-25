@@ -63,11 +63,11 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
       <header className="sticky top-0 z-30 border-b border-[#e5ebf0] bg-white/80 px-8 py-4 backdrop-blur-md">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h1 className="text-2xl font-black tracking-tight text-foreground uppercase italic">
-              Project Settings
+            <h1 className="text-2xl font-black tracking-tight text-foreground uppercase italicLine">
+              Контент машина
             </h1>
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              ID: {props.selectedClientId || "Unselected"}
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">
+              Настройки проекта: {props.selectedClientId || "Unselected"}
             </p>
           </div>
           

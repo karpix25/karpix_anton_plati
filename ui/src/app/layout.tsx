@@ -4,8 +4,8 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { Toaster } from "sonner";
 
 export const metadata: Metadata = {
-  title: "Reference Rewrite Console",
-  description: "Reference library and scenario generation workspace",
+  title: "Контент машина | AI Avatar Workspace",
+  description: "Для ИИ аватаров с B-roll — генератор рекламного контента",
 };
 
 export default function RootLayout({
