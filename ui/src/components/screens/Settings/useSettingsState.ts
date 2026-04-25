@@ -69,13 +69,21 @@ export const useSettingsState = ({
 
   const subtitlePreviewRef = useRef<HTMLDivElement>(null);
 
-  // Synchronize with props
+  // Synchronize with props only if they actually represent different data
   useEffect(() => {
-    setDraftSettings(normalizeSettings(settings));
-  }, [settings]);
+    const normalized = normalizeSettings(settings);
+    if (JSON.stringify(normalized) !== JSON.stringify(draftSettings)) {
+      setDraftSettings(normalized);
+      setLastSavedSettings(normalized);
+    }
+  }, [settings]); // Depend only on settings, not on draftSettings stable ref
 
   useEffect(() => {
-    setAvatarConfigs(initialAvatarConfigs.map((a, i) => normalizeAvatar(a, i)));
+    const normalized = initialAvatarConfigs.map((a, i) => normalizeAvatar(a, i));
+    if (JSON.stringify(normalized) !== JSON.stringify(avatarConfigs)) {
+      setAvatarConfigs(normalized);
+      setLastSavedAvatars(normalized);
+    }
   }, [initialAvatarConfigs]);
 
   // Subtitle Preview Scale logic
@@ -97,36 +105,24 @@ export const useSettingsState = ({
 
   // Debounced Settings Auto-save
   useEffect(() => {
-    // Skip if basically same as what we just saved or initial load
+    // Avoid circular saves: only save if draft differs from initial props AND last saved state
+    const normalizedProps = normalizeSettings(settings);
+    if (JSON.stringify(draftSettings) === JSON.stringify(normalizedProps)) return;
     if (JSON.stringify(draftSettings) === JSON.stringify(lastSavedSettings)) return;
     
-    // Skip initial sync
-    if (!lastSavedSettings) {
-      setLastSavedSettings(draftSettings);
-      return;
-    }
-
     const timer = setTimeout(() => {
       onSave(draftSettings);
       setLastSavedSettings(draftSettings);
-      toast.success("Настройки проекта сохранены", {
-        description: "Ваши изменения успешно применены.",
-        duration: 2000,
-      });
-    }, 1500);
+    }, 3000);
 
     return () => clearTimeout(timer);
-  }, [draftSettings, onSave, lastSavedSettings]);
+  }, [draftSettings, onSave, lastSavedSettings, settings]);
 
   // Debounced HeyGen Auto-save
   useEffect(() => {
-    // Skip if essentially equal or initial
+    const normalizedProps = initialAvatarConfigs.map((a, i) => normalizeAvatar(a, i));
+    if (JSON.stringify(avatarConfigs) === JSON.stringify(normalizedProps)) return;
     if (JSON.stringify(avatarConfigs) === JSON.stringify(lastSavedAvatars)) return;
-
-    if (!lastSavedAvatars) {
-      setLastSavedAvatars(avatarConfigs);
-      return;
-    }
 
     const timer = setTimeout(() => {
       const sanitized = avatarConfigs
@@ -142,14 +138,10 @@ export const useSettingsState = ({
 
       onSaveHeygenAvatars(sanitized);
       setLastSavedAvatars(avatarConfigs);
-      toast.success("HeyGen Pool обновлен", {
-        description: "Конфигурация аватаров сохранена.",
-        duration: 2000,
-      });
-    }, 2000);
+    }, 5000);
 
     return () => clearTimeout(timer);
-  }, [avatarConfigs, onSaveHeygenAvatars, lastSavedAvatars]);
+  }, [avatarConfigs, onSaveHeygenAvatars, lastSavedAvatars, initialAvatarConfigs]);
 
   // HeyGen motion polling
   useEffect(() => {
