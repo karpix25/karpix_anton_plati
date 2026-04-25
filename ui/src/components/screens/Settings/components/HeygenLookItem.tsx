@@ -97,11 +97,11 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
                  value={look.look_name}
                  onChange={(e) => updateLook(avatarIndex, lookIndex, "look_name", e.target.value)}
                  className="w-full rounded-lg border-none bg-slate-100 px-3 py-2 text-sm font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                 placeholder="Main Outfit"
+                 placeholder="Основной костюм"
                />
              </div>
              <div className="space-y-1">
-               <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">ID</label>
+               <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">ID Образа</label>
                <input
                  value={look.look_id}
                  onChange={(e) => updateLook(avatarIndex, lookIndex, "look_id", e.target.value)}
@@ -113,7 +113,7 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
 
           <div className="space-y-3 flex flex-col justify-center">
              <div className="space-y-1">
-               <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Preview URL</label>
+               <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">URL превью</label>
                <input
                  value={look.preview_image_url || ""}
                  onChange={(e) => updateLook(avatarIndex, lookIndex, "preview_image_url", e.target.value)}
@@ -122,7 +122,7 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
                />
              </div>
              <div className="space-y-1">
-                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Motion Type</label>
+                <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Тип движения</label>
                 <Select
                   value={look.motion_type || DEFAULT_HEYGEN_MOTION_TYPE}
                   onValueChange={(val) => updateLookMotionField(avatarIndex, lookIndex, "motion_type", val)}
@@ -140,7 +140,7 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
           </div>
 
           <div className="space-y-1 flex flex-col justify-center">
-            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Motion Prompt</label>
+            <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Промпт для движения (на русском)</label>
             <div className="relative flex-1">
               <textarea
                 value={look.motion_prompt || DEFAULT_HEYGEN_MOTION_PROMPT}
@@ -210,7 +210,7 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
        {isSelected && (
           <div className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 pt-4">
             <div className="space-y-1">
-                 <div className="text-[10px] font-black uppercase tracking-widest text-foreground">Motion Actions</div>
+                 <div className="text-[10px] font-black uppercase tracking-widest text-foreground">Действия движения</div>
                  {look.motion_error && <p className="text-[10px] text-rose-500 font-bold">{look.motion_error}</p>}
                  {look.motion_look_id && <p className="text-[9px] font-mono text-slate-400">ID: {look.motion_look_id}</p>}
             </div>

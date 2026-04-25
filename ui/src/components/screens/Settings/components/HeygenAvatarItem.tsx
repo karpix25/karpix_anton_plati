@@ -160,7 +160,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                    {avatar.preview_image_url ? (
                       <img src={avatar.preview_image_url} className="h-full w-full object-cover" referrerPolicy="no-referrer" alt="" />
                    ) : (
-                      <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold uppercase">No Preview</div>
+                      <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold uppercase">Нет превью</div>
                    )}
                 </div>
                 <Button 
@@ -177,7 +177,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
              <div className="space-y-6">
                 <div className="grid gap-4 sm:grid-cols-2">
                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Internal Name</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Внутреннее имя</label>
                       <input
                         value={avatar.avatar_name}
                         onChange={(e) => updateAvatar(avatarIndex, "avatar_name", e.target.value)}
@@ -186,7 +186,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                       />
                    </div>
                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">HeyGen Avatar ID</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">ID аватара HeyGen</label>
                       <input
                         value={avatar.avatar_id}
                         onChange={(e) => updateAvatar(avatarIndex, "avatar_id", e.target.value)}
@@ -197,7 +197,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
 
                 <div className="grid gap-4 sm:grid-cols-3">
                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Provider</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Провайдер</label>
                       <Select
                         value={avatarTtsProvider}
                         onValueChange={(val: "minimax" | "elevenlabs") => updateAvatar(avatarIndex, "tts_provider", val)}
@@ -212,7 +212,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                       </Select>
                    </div>
                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Narrator Gender</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Пол диктора</label>
                       <Select
                         value={avatar.gender || "female"}
                         onValueChange={(val: "male" | "female") => updateAvatar(avatarIndex, "gender", val)}
@@ -221,13 +221,13 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                             <SelectValue />
                          </SelectTrigger>
                          <SelectContent>
-                            <SelectItem value="female">Female</SelectItem>
-                            <SelectItem value="male">Male</SelectItem>
+                            <SelectItem value="female">Женский</SelectItem>
+                            <SelectItem value="male">Мужской</SelectItem>
                          </SelectContent>
                       </Select>
                    </div>
                     <div className="space-y-1.5 min-w-0 flex-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Voice ID</label>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">ID Голоса</label>
                       <div className="flex flex-col gap-2">
                         <Select
                           value={isCustomId ? "custom" : currentVoiceId}
@@ -272,7 +272,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
           <div className="space-y-6 pt-4">
              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="space-y-1">
-                   <h4 className="text-sm font-black uppercase tracking-widest text-foreground">Configured Looks</h4>
+                   <h4 className="text-sm font-black uppercase tracking-widest text-foreground">Настроенные образы (Looks)</h4>
                    <p className="text-[11px] text-muted-foreground font-medium">Inside this avatar, one active look will be picked randomly for each video.</p>
                 </div>
                 <Button 

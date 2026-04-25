@@ -820,7 +820,7 @@ export function ScenariosScreen({
                   <TableHead>Источник</TableHead>
                   <TableHead>Тема</TableHead>
                   <TableHead>Паттерн</TableHead>
-                  <TableHead className="text-center">TTS</TableHead>
+                  <TableHead className="text-center">Озвучка (TTS)</TableHead>
                   <TableHead className="text-center">Видео</TableHead>
                   <TableHead className="text-right">Стоимость</TableHead>
                   <TableHead>Дата/время</TableHead>
@@ -1737,7 +1737,7 @@ export function ScenariosScreen({
                               ) : null}
                               {item.video_url ? (
                                 <div className="mb-3 space-y-3">
-                                  <div className="text-xs text-slate-500">KIE generation result</div>
+                                  <div className="text-xs text-slate-500">Результат генерации KIE (B-roll)</div>
                                   <video src={item.video_url} controls className="w-full rounded-xl border border-sky-100 bg-black" />
                                 </div>
                               ) : null}
