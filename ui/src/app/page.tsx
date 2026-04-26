@@ -247,6 +247,7 @@ export default function CuratorDashboard() {
       learned_rules_scenario: selectedClient?.learned_rules_scenario || "",
       learned_rules_visual: selectedClient?.learned_rules_visual || "",
       learned_rules_video: selectedClient?.learned_rules_video || "",
+      typography_hook_enabled: selectedClient?.typography_hook_enabled || false,
     }},
     [selectedClient]
   );
