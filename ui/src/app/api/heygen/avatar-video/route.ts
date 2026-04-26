@@ -49,6 +49,7 @@ type SelectedTalkingPhoto = {
 };
 
 const AVATAR_RR_LOCK_BASE_KEY = 2026033100;
+const heygenStatusSignatureCache = new Map<number, string>();
 
 function getHeygenApiKey() {
   const apiKey = process.env.HEYGEN_API_KEY;
@@ -647,7 +648,6 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const scenarioId = Number.parseInt(searchParams.get("scenarioId") || "", 10);
-    console.log(`[HEYGEN] GET status check: scenarioId=${String(searchParams.get("scenarioId") || "NULL")}`);
 
     if (!Number.isFinite(scenarioId)) {
       return NextResponse.json({ error: "scenarioId is required" }, { status: 400 });
@@ -663,6 +663,20 @@ export async function GET(request: Request) {
     }
 
     const result = await refreshHeygenStatus(scenarioId, scenario.heygen_video_id);
+    const signature = JSON.stringify({
+      status: result.status || null,
+      hasVideo: Boolean(result.videoUrl),
+      error: result.error || null,
+    });
+    const previousSignature = heygenStatusSignatureCache.get(scenarioId);
+    if (signature !== previousSignature) {
+      heygenStatusSignatureCache.set(scenarioId, signature);
+      console.log(
+        `[HEYGEN] status changed: scenarioId=${scenarioId} videoId=${scenario.heygen_video_id} status=${
+          result.status || "unknown"
+        } hasVideo=${result.videoUrl ? "yes" : "no"} error=${result.error || "none"}`
+      );
+    }
 
     if (result.error) {
       await notifyServicePaymentIssue(scenario.client_id, "HeyGen (Video)", result.error);
