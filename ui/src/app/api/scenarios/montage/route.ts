@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { existsSync } from "fs";
-import { readFile } from "fs/promises";
+import { createReadStream, existsSync } from "fs";
+import { stat } from "fs/promises";
 import pool from "@/lib/db";
 
 export async function GET(request: Request) {
@@ -26,10 +26,51 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Montage video not found" }, { status: 404 });
     }
 
-    const buffer = await readFile(filePath);
-    return new NextResponse(buffer, {
+    const fileStat = await stat(filePath);
+    const fileSize = fileStat.size;
+    const range = request.headers.get("range");
+
+    if (range) {
+      const bytesPrefix = "bytes=";
+      if (!range.startsWith(bytesPrefix)) {
+        return new NextResponse("Malformed range header", { status: 416 });
+      }
+
+      const rangeValue = range.slice(bytesPrefix.length);
+      const [startRaw, endRaw] = rangeValue.split("-");
+      const start = Number.parseInt(startRaw, 10);
+      const end = endRaw ? Number.parseInt(endRaw, 10) : fileSize - 1;
+
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || end >= fileSize) {
+        return new NextResponse("Requested range not satisfiable", {
+          status: 416,
+          headers: {
+            "Content-Range": `bytes */${fileSize}`,
+          },
+        });
+      }
+
+      const chunkSize = end - start + 1;
+      const stream = createReadStream(filePath, { start, end });
+
+      return new NextResponse(stream as unknown as ReadableStream, {
+        status: 206,
+        headers: {
+          "Content-Type": "video/mp4",
+          "Accept-Ranges": "bytes",
+          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+          "Content-Length": String(chunkSize),
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    const stream = createReadStream(filePath);
+    return new NextResponse(stream as unknown as ReadableStream, {
       headers: {
         "Content-Type": "video/mp4",
+        "Accept-Ranges": "bytes",
+        "Content-Length": String(fileSize),
         "Cache-Control": "no-store",
       },
     });
