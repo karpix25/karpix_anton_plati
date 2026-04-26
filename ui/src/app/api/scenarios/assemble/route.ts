@@ -102,7 +102,7 @@ type TimelinePromptWindow = {
 const OUTPUT_WIDTH = 1080;
 const OUTPUT_HEIGHT = 1920;
 const OUTPUT_FPS = 30;
-const MIN_BROLL_SEGMENT_SECONDS = 3.0;
+const MIN_BROLL_SEGMENT_SECONDS = 2.0;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
 const DEFAULT_PRODUCT_CLIP_SECONDS = 4;
 const FRAME_EPSILON_SECONDS = 1 / OUTPUT_FPS;
@@ -111,7 +111,7 @@ const AVATAR_PLANS = [
   { start: 1.00, end: 1.20 }, // WIDE (Общий)
   { start: 1.35, end: 1.55 }, // MEDIUM (Средний)
 ];
-const MIN_AVATAR_GAP_SECONDS = 3.5;
+const MIN_AVATAR_GAP_SECONDS = 2.5;
 const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || "").trim() === "1";
 
 const VIDEO_URL_HINTS = [".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8"];
