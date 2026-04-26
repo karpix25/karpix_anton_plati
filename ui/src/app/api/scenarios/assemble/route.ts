@@ -220,17 +220,37 @@ async function probeVideoDimensions(filePath: string) {
 }
 
 function parseFaceMetadata(raw: string): FaceBox | null {
-  const xMatch = raw.match(/lavfi\.facedetect\.x=([0-9.]+)/);
-  const yMatch = raw.match(/lavfi\.facedetect\.y=([0-9.]+)/);
-  const wMatch = raw.match(/lavfi\.facedetect\.w=([0-9.]+)/);
-  const hMatch = raw.match(/lavfi\.facedetect\.h=([0-9.]+)/);
-  if (!xMatch || !yMatch || !wMatch || !hMatch) return null;
-  const x = Number(xMatch[1]);
-  const y = Number(yMatch[1]);
-  const w = Number(wMatch[1]);
-  const h = Number(hMatch[1]);
-  if (![x, y, w, h].every(Number.isFinite)) return null;
-  return { x, y, w, h };
+  const xMatches = [...raw.matchAll(/lavfi\.facedetect\.x=([0-9.]+)/g)];
+  const yMatches = [...raw.matchAll(/lavfi\.facedetect\.y=([0-9.]+)/g)];
+  const wMatches = [...raw.matchAll(/lavfi\.facedetect\.w=([0-9.]+)/g)];
+  const hMatches = [...raw.matchAll(/lavfi\.facedetect\.h=([0-9.]+)/g)];
+
+  const count = Math.min(
+    xMatches.length,
+    yMatches.length,
+    wMatches.length,
+    hMatches.length
+  );
+  if (count <= 0) return null;
+
+  let best: FaceBox | null = null;
+  let bestArea = -1;
+
+  for (let i = 0; i < count; i++) {
+    const x = Number(xMatches[i]?.[1]);
+    const y = Number(yMatches[i]?.[1]);
+    const w = Number(wMatches[i]?.[1]);
+    const h = Number(hMatches[i]?.[1]);
+    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
+
+    const area = w * h;
+    if (area > bestArea) {
+      bestArea = area;
+      best = { x, y, w, h };
+    }
+  }
+
+  return best;
 }
 
 async function detectFaceAtTime(filePath: string, timeSeconds: number): Promise<FaceBox | null> {
@@ -255,18 +275,59 @@ async function detectFaceAtTime(filePath: string, timeSeconds: number): Promise<
   }
 }
 
-function chooseStableFaceSampleTime(duration: number) {
-  if (!Number.isFinite(duration) || duration <= 0) return 0;
-  const half = duration / 2;
+function chooseStableFaceSampleTimes(duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0) return [0];
   const maxStart = Math.max(duration - 0.05, 0);
-  const candidate = Math.min(1, half, maxStart);
-  return candidate > 0 ? candidate : 0;
+  if (maxStart <= 0) return [0];
+
+  const candidates = [
+    Math.min(0.4, maxStart),
+    duration * 0.25,
+    duration * 0.5,
+    duration * 0.75,
+    Math.max(maxStart - 0.4, 0),
+  ];
+
+  const unique = new Set<number>();
+  for (const candidate of candidates) {
+    if (!Number.isFinite(candidate)) continue;
+    const clamped = Math.max(0, Math.min(maxStart, candidate));
+    unique.add(Number(clamped.toFixed(3)));
+  }
+
+  return [...unique].sort((a, b) => a - b);
+}
+
+function median(values: number[]) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[middle];
+  return (sorted[middle - 1] + sorted[middle]) / 2;
 }
 
 async function detectStableFaceCenter(filePath: string): Promise<FaceBox | null> {
   const duration = await probeDurationSeconds(filePath);
-  const sampleTime = chooseStableFaceSampleTime(duration);
-  return detectFaceAtTime(filePath, sampleTime);
+  const sampleTimes = chooseStableFaceSampleTimes(duration);
+  const detected: FaceBox[] = [];
+
+  for (const sampleTime of sampleTimes) {
+    const face = await detectFaceAtTime(filePath, sampleTime);
+    if (face) detected.push(face);
+  }
+  if (!detected.length) return null;
+
+  const centerX = median(detected.map((box) => box.x + box.w / 2));
+  const centerY = median(detected.map((box) => box.y + box.h / 2));
+  const width = Math.max(1, median(detected.map((box) => box.w)));
+  const height = Math.max(1, median(detected.map((box) => box.h)));
+
+  return {
+    x: Math.max(0, centerX - width / 2),
+    y: Math.max(0, centerY - height / 2),
+    w: width,
+    h: height,
+  };
 }
 
 function buildAvatarFilter(options: {
@@ -956,16 +1017,27 @@ async function buildMontage(scenarioId: number) {
         // ignore
       }
     }
-    const faceCenterX = stableAvatarFaceBox
+    const frameCenterX = dims ? dims.width / 2 : OUTPUT_WIDTH / 2;
+    const detectedFaceCenterX = stableAvatarFaceBox
       ? stableAvatarFaceBox.x + stableAvatarFaceBox.w / 2
-      : dims
-        ? dims.width / 2
-        : OUTPUT_WIDTH / 2;
-    const faceCenterY = stableAvatarFaceBox
+      : frameCenterX;
+    const detectedFaceCenterY = stableAvatarFaceBox
       ? stableAvatarFaceBox.y + stableAvatarFaceBox.h / 2
       : dims
         ? dims.height * AVATAR_FACE_FALLBACK_Y
         : OUTPUT_HEIGHT * 0.42;
+
+    // If the source is already centered, force exact center to avoid horizontal drift while zooming.
+    const nearCenter = dims
+      ? Math.abs(detectedFaceCenterX - frameCenterX) <= dims.width * 0.08
+      : false;
+    const resolvedFaceCenterX = nearCenter ? frameCenterX : detectedFaceCenterX;
+    const faceCenterX = dims
+      ? Math.max(0, Math.min(dims.width, resolvedFaceCenterX))
+      : resolvedFaceCenterX;
+    const faceCenterY = dims
+      ? Math.max(0, Math.min(dims.height, detectedFaceCenterY))
+      : detectedFaceCenterY;
     const avatarBaseFilter = buildCyclingAvatarFilter({
       totalDuration,
       faceCenterX,
