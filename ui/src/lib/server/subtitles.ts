@@ -326,10 +326,18 @@ ${events
 
 function buildFontFallbackUrls(
   url: string,
-  fontFamilyKey: SubtitleRenderSettings["subtitle_font_family"]
+  fontFamilyKey: SubtitleFontFamily
 ) {
   const fallbacks: string[] = [];
+
+  // Try jsDelivr mirror as primary fallback
   if (url.startsWith("https://raw.githubusercontent.com/google/fonts/main/")) {
+    fallbacks.push(
+      url.replace(
+        "https://raw.githubusercontent.com/google/fonts/main/",
+        "https://cdn.jsdelivr.net/gh/google/fonts@main/"
+      )
+    );
     fallbacks.push(
       url.replace(
         "https://raw.githubusercontent.com/google/fonts/main/",
@@ -338,30 +346,35 @@ function buildFontFallbackUrls(
     );
   }
 
-  if (fontFamilyKey === "pt_sans") {
-    const isBold = url.toLowerCase().includes("bold");
-    const weight = isBold ? "Bold" : "Regular";
-
-    fallbacks.push(
-      `https://raw.githubusercontent.com/paratype/pt-sans/master/fonts/ttf/PTSans-${weight}.ttf`,
-      `https://github.com/paratype/pt-sans/raw/master/fonts/ttf/PTSans-${weight}.ttf`,
-      `https://raw.githubusercontent.com/google/fonts/main/ofl/ptsans/PT_Sans-Web-${weight}.ttf`,
-      `https://github.com/google/fonts/raw/main/ofl/ptsans/PT_Sans-Web-${weight}.ttf`
-    );
-  }
-
+  // Handle common "static" folder migration in Google Fonts repo
+  const isBold = url.toLowerCase().includes("bold");
+  const weight = isBold ? "Bold" : "Regular";
+  
   if (fontFamilyKey === "montserrat") {
-    const isBold = url.toLowerCase().includes("bold");
-    const weight = isBold ? "Bold" : "Regular";
     fallbacks.push(
       `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-${weight}.ttf`,
-      `https://github.com/google/fonts/raw/main/ofl/montserrat/static/Montserrat-${weight}.ttf`,
+      `https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/static/Montserrat-${weight}.ttf`,
       `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-${weight}.ttf`,
       `https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-${weight}.ttf`
     );
+  } else if (fontFamilyKey === "pt_sans") {
+    fallbacks.push(
+      `https://raw.githubusercontent.com/paratype/pt-sans/master/fonts/ttf/PTSans-${weight}.ttf`,
+      `https://github.com/paratype/pt-sans/raw/master/fonts/ttf/PTSans-${weight}.ttf`,
+      `https://raw.githubusercontent.com/google/fonts/main/ofl/ptsans/PT_Sans-Web-${weight}.ttf`
+    );
+  } else {
+    // General fallback: try swapping static/ part
+    if (url.includes("/static/")) {
+      fallbacks.push(url.replace("/static/", "/"));
+    } else {
+      const parts = url.split("/");
+      const fileName = parts.pop();
+      fallbacks.push([...parts, "static", fileName].join("/"));
+    }
   }
 
-  return fallbacks;
+  return [...new Set(fallbacks)]; // Unique fallbacks
 }
 
 async function downloadFileIfMissing(urls: string[], targetPath: string) {
