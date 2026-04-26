@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
         SUM(prompt_count) as total_prompts,
         SUM(heygen_duration) as total_heygen_duration,
         -- Approximate total cost calculation in SQL
-        -- models: seedance_15_pro: 0.07, grok: 0.1, veo3: 0.15, fast: 0.08, lite: 0.04, other: 0.03
+        -- models: seedance_15_pro: 0.07, grok: 0.1, veo3: 0.15, fast: 0.08, lite: 0.30, other: 0.03
         SUM(
           prompt_count * (
             CASE 
@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
               WHEN model = 'grok-imagine/text-to-video' THEN 0.1
               WHEN model = 'veo3' THEN 0.15
               WHEN model = 'veo3_fast' THEN 0.08
-              WHEN model = 'veo3_lite' THEN 0.04
+              WHEN model = 'veo3_lite' THEN 0.30
               ELSE 0.03
             END
           ) + (heygen_duration / 60.0) * 1.0
