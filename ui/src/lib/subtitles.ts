@@ -76,8 +76,8 @@ export const SUBTITLE_FONT_OPTIONS: Record<
     family: "Montserrat",
     description: "Выразительный гротеск с сильным рекламным ощущением.",
     stylesheetUrl: "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap&subset=cyrillic",
-    regularUrl: "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Regular.ttf",
-    boldUrl: "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Bold.ttf",
+    regularUrl: "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Regular.ttf",
+    boldUrl: "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-Bold.ttf",
   },
   oswald: {
     title: "Oswald",

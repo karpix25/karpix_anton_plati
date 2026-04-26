@@ -217,32 +217,43 @@ function escapeFilterExpr(value: string) {
 function buildCyclingAvatarFilter(options: {
   brollEndTimes: number[];
 }) {
-  const zoomChangePoints: { threshold: number; zoom: number }[] = [
-    {
-      threshold: 0,
-      zoom: AVATAR_ANIMATE_ZOOM ? AVATAR_PLANS[0].start : AVATAR_PLANS[0].end,
-    },
-  ];
-  for (let i = 0; i < options.brollEndTimes.length; i++) {
-    const planIdx = (i + 1) % AVATAR_PLANS.length;
+  const intervals: { start: number; end: number; zStart: number; zEnd: number }[] = [];
+  
+  let lastT = 0;
+  for (let i = 0; i <= options.brollEndTimes.length; i++) {
+    const endT = options.brollEndTimes[i] || 9999; // 9999 as "infinity" for the last segment
+    const planIdx = i % AVATAR_PLANS.length;
     const plan = AVATAR_PLANS[planIdx];
-    zoomChangePoints.push({
-      threshold: options.brollEndTimes[i],
-      zoom: AVATAR_ANIMATE_ZOOM ? plan.start : plan.end,
+    
+    intervals.push({
+      start: lastT,
+      end: endT,
+      zStart: plan.start,
+      zEnd: plan.end,
     });
+    lastT = endT;
   }
 
-  // Build nested if() expression: if(lt(t,T1),Z0,if(lt(t,T2),Z1,...,Zn))
-  let zoomExprRaw: string;
-  if (zoomChangePoints.length <= 1) {
-    zoomExprRaw = String(zoomChangePoints[0]?.zoom || 1.35);
+  // Build zoom expression
+  // If ANIMATE: zStart + (zEnd - zStart) * (t - start) / (end - start)
+  // Else: zEnd (constant for segment)
+  let zoomExprRaw = "";
+  if (AVATAR_ANIMATE_ZOOM) {
+    zoomExprRaw = String(intervals[intervals.length - 1].zEnd);
+    for (let i = intervals.length - 1; i >= 0; i--) {
+      const { start, end, zStart, zEnd } = intervals[i];
+      const duration = end - start;
+      const progress = duration > 0 ? `(t-${start.toFixed(3)})/${duration.toFixed(3)}` : "0";
+      const segmentZoom = `${zStart.toFixed(3)}+(${zEnd.toFixed(3)}-${zStart.toFixed(3)})*${progress}`;
+      zoomExprRaw = i === intervals.length - 1 
+        ? segmentZoom 
+        : `if(lt(t,${end.toFixed(3)}),${segmentZoom},${zoomExprRaw})`;
+    }
   } else {
-    zoomExprRaw = String(
-      zoomChangePoints[zoomChangePoints.length - 1].zoom
-    );
-    for (let i = zoomChangePoints.length - 2; i >= 0; i--) {
-      const nextT = zoomChangePoints[i + 1].threshold;
-      zoomExprRaw = `if(lt(t,${nextT.toFixed(3)}),${zoomChangePoints[i].zoom},${zoomExprRaw})`;
+    zoomExprRaw = String(intervals[intervals.length - 1].zEnd);
+    for (let i = intervals.length - 2; i >= 0; i--) {
+      const { end, zEnd } = intervals[i];
+      zoomExprRaw = `if(lt(t,${end.toFixed(3)}),${zEnd.toFixed(3)},${zoomExprRaw})`;
     }
   }
 
@@ -250,10 +261,14 @@ function buildCyclingAvatarFilter(options: {
 
   return [
     "setpts=PTS-STARTPTS",
+    "setsar=1",
+    // 1. Scale and crop to exact 9:16 base FIRST to ensure we have a centered 1080x1920 frame
     `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase`,
-    `scale=iw*(${zoomExpr}):-1:eval=frame`, // Use -1 to keep aspect ratio perfect
-    // Force geometric center crop on every frame to avoid horizontal drift.
-    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=(iw-ow)/2:y=(ih-oh)/2`,
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:(iw-ow)/2:(ih-oh)/2`,
+    // 2. Apply zoom relative to this centered base
+    `scale=iw*(${zoomExpr}):-1:eval=frame`,
+    // 3. Final crop to target size, always anchoring at the center
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:(iw-ow)/2:(ih-oh)/2`,
     `fps=${OUTPUT_FPS}`,
     "format=yuv420p",
     "setsar=1",

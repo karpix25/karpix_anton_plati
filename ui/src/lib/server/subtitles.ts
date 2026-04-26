@@ -31,6 +31,7 @@ type SubtitleEvent = {
   start: number;
   end: number;
   text: string;
+  isHook?: boolean;
 };
 
 const DEFAULT_SUBTITLE_SETTINGS: SubtitleRenderSettings = {
@@ -251,6 +252,7 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
         start,
         end,
         text: formattedText.trim(),
+        isHook: true,
       });
     }
   }
@@ -306,8 +308,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ${events
   .map(
     (event) => {
-      const isHook = event.text.includes("{\\fs"); // Heuristic for hook events
-      const style = isHook ? "Hook" : "Subtitle";
+      const style = event.isHook ? "Hook" : "Subtitle";
       return `Dialogue: 0,${formatAssTime(event.start)},${formatAssTime(event.end)},${style},,0,0,0,,${escapeAssText(event.text)}`;
     }
   )
