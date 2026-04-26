@@ -252,8 +252,9 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
 
         const style = `{\\b1}${anim}`;
         
-        // Use a trick for tight line spacing: {\fscy50}\N{\fscy100} 
-        // This reduces the vertical gap between lines
+        // Use a trick for tight line spacing: {\fscy40}\N{\fscy100} 
+        // This reduces the vertical gap between lines. 
+        // Force newline after every 2 words to keep it blocky.
         formattedText += `${style}${w}${needsNewline ? "{\\fscy40}\\N{\\fscy100}" : " "}`;
       });
 
@@ -301,7 +302,7 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
 
   return `[Script Info]
 ScriptType: v4.00+
-WrapStyle: 2
+WrapStyle: 0
 ScaledBorderAndShadow: yes
 PlayResX: ${SUBTITLE_PLAY_RES_X}
 PlayResY: ${SUBTITLE_PLAY_RES_Y}
@@ -310,7 +311,7 @@ Collisions: Normal
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Subtitle,${fontFamily},${fontSize},${primaryColour},${primaryColour},${outlineColour},${backColour},${bold},0,0,0,100,100,${spacing},0,${borderStyle},${outline},0,2,63,63,${marginV},1
-Style: Hook,${fontFamily},140,&H00FFFFFF,&H00FFFFFF,&H00111111,&H00000000,-1,0,0,0,100,100,0.5,0,1,4,0,5,60,60,140,1
+Style: Hook,${fontFamily},125,&H00FFFFFF,&H00FFFFFF,&H00111111,&H00000000,-1,0,0,0,100,100,0.5,0,1,4,0,5,110,110,140,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
