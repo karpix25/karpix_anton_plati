@@ -90,12 +90,21 @@ type ScenarioPromptItem = NonNullable<
   NonNullable<ScenarioRow["video_generation_prompts"]>["prompts"]
 >[number];
 
+type TimelinePromptWindow = {
+  start: number;
+  end: number;
+  assetType: string | null;
+  assetDurationSeconds: number;
+  source: string | null;
+};
+
 const OUTPUT_WIDTH = 720;
 const OUTPUT_HEIGHT = 1280;
 const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
 const DEFAULT_PRODUCT_CLIP_SECONDS = 4;
+const FRAME_EPSILON_SECONDS = 1 / OUTPUT_FPS;
 const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.5;
 const FIRST_AVATAR_INTRO_MAX_SECONDS = 3.0;
 const AVATAR_PLANS = [
@@ -463,6 +472,41 @@ function resolvePromptSource(
   return null;
 }
 
+function getPromptMinDurationSeconds(item: TimelinePromptWindow) {
+  if (item.assetType === "product_video") {
+    return Math.max(
+      MIN_PRODUCT_SEGMENT_SECONDS,
+      Number.isFinite(item.assetDurationSeconds) && item.assetDurationSeconds > 0
+        ? item.assetDurationSeconds
+        : DEFAULT_PRODUCT_CLIP_SECONDS
+    );
+  }
+  return MIN_BROLL_SEGMENT_SECONDS;
+}
+
+function toFrameTime(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  const frames = Math.round(Math.max(0, value) * OUTPUT_FPS);
+  return Number((frames / OUTPUT_FPS).toFixed(3));
+}
+
+function subtractReservedWindow(
+  base: TimelinePromptWindow,
+  reserved: TimelinePromptWindow
+) {
+  if (reserved.end <= base.start || reserved.start >= base.end) {
+    return [base];
+  }
+  const chunks: TimelinePromptWindow[] = [];
+  if (reserved.start > base.start) {
+    chunks.push({ ...base, end: reserved.start });
+  }
+  if (reserved.end < base.end) {
+    chunks.push({ ...base, start: reserved.end });
+  }
+  return chunks;
+}
+
 function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
   const rawPrompts = (scenario.video_generation_prompts?.prompts || [])
     .map((item) => {
@@ -535,11 +579,27 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
     );
   }
 
+  if (prompts.length > 0) {
+    const last = prompts[prompts.length - 1];
+    const tailGap = totalDuration - last.end;
+    if (tailGap > 0 && tailGap < MIN_AVATAR_GAP_SECONDS) {
+      console.log(
+        `[montage] Closing tail avatar gap: ${last.end.toFixed(2)}-${totalDuration.toFixed(2)} ` +
+        `(${tailGap.toFixed(2)}s < ${MIN_AVATAR_GAP_SECONDS}s min)`
+      );
+      last.end = Number(totalDuration.toFixed(3));
+    }
+  }
+
   const segments: TimelineSegment[] = [];
   let cursor = 0;
 
   for (const prompt of prompts) {
-    const start = Math.max(prompt.start, cursor);
+    let start = Math.max(prompt.start, cursor);
+    const preGap = start - cursor;
+    if (preGap > 0 && preGap < MIN_AVATAR_GAP_SECONDS) {
+      start = cursor;
+    }
     const end = Math.min(prompt.end, totalDuration);
     if (end <= start) continue;
 
@@ -581,60 +641,161 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
 }
 
 function normalizePromptWindows(
-  prompts: Array<{ start: number; end: number; assetType: string | null; assetDurationSeconds: number; source: string | null }>,
+  prompts: TimelinePromptWindow[],
   totalDuration: number
 ) {
-  const normalized = prompts.map((item) => ({ ...item }));
+  if (!prompts.length || totalDuration <= 0) return [];
 
-  for (let index = 0; index < normalized.length; index += 1) {
-    const item = normalized[index];
-    const start = item.start;
-    let end = item.end;
+  const prepared = prompts
+    .map((prompt) => {
+      const item = { ...prompt };
+      const minDuration = Math.min(totalDuration, getPromptMinDurationSeconds(item));
+      let start = Number.isFinite(item.start) ? item.start : 0;
+      let end = Number.isFinite(item.end) ? item.end : start;
 
-    const desiredDuration =
-      item.assetType === "product_video"
-        ? Math.max(
-            MIN_PRODUCT_SEGMENT_SECONDS,
-            Number.isFinite(item.assetDurationSeconds) && item.assetDurationSeconds > 0
-              ? item.assetDurationSeconds
-              : DEFAULT_PRODUCT_CLIP_SECONDS
-          )
-        : MIN_BROLL_SEGMENT_SECONDS;
+      start = Math.max(0, Math.min(start, totalDuration));
+      end = Math.max(start, Math.min(end, totalDuration));
 
-    if (item.assetType === "product_video") {
-      const targetEnd = Math.max(end, start + desiredDuration);
-      item.start = Math.max(0, Number(start.toFixed(3)));
-      item.end = Math.min(totalDuration, Number(targetEnd.toFixed(3)));
+      if (item.assetType === "product_video") {
+        // Hard-fit product clips to full source duration by shifting left near tail.
+        const latestStart = Math.max(0, totalDuration - minDuration);
+        start = Math.min(start, latestStart);
+        end = Math.max(end, start + minDuration);
+        if (end > totalDuration) {
+          end = totalDuration;
+          start = Math.max(0, end - minDuration);
+        }
+      } else if (end - start < minDuration) {
+        end = Math.min(totalDuration, start + minDuration);
+      }
+
+      start = toFrameTime(start);
+      end = toFrameTime(end);
+      if (end <= start) {
+        return null;
+      }
+      return { ...item, start, end };
+    })
+    .filter((item): item is TimelinePromptWindow => Boolean(item));
+
+  const productWindows = prepared
+    .filter((item) => item.assetType === "product_video")
+    .sort((a, b) => a.start - b.start);
+  const nonProductWindows = prepared
+    .filter((item) => item.assetType !== "product_video")
+    .sort((a, b) => a.start - b.start);
+
+  // Merge overlapping/nearby product segments (same asset) into one continuous block.
+  const mergedProducts: TimelinePromptWindow[] = [];
+  for (const product of productWindows) {
+    const prev = mergedProducts[mergedProducts.length - 1];
+    const sameSource = Boolean(prev?.source && product.source && prev.source === product.source);
+    const shouldMerge =
+      Boolean(prev) &&
+      (product.start <= (prev?.end ?? 0) || (sameSource && product.start - (prev?.end ?? 0) < MIN_AVATAR_GAP_SECONDS));
+
+    if (!prev || !shouldMerge) {
+      mergedProducts.push({ ...product });
       continue;
     }
 
-    let needed = desiredDuration - (end - start);
-
-    if (needed <= 0) {
-      continue;
-    }
-
-    const nextStart = index + 1 < normalized.length ? normalized[index + 1].start : totalDuration;
-
-    const extendRight = Math.min(needed, Math.max(0, nextStart - end));
-    end += extendRight;
-    needed -= extendRight;
-
-    item.start = Math.max(0, Number(start.toFixed(3)));
-    item.end = Math.min(totalDuration, Number(end.toFixed(3)));
+    prev.end = Math.max(prev.end, product.end);
+    prev.end = Math.min(totalDuration, toFrameTime(prev.end));
   }
 
-  return normalized;
+  // Reserve product windows first; carve non-product windows around them.
+  const carvedNonProducts: TimelinePromptWindow[] = [];
+  for (const nonProduct of nonProductWindows) {
+    let fragments: TimelinePromptWindow[] = [{ ...nonProduct }];
+    for (const reserved of mergedProducts) {
+      const nextFragments: TimelinePromptWindow[] = [];
+      for (const fragment of fragments) {
+        nextFragments.push(...subtractReservedWindow(fragment, reserved));
+      }
+      fragments = nextFragments;
+      if (!fragments.length) break;
+    }
+
+    for (const fragment of fragments) {
+      if (fragment.end - fragment.start >= MIN_BROLL_SEGMENT_SECONDS - FRAME_EPSILON_SECONDS) {
+        carvedNonProducts.push(fragment);
+      }
+    }
+  }
+
+  const combined = [...mergedProducts, ...carvedNonProducts].sort((a, b) => {
+    if (a.start !== b.start) return a.start - b.start;
+    const aPriority = a.assetType === "product_video" ? 1 : 0;
+    const bPriority = b.assetType === "product_video" ? 1 : 0;
+    return bPriority - aPriority;
+  });
+
+  const resolved: TimelinePromptWindow[] = [];
+  for (const original of combined) {
+    const item = { ...original };
+    const minDuration = Math.min(totalDuration, getPromptMinDurationSeconds(item));
+    const prev = resolved[resolved.length - 1];
+
+    if (prev && item.start < prev.end) {
+      if (item.assetType === "product_video" && prev.assetType !== "product_video") {
+        const prevMin = Math.min(totalDuration, getPromptMinDurationSeconds(prev));
+        const candidatePrevEnd = item.start;
+        if (candidatePrevEnd - prev.start >= prevMin - FRAME_EPSILON_SECONDS) {
+          prev.end = toFrameTime(candidatePrevEnd);
+        } else {
+          resolved.pop();
+        }
+      } else {
+        item.start = toFrameTime(prev.end);
+      }
+    }
+
+    if (item.end > totalDuration) {
+      item.end = toFrameTime(totalDuration);
+    }
+    if (item.end - item.start < minDuration - FRAME_EPSILON_SECONDS) {
+      if (item.assetType !== "product_video") {
+        continue;
+      }
+      // Keep product duration hard guarantee, even if we need to shift left.
+      item.end = toFrameTime(Math.min(totalDuration, Math.max(item.end, item.start + minDuration)));
+      item.start = toFrameTime(Math.max(0, item.end - minDuration));
+      const prevAfterShift = resolved[resolved.length - 1];
+      if (prevAfterShift && item.start < prevAfterShift.end) {
+        if (prevAfterShift.assetType === "product_video") {
+          continue;
+        }
+        const prevMin = Math.min(totalDuration, getPromptMinDurationSeconds(prevAfterShift));
+        const candidatePrevEnd = item.start;
+        if (candidatePrevEnd - prevAfterShift.start >= prevMin - FRAME_EPSILON_SECONDS) {
+          prevAfterShift.end = toFrameTime(candidatePrevEnd);
+        } else {
+          resolved.pop();
+        }
+      }
+    }
+
+    if (item.end - item.start > FRAME_EPSILON_SECONDS) {
+      resolved.push(item);
+    }
+  }
+
+  for (let index = 0; index < resolved.length - 1; index += 1) {
+    const current = resolved[index];
+    const next = resolved[index + 1];
+    const gap = next.start - current.end;
+    if (gap > 0 && gap < MIN_AVATAR_GAP_SECONDS) {
+      current.end = toFrameTime(next.start);
+    }
+  }
+
+  return resolved
+    .map((item) => ({ ...item, start: toFrameTime(item.start), end: toFrameTime(item.end) }))
+    .filter((item) => item.end - item.start > FRAME_EPSILON_SECONDS);
 }
 
 function ensureMinimumAvatarGaps(
-  prompts: Array<{
-    start: number;
-    end: number;
-    assetType: string | null;
-    assetDurationSeconds: number;
-    source: string | null;
-  }>
+  prompts: TimelinePromptWindow[]
 ) {
   if (prompts.length <= 1) return prompts;
 
