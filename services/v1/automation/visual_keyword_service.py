@@ -208,6 +208,34 @@ def _find_matching_product_keyword(product_keywords: List[str], phrase: str) -> 
             return keyword
     return None
 
+
+def _resolve_primary_product_duration_seconds(config: GenerationConfig) -> float:
+    primary_url = str(config.product_video_url or "").strip()
+    assets = config.product_media_assets or []
+
+    if isinstance(assets, list):
+        if primary_url:
+            for asset in assets:
+                if not isinstance(asset, dict):
+                    continue
+                if str(asset.get("url") or "").strip() != primary_url:
+                    continue
+                duration = _safe_float(asset.get("duration_seconds"), 0.0)
+                if duration > 0:
+                    return duration
+        for asset in assets:
+            if not isinstance(asset, dict):
+                continue
+            if str(asset.get("source_type") or "video").strip().lower() == "image":
+                continue
+            duration = _safe_float(asset.get("duration_seconds"), 0.0)
+            if duration > 0:
+                return duration
+
+    if primary_url:
+        return 4.0
+    return 0.0
+
 # --- TIMING ENGINE ---
 
 class TimingEngine:
@@ -624,11 +652,18 @@ class VisualSegmentProcessor:
     def _enforce_minimum_durations(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         for i, seg in enumerate(segments):
             start, end = seg["slot_start"], seg["slot_end"]
-            min_dur = MIN_PRODUCT_SEGMENT_SECONDS if seg.get("asset_type") == "product_video" else MIN_BROLL_SEGMENT_SECONDS
+            product_asset_dur = _safe_float(seg.get("asset_duration_seconds"), 0.0)
+            if seg.get("asset_type") == "product_video":
+                min_dur = max(MIN_PRODUCT_SEGMENT_SECONDS, product_asset_dur if product_asset_dur > 0 else 0.0)
+            else:
+                min_dur = MIN_BROLL_SEGMENT_SECONDS
             if end - start >= min_dur - 0.01: continue
             next_start = segments[i+1]["slot_start"] if i+1 < len(segments) else self.total_duration
             needed = min_dur - (end - start)
-            ext_right = min(needed, next_start - end)
+            if seg.get("asset_type") == "product_video":
+                ext_right = min(needed, self.total_duration - end)
+            else:
+                ext_right = min(needed, next_start - end)
             end += ext_right
             seg["slot_start"], seg["slot_end"] = round(start, 2), round(min(end, self.total_duration), 2)
         return segments
@@ -671,6 +706,7 @@ class VisualPromptBuilder:
 
     def build_user_prompt(self, words: List[Word], slots: List[TimingSlot]) -> str:
         product_keywords = _parse_product_keywords(self.config.product_keyword)
+        product_clip_duration = _resolve_primary_product_duration_seconds(self.config)
         timestamped_transcript = _get_timestamped_transcript(words)
         
         user_msg = f"""TRANSCRIPT WITH TIMESTAMPS:
@@ -698,6 +734,11 @@ STRICT VALIDATION TARGET:
                 "PRODUCT_KEYWORDS: обязательно выдели реальные упоминания: "
                 f"{keywords_hint}.\n"
             )
+            if product_clip_duration > 0:
+                user_msg += (
+                    "If should_use_product_clip=true, target slot duration should be at least "
+                    f"{product_clip_duration:.2f}s for that segment.\n"
+                )
         
         user_msg += f"""Return ONLY JSON in this format:
 {{

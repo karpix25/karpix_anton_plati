@@ -465,15 +465,24 @@ function resolvePromptSource(
 
 function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
   const rawPrompts = (scenario.video_generation_prompts?.prompts || [])
-    .map((item) => ({
+    .map((item) => {
+      const useReadyAsset =
+        item.use_ready_asset === true ||
+        String(item.use_ready_asset || "").trim().toLowerCase() === "true";
+      const resolvedAssetType = item.asset_type || (useReadyAsset ? "product_video" : null);
+      const resolvedAssetDurationSeconds = Number(
+        item.asset_duration_seconds || (useReadyAsset ? DEFAULT_PRODUCT_CLIP_SECONDS : 0)
+      );
+      return {
       // slot_* is post-processed final timing (guardrails/first-cut fixes),
       // so it must have priority over raw word_* timestamps.
       start: Number(item.slot_start ?? item.word_start ?? 0),
       end: Number(item.slot_end ?? item.word_end ?? 0),
-      assetType: item.asset_type || null,
-      assetDurationSeconds: Number(item.asset_duration_seconds || 0),
+      assetType: resolvedAssetType,
+      assetDurationSeconds: Number.isFinite(resolvedAssetDurationSeconds) ? resolvedAssetDurationSeconds : 0,
       source: resolvePromptSource(item),
-    }));
+      };
+    });
 
   const withSource = rawPrompts.filter((item) => item.source && item.end > item.start);
   console.log(
