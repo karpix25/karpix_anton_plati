@@ -224,36 +224,37 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
   const hookEvents: SubtitleEvent[] = [];
   const accumulatedWords: string[] = [];
   
-  for (let i = 0; i < hookWords.length; i++) {
-    const word = hookWords[i];
-    accumulatedWords.push(word.text);
+  // Limit hook to first 4 words for maximum impact as per design reference
+  const maxHookWords = 4;
+  const activeHookWords = hookWords.slice(0, maxHookWords);
+
+  for (let i = 0; i < activeHookWords.length; i++) {
+    const word = activeHookWords[i];
+    accumulatedWords.push(word.text.toUpperCase());
     
     const start = word.start;
-    const nextWord = hookWords[i+1];
+    const nextWord = activeHookWords[i+1];
     const end = nextWord ? Math.min(nextWord.start, HOOK_LIMIT) : HOOK_LIMIT;
     
     if (end > start) {
-      // Create a "designed" text block
-      // Every 3-4 words add a newline. 
-      // Vary styles for some words.
       let formattedText = "";
       accumulatedWords.forEach((w, idx) => {
         const isLast = idx === accumulatedWords.length - 1;
-        const needsNewline = !isLast; // Stack every word for ladder effect
+        // Stack every 2 words or if it's the last word of a group
+        const needsNewline = (idx + 1) % 2 === 0 && !isLast;
         
-        // Ladder indentation (0, 4, 8 spaces, then reset or continue)
-        const indentLevel = idx % 3;
-        const indent = "\\h".repeat(indentLevel * 5);
+        // Animation for the newest word
+        // \t(0,200,\fscx100\fscy100) - scales down from 140% to 100%
+        // \t(0,100,\alpha&H00&) - fades in quickly
+        const anim = isLast 
+          ? `{\\alpha&HFF&\\fscx140\\fscy140\\t(0,150,\\alpha&H00&\\fscx100\\fscy100)}` 
+          : "{\\alpha&H00&\\fscx100\\fscy100}";
 
-        // Styling: Bold for all hook words, slightly larger for special ones
-        const isSpecial = w.length > 5 || /^[A-ZА-Я]/.test(w);
-        const baseFs = isSpecial ? 120 : 100;
+        const style = `{\\b1}${anim}`;
         
-        // Animation for the new word
-        const anim = isLast ? `{\\fscx130\\fscy130\\t(0,200,\\fscx100\\fscy100)}` : "{\\fscx100\\fscy100}";
-        const style = `{\\b1\\fs${baseFs}}${anim}`;
-        
-        formattedText += `${indent}${style}${w}${needsNewline ? "\\N" : ""}`;
+        // Use a trick for tight line spacing: {\fscy50}\N{\fscy100} 
+        // This reduces the vertical gap between lines
+        formattedText += `${style}${w}${needsNewline ? "{\\fscy40}\\N{\\fscy100}" : " "}`;
       });
 
       hookEvents.push({
@@ -309,7 +310,7 @@ Collisions: Normal
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Subtitle,${fontFamily},${fontSize},${primaryColour},${primaryColour},${outlineColour},${backColour},${bold},0,0,0,100,100,${spacing},0,${borderStyle},${outline},0,2,63,63,${marginV},1
-Style: Hook,${fontFamily},85,&H00FFFFFF,&H00FFFFFF,&H00111111,&H00000000,-1,0,0,0,100,100,0.5,0,1,4,0,5,60,60,140,1
+Style: Hook,${fontFamily},140,&H00FFFFFF,&H00FFFFFF,&H00111111,&H00000000,-1,0,0,0,100,100,0.5,0,1,4,0,5,60,60,140,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
