@@ -649,7 +649,13 @@ function normalizePromptWindows(
 }
 
 function ensureMinimumAvatarGaps(
-  prompts: Array<{ start: number; end: number; assetType: string | null; source: string | null }>
+  prompts: Array<{
+    start: number;
+    end: number;
+    assetType: string | null;
+    assetDurationSeconds: number;
+    source: string | null;
+  }>
 ) {
   if (prompts.length <= 1) return prompts;
 
