@@ -248,6 +248,7 @@ function buildCyclingAvatarFilter(options: {
 
   return [
     "setpts=PTS-STARTPTS",
+    `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase`,
     `scale=iw*(${zoomExpr}):-1:eval=frame`, // Use -1 to keep aspect ratio perfect
     // Force geometric center crop on every frame to avoid horizontal drift.
     `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=(iw-ow)/2:y=(ih-oh)/2`,

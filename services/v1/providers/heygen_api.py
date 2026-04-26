@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 HEYGEN_API_BASE = "https://api.heygen.com"
 HEYGEN_UPLOAD_BASE = "https://upload.heygen.com"
-DEFAULT_DIMENSION = {"width": 720, "height": 1280}
+DEFAULT_DIMENSION = {"width": 1080, "height": 1920}
 PENDING_STATUSES = {"pending", "waiting", "processing"}
 SUCCESS_STATUSES = {"completed", "success"}
 PHOTO_AVATAR_MOTION_PROMPT = """
