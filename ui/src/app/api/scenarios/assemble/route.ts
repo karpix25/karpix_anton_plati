@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import path from "path";
 import { spawn } from "child_process";
 import pool from "@/lib/db";
@@ -199,6 +199,7 @@ function runCommandCapture(command: string, args: string[]) {
         reject(new Error(stderr || stdout || `Command failed: ${command}`));
       }
     });
+    child.on("error", reject);
   });
 }
 
@@ -318,6 +319,31 @@ async function probeDurationSeconds(filePath: string) {
 
   const duration = Number(raw);
   return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+async function probeDurationSecondsSafe(filePath: string) {
+  try {
+    return await probeDurationSeconds(filePath);
+  } catch (error) {
+    console.warn(`[montage] ffprobe failed for ${filePath}:`, error);
+    return 0;
+  }
+}
+
+async function isUsableVideoFile(filePath: string) {
+  if (!existsSync(filePath)) return false;
+
+  try {
+    const fileStats = await stat(filePath);
+    if (fileStats.size < 2_048) {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  const duration = await probeDurationSecondsSafe(filePath);
+  return duration > FRAME_EPSILON_SECONDS;
 }
 
 function normalizeTimestampWords(words: TimestampWord[] | DeepgramWord[] = []): TimestampWord[] {
@@ -932,7 +958,8 @@ async function buildMontage(scenarioId: number) {
     throw new Error("HeyGen avatar video is missing");
   }
 
-  const workdir = path.join("/tmp", "platipo-miru-montage", `scenario-${scenarioId}`);
+  const runId = `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
+  const workdir = path.join("/tmp", "platipo-miru-montage", `scenario-${scenarioId}-${runId}`);
   await mkdir(workdir, { recursive: true });
 
   const sourceCache = new Map<string, string>();
@@ -1066,8 +1093,15 @@ async function buildMontage(scenarioId: number) {
         "veryfast",
         "-crf",
         "20",
+        "-movflags",
+        "+faststart",
         clipPath,
       ]);
+
+      if (!(await isUsableVideoFile(clipPath))) {
+        throw new Error(`Rendered B-roll clip is not a valid video file: ${clipPath}`);
+      }
+
       brollClips.push({
         localPath: clipPath,
         start: segment.start,
@@ -1083,6 +1117,20 @@ async function buildMontage(scenarioId: number) {
   }
   console.log(
     `[montage] B-roll clips rendered: ${brollClips.length}/${brollSegments.length}`
+  );
+
+  const readyBrollClips: { localPath: string; start: number; end: number }[] = [];
+  for (const clip of brollClips) {
+    if (await isUsableVideoFile(clip.localPath)) {
+      readyBrollClips.push(clip);
+      continue;
+    }
+    console.warn(
+      `[montage] Skipping invalid B-roll clip before final overlay: ${clip.localPath}`
+    );
+  }
+  console.log(
+    `[montage] B-roll clips validated: ${readyBrollClips.length}/${brollClips.length}`
   );
 
   // 3. Prepare subtitle track
@@ -1134,14 +1182,14 @@ async function buildMontage(scenarioId: number) {
   //    Inputs: [0]=avatar_base, [1..N]=broll clips, [N+1]=tts, [N+2]=background
   const ffmpegInputs: string[] = [];
   ffmpegInputs.push("-i", avatarBasePath);
-  for (const clip of brollClips) {
+  for (const clip of readyBrollClips) {
     ffmpegInputs.push("-i", clip.localPath);
   }
   ffmpegInputs.push("-i", ttsAudioPath);
   ffmpegInputs.push("-stream_loop", "-1", "-i", backgroundAudioPath);
 
-  const ttsInputIdx = brollClips.length + 1;
-  const bgInputIdx = brollClips.length + 2;
+  const ttsInputIdx = readyBrollClips.length + 1;
+  const bgInputIdx = readyBrollClips.length + 2;
 
   // Build filter_complex: overlay B-roll at exact timestamps on avatar base
   const filterParts: string[] = [];
@@ -1149,8 +1197,8 @@ async function buildMontage(scenarioId: number) {
   // Rebase each B-roll clip to its absolute timeline position.
   // Without this offset, the overlay stream can be "consumed" before
   // enable=between(...) becomes true, causing a frozen last frame.
-  for (let i = 0; i < brollClips.length; i++) {
-    const clip = brollClips[i];
+  for (let i = 0; i < readyBrollClips.length; i++) {
+    const clip = readyBrollClips[i];
     filterParts.push(
       `[${i + 1}:v]setpts=PTS-STARTPTS+${clip.start.toFixed(3)}/TB[b${i}]`
     );
@@ -1159,8 +1207,8 @@ async function buildMontage(scenarioId: number) {
   // Chain overlays on avatar base at exact timestamps.
   // eof_action=pass ensures avatar shows through when overlay clip ends.
   let currentVideoLabel = "0:v";
-  for (let i = 0; i < brollClips.length; i++) {
-    const clip = brollClips[i];
+  for (let i = 0; i < readyBrollClips.length; i++) {
+    const clip = readyBrollClips[i];
     const outLabel = `ov${i}`;
     filterParts.push(
       `[${currentVideoLabel}][b${i}]overlay=0:0:eof_action=pass:enable='between(t,${clip.start.toFixed(3)},${clip.end.toFixed(3)})'[${outLabel}]`
@@ -1169,7 +1217,7 @@ async function buildMontage(scenarioId: number) {
   }
 
   // If no B-roll clips, pass avatar base through unchanged
-  if (brollClips.length === 0) {
+  if (readyBrollClips.length === 0) {
     filterParts.push(`[0:v]null[ov_pass]`);
     currentVideoLabel = "ov_pass";
   }
@@ -1197,7 +1245,7 @@ async function buildMontage(scenarioId: number) {
     audioDuration > 0 ? audioDuration : totalDuration;
 
   console.log(
-    `[montage] Building overlay montage: ${brollClips.length} overlays, ` +
+    `[montage] Building overlay montage: ${readyBrollClips.length} overlays, ` +
       `${finalDuration.toFixed(2)}s, filter_complex length: ${filterComplex.length}`
   );
 
