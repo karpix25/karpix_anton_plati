@@ -239,13 +239,21 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
       let formattedText = "";
       accumulatedWords.forEach((w, idx) => {
         const isLast = idx === accumulatedWords.length - 1;
-        const needsNewline = (idx + 1) % 3 === 0 && !isLast;
+        const needsNewline = !isLast; // Stack every word for ladder effect
         
-        // Random-ish "beautiful" styling
+        // Ladder indentation (0, 4, 8 spaces, then reset or continue)
+        const indentLevel = idx % 3;
+        const indent = "\\h".repeat(indentLevel * 5);
+
+        // Styling: Bold for all hook words, slightly larger for special ones
         const isSpecial = w.length > 5 || /^[A-ZА-Я]/.test(w);
-        const style = isSpecial ? "{\\b1\\fs110}" : "{\\b0\\fs90}";
+        const baseFs = isSpecial ? 120 : 100;
         
-        formattedText += `${style}${w}${isSpecial ? "{\\b0\\fs90}" : ""}${needsNewline ? "\\N" : " "}`;
+        // Animation for the new word
+        const anim = isLast ? `{\\fscx130\\fscy130\\t(0,200,\\fscx100\\fscy100)}` : "{\\fscx100\\fscy100}";
+        const style = `{\\b1\\fs${baseFs}}${anim}`;
+        
+        formattedText += `${indent}${style}${w}${needsNewline ? "\\N" : ""}`;
       });
 
       hookEvents.push({
@@ -339,6 +347,17 @@ function buildFontFallbackUrls(
       `https://github.com/paratype/pt-sans/raw/master/fonts/ttf/PTSans-${weight}.ttf`,
       `https://raw.githubusercontent.com/google/fonts/main/ofl/ptsans/PT_Sans-Web-${weight}.ttf`,
       `https://github.com/google/fonts/raw/main/ofl/ptsans/PT_Sans-Web-${weight}.ttf`
+    );
+  }
+
+  if (fontFamilyKey === "montserrat") {
+    const isBold = url.toLowerCase().includes("bold");
+    const weight = isBold ? "Bold" : "Regular";
+    fallbacks.push(
+      `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-${weight}.ttf`,
+      `https://github.com/google/fonts/raw/main/ofl/montserrat/static/Montserrat-${weight}.ttf`,
+      `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-${weight}.ttf`,
+      `https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-${weight}.ttf`
     );
   }
 

@@ -129,16 +129,38 @@ async function getDownloadHref(diskPath: string) {
 }
 
 async function publishResource(diskPath: string) {
-  const response = await yandexRequest(`/resources/publish?path=${encodeURIComponent(diskPath)}`, {
-    method: "PUT",
-  });
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      if (attempt > 1) {
+        // Wait 1s, then 2s
+        await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+      }
 
-  if (response.status === 200 || response.status === 201 || response.status === 202 || response.status === 409) {
-    return;
+      const response = await yandexRequest(`/resources/publish?path=${encodeURIComponent(diskPath)}`, {
+        method: "PUT",
+      });
+
+      if (response.status === 200 || response.status === 201 || response.status === 202 || response.status === 409) {
+        return;
+      }
+
+      const message = await response.text();
+      lastError = new Error(`Yandex Disk publish failed for ${diskPath} (attempt ${attempt}): ${message}`);
+      
+      // If it's a 5xx error, retry. If 4xx (except 409 handled above), maybe don't?
+      // But Yandex sometimes returns 500 when it's just busy.
+      if (response.status < 500 && response.status !== 429) {
+        throw lastError;
+      }
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt === 3) throw lastError;
+    }
   }
 
-  const message = await response.text();
-  throw new Error(`Yandex Disk publish failed for ${diskPath}: ${message}`);
+  if (lastError) throw lastError;
 }
 
 async function getResourceMeta(diskPath: string) {
@@ -225,6 +247,9 @@ export async function uploadFinalVideoToYandexDisk(params: {
     const message = await uploadResponse.text();
     throw new Error(`Yandex Disk file upload failed for ${filePath}: ${message}`);
   }
+
+  // Small breather for Yandex Disk before publishing
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
   await publishResource(filePath);
   const meta = await getResourceMeta(filePath);
