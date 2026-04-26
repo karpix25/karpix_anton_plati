@@ -886,8 +886,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                             logger.warning(f"Re-transcription failed for {res_job_id}, falling back to mathematically adjusted words: {re_transcribe_error}")
                             effective_words = adjusted_words
                             tts_word_timestamps["words"] = adjusted_words
-                        
+
                         tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
+
 
                     is_overflow_after_sentence_trim = (
                         duration_overflow_limit_seconds > 0
