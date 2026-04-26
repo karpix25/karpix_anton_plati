@@ -110,7 +110,6 @@ const FIRST_AVATAR_INTRO_MAX_SECONDS = 3.0;
 const AVATAR_PLANS = [
   { start: 1.00, end: 1.20 }, // WIDE (Общий)
   { start: 1.35, end: 1.55 }, // MEDIUM (Средний)
-  { start: 1.70, end: 1.90 }, // CLOSE (Крупный)
 ];
 const MIN_AVATAR_GAP_SECONDS = 2.0;
 const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || "").trim() === "1";
