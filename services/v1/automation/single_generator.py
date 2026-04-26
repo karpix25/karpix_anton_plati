@@ -26,6 +26,14 @@ DEFAULT_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS = float(os.getenv("TTS_PAUSE_TRI
 DEFAULT_PAUSE_TRIM_SILENCE_THRESHOLD_DB = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_THRESHOLD_DB", "-40"))
 DEFAULT_PAUSE_TRIM_MIN_OVERLAP_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_MIN_OVERLAP_SECONDS", "0.06"))
 DEFAULT_PAUSE_TRIM_MAX_REMOVAL_SHARE = float(os.getenv("TTS_PAUSE_TRIM_MAX_REMOVAL_SHARE", "0.20"))
+SCENARIO_DURATION_OVERFLOW_TOLERANCE_SECONDS = max(
+    0.0,
+    float(os.getenv("SCENARIO_DURATION_OVERFLOW_TOLERANCE_SECONDS", "3.0")),
+)
+SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS = max(
+    0,
+    int(os.getenv("SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS", "2")),
+)
 SENTENCE_END_RE = re.compile(r'[.!?…]+["»”)]*$')
 SOFT_BOUNDARY_RE = re.compile(r'[,;:—-]+["»”)]*$')
 SILENCE_START_RE = re.compile(r"silence_start:\s*([0-9]+(?:\.[0-9]+)?)")
@@ -54,6 +62,79 @@ def _extract_valid_script_text(scenario: dict | None) -> str:
         return ""
 
     return cleaned
+
+
+def _safe_float(value, default=0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _count_spoken_characters(text: str) -> int:
+    return len(re.sub(r"\s+", "", text or ""))
+
+
+def _resolve_character_targets_for_duration(
+    voice_chars_per_minute: float | None,
+    target_duration_min_seconds,
+    target_duration_max_seconds,
+    target_duration_seconds,
+) -> tuple[int | None, int | None]:
+    resolved_cpm = _safe_float(voice_chars_per_minute, 0.0)
+    if resolved_cpm <= 0:
+        return None, None
+
+    fallback_duration = _safe_float(target_duration_seconds, 50.0)
+    resolved_min = max(1.0, _safe_float(target_duration_min_seconds, fallback_duration))
+    resolved_max = max(resolved_min, _safe_float(target_duration_max_seconds, fallback_duration))
+    target_min_chars = max(int((resolved_min / 60.0) * resolved_cpm * 0.88), 1)
+    target_max_chars = max(int((resolved_max / 60.0) * resolved_cpm * 0.95), target_min_chars)
+    return target_min_chars, target_max_chars
+
+
+def _rewrite_script_for_duration_overflow(
+    script_text: str,
+    *,
+    target_min_chars: int | None,
+    target_max_chars: int | None,
+    target_max_seconds: float,
+    actual_duration_seconds: float | None,
+    gender: str,
+    rewrite_attempt: int,
+    max_rewrite_attempts: int,
+    fit_script_to_character_budget,
+    find_unshowable_asset_reference_issues,
+) -> str | None:
+    source_script = re.sub(r"\s+", " ", script_text or "").strip()
+    if not source_script:
+        return None
+
+    resolved_target_min = target_min_chars
+    resolved_target_max = target_max_chars
+    if not (resolved_target_min and resolved_target_max and resolved_target_max >= resolved_target_min):
+        source_chars = _count_spoken_characters(source_script)
+        if source_chars <= 0 or target_max_seconds <= 0 or not actual_duration_seconds or actual_duration_seconds <= 0:
+            return None
+        ratio = max(0.45, min(0.98, target_max_seconds / actual_duration_seconds))
+        resolved_target_max = max(int(source_chars * ratio * 0.97), 20)
+        resolved_target_min = max(int(resolved_target_max * 0.80), 1)
+
+    rewritten = fit_script_to_character_budget(
+        source_script,
+        resolved_target_min,
+        resolved_target_max,
+        gender=gender,
+        attempt_index=rewrite_attempt,
+        total_attempts=max_rewrite_attempts,
+    )
+    candidate_script = re.sub(r"\s+", " ", rewritten or "").strip()
+    if not candidate_script or candidate_script == source_script:
+        return None
+    if find_unshowable_asset_reference_issues(candidate_script):
+        logger.warning("Duration rewrite introduced unsupported asset reference; keeping previous script")
+        return None
+    return candidate_script
 
 
 def _probe_audio_duration_seconds(file_path):
@@ -605,6 +686,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         target_duration_seconds = None
         target_duration_min_seconds = None
         target_duration_max_seconds = None
+        resolved_target_duration_min_seconds = 0.0
         resolved_target_duration_max_seconds = 0.0
         broll_interval_seconds = None
         broll_timing_mode = None
@@ -640,12 +722,15 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 target_duration_seconds = client_data.get("target_duration_seconds")
                 target_duration_min_seconds = client_data.get("target_duration_min_seconds")
                 target_duration_max_seconds = client_data.get("target_duration_max_seconds")
-                try:
-                    resolved_target_duration_max_seconds = float(
-                        target_duration_max_seconds or target_duration_seconds or 0
-                    )
-                except (TypeError, ValueError):
-                    resolved_target_duration_max_seconds = 0.0
+                fallback_duration_seconds = _safe_float(target_duration_seconds, 50.0)
+                resolved_target_duration_min_seconds = max(
+                    1.0,
+                    _safe_float(target_duration_min_seconds, fallback_duration_seconds),
+                )
+                resolved_target_duration_max_seconds = max(
+                    resolved_target_duration_min_seconds,
+                    _safe_float(target_duration_max_seconds, fallback_duration_seconds),
+                )
                 broll_interval_seconds = client_data.get("broll_interval_seconds")
                 broll_timing_mode = client_data.get("broll_timing_mode")
                 broll_pacing_profile = client_data.get("broll_pacing_profile")
@@ -676,6 +761,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
             rewrite_reference_script,
             find_unshowable_asset_reference_issues,
             normalize_narrator_gender,
+            fit_script_to_character_budget,
         )
         from services.v1.automation.notifier_service import notify_service_payment_issue
         import uuid
@@ -694,6 +780,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         selected_tts_provider = tts_provider
         selected_tts_voice_id = tts_voice_id
         selected_elevenlabs_voice_id = elevenlabs_voice_id
+        selected_voice_chars_per_minute = None
         if active_avatar:
             avatar_tts_provider = active_avatar.get("tts_provider")
             if avatar_tts_provider in {"minimax", "elevenlabs"}:
@@ -702,6 +789,9 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 selected_elevenlabs_voice_id = active_avatar.get("elevenlabs_voice_id") or selected_elevenlabs_voice_id
             else:
                 selected_tts_voice_id = active_avatar.get("tts_voice_id") or selected_tts_voice_id
+            resolved_voice_cpm = _safe_float(active_avatar.get("tts_chars_per_minute"), 0.0)
+            if resolved_voice_cpm > 0:
+                selected_voice_chars_per_minute = resolved_voice_cpm
         
         scenario_json = rewrite_reference_script(
             transcript=transcript,
@@ -715,6 +805,7 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
             target_duration_max_seconds=target_duration_max_seconds,
             learned_rules_scenario=learned_rules_scenario,
             gender=gender,
+            voice_chars_per_minute=selected_voice_chars_per_minute,
         )
         
         import uuid
@@ -748,7 +839,19 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 "job_id": res_job_id,
             }
 
-        tts_script = prepare_for_tts(script_text) if script_text else ""
+        target_min_chars_for_voice, target_max_chars_for_voice = _resolve_character_targets_for_duration(
+            selected_voice_chars_per_minute,
+            target_duration_min_seconds,
+            target_duration_max_seconds,
+            target_duration_seconds,
+        )
+        duration_overflow_limit_seconds = (
+            resolved_target_duration_max_seconds + SCENARIO_DURATION_OVERFLOW_TOLERANCE_SECONDS
+            if resolved_target_duration_max_seconds > 0
+            else 0.0
+        )
+
+        tts_script = ""
         tts_audio_path = None
         tts_word_timestamps = None
         video_keyword_segments = None
@@ -757,74 +860,159 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         tts_request_text = None
         tts_audio_duration_seconds = None
 
-        if tts_script:
+        if script_text:
             try:
-                if selected_tts_provider == "elevenlabs":
-                    tts_request_text = prepare_text_for_elevenlabs_tts(
-                        tts_script,
-                        pronunciation_overrides=tts_pronunciation_overrides,
+                current_script_text = script_text
+                for rewrite_attempt in range(SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS + 1):
+                    tts_script = prepare_for_tts(current_script_text) if current_script_text else ""
+                    if not tts_script:
+                        break
+
+                    if selected_tts_provider == "elevenlabs":
+                        tts_request_text = prepare_text_for_elevenlabs_tts(
+                            tts_script,
+                            pronunciation_overrides=tts_pronunciation_overrides,
+                        )
+                        tts_audio_path = text_to_speech_elevenlabs(
+                            tts_script,
+                            voice_id=selected_elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID,
+                            pronunciation_overrides=tts_pronunciation_overrides,
+                        )
+                    else:
+                        tts_request_text = prepare_text_for_minimax_tts(
+                            tts_script,
+                            pronunciation_overrides=tts_pronunciation_overrides,
+                        )
+                        tts_audio_path = text_to_speech_minimax(
+                            tts_script,
+                            voice_id=selected_tts_voice_id or None,
+                            pronunciation_overrides=tts_pronunciation_overrides,
+                        )
+
+                    if tts_silence_trim_enabled is None:
+                        tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
+                    should_run_silence_trim = (
+                        bool(tts_silence_trim_enabled)
+                        and not bool(tts_sentence_trim_enabled)
                     )
-                    tts_audio_path = text_to_speech_elevenlabs(
-                        tts_script,
-                        voice_id=selected_elevenlabs_voice_id or DEFAULT_ELEVENLABS_VOICE_ID,
-                        pronunciation_overrides=tts_pronunciation_overrides,
-                    )
-                else:
-                    tts_request_text = prepare_text_for_minimax_tts(
-                        tts_script,
-                        pronunciation_overrides=tts_pronunciation_overrides,
-                    )
-                    tts_audio_path = text_to_speech_minimax(
-                        tts_script,
-                        voice_id=selected_tts_voice_id or None,
-                        pronunciation_overrides=tts_pronunciation_overrides,
-                    )
-                if tts_silence_trim_enabled is None:
-                    tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
-                # Do not stack amplitude-based trim and word-timestamp trim together.
-                should_run_silence_trim = (
-                    bool(tts_silence_trim_enabled)
-                    and not bool(tts_sentence_trim_enabled)
-                )
-                if should_run_silence_trim:
-                    tts_audio_path = _trim_tts_silence(
-                        tts_audio_path,
-                        tts_silence_trim_min_duration_seconds,
-                        tts_silence_trim_threshold_db,
-                    )
-                tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
-                if resolved_target_duration_max_seconds > 0:
-                    tts_audio_path, tts_audio_duration_seconds = _fit_tts_audio_to_max_duration(
-                        tts_audio_path,
-                        resolved_target_duration_max_seconds,
-                    )
-                try:
-                    deepgram_result = transcribe_media_deepgram(tts_audio_path)
-                except Exception as deepgram_error:
-                    logger.warning(
-                        "Deepgram unavailable for single scenario %s, using fallback transcript alignment: %s",
-                        res_job_id,
-                        deepgram_error,
-                    )
-                    deepgram_result = build_fallback_transcript_alignment(tts_script)
-                tts_word_timestamps = {
-                    "transcript": deepgram_result.get("transcript", ""),
-                    "words": deepgram_result.get("words", []),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                    "is_fallback": bool(deepgram_result.get("is_fallback", False)),
-                }
-                effective_words = deepgram_result.get("words", [])
-                if tts_sentence_trim_enabled and not deepgram_result.get("is_fallback"):
-                    tts_audio_path, adjusted_words = _trim_sentence_gaps(
-                        tts_audio_path,
-                        deepgram_result.get("words", []),
-                        tts_sentence_trim_min_gap_seconds,
-                        tts_sentence_trim_keep_gap_seconds,
-                        True,
-                    )
+                    if should_run_silence_trim:
+                        tts_audio_path = _trim_tts_silence(
+                            tts_audio_path,
+                            tts_silence_trim_min_duration_seconds,
+                            tts_silence_trim_threshold_db,
+                        )
+
                     tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
-                    tts_word_timestamps["words"] = adjusted_words
-                    effective_words = adjusted_words
+                    if resolved_target_duration_max_seconds > 0:
+                        tts_audio_path, tts_audio_duration_seconds = _fit_tts_audio_to_max_duration(
+                            tts_audio_path,
+                            resolved_target_duration_max_seconds,
+                        )
+
+                    is_overflow_after_fit = (
+                        duration_overflow_limit_seconds > 0
+                        and bool(tts_audio_duration_seconds)
+                        and float(tts_audio_duration_seconds) > duration_overflow_limit_seconds
+                    )
+                    if is_overflow_after_fit and rewrite_attempt < SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS:
+                        rewritten_script = _rewrite_script_for_duration_overflow(
+                            current_script_text,
+                            target_min_chars=target_min_chars_for_voice,
+                            target_max_chars=target_max_chars_for_voice,
+                            target_max_seconds=resolved_target_duration_max_seconds,
+                            actual_duration_seconds=tts_audio_duration_seconds,
+                            gender=gender,
+                            rewrite_attempt=rewrite_attempt + 1,
+                            max_rewrite_attempts=SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS,
+                            fit_script_to_character_budget=fit_script_to_character_budget,
+                            find_unshowable_asset_reference_issues=find_unshowable_asset_reference_issues,
+                        )
+                        if rewritten_script:
+                            logger.warning(
+                                "Single scenario %s over max duration after TTS fit (%.2fs > %.2fs). Rewriting script for retry %s/%s.",
+                                res_job_id,
+                                float(tts_audio_duration_seconds or 0.0),
+                                duration_overflow_limit_seconds,
+                                rewrite_attempt + 1,
+                                SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS,
+                            )
+                            current_script_text = rewritten_script
+                            script_text = rewritten_script
+                            scenario_json["script"] = rewritten_script
+                            continue
+
+                    try:
+                        deepgram_result = transcribe_media_deepgram(tts_audio_path)
+                    except Exception as deepgram_error:
+                        logger.warning(
+                            "Deepgram unavailable for single scenario %s, using fallback transcript alignment: %s",
+                            res_job_id,
+                            deepgram_error,
+                        )
+                        deepgram_result = build_fallback_transcript_alignment(tts_script)
+                    tts_word_timestamps = {
+                        "transcript": deepgram_result.get("transcript", ""),
+                        "words": deepgram_result.get("words", []),
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                        "is_fallback": bool(deepgram_result.get("is_fallback", False)),
+                    }
+                    effective_words = deepgram_result.get("words", [])
+                    if tts_sentence_trim_enabled and not deepgram_result.get("is_fallback"):
+                        tts_audio_path, adjusted_words = _trim_sentence_gaps(
+                            tts_audio_path,
+                            deepgram_result.get("words", []),
+                            tts_sentence_trim_min_gap_seconds,
+                            tts_sentence_trim_keep_gap_seconds,
+                            True,
+                        )
+                        tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
+                        tts_word_timestamps["words"] = adjusted_words
+                        effective_words = adjusted_words
+
+                    is_overflow_after_sentence_trim = (
+                        duration_overflow_limit_seconds > 0
+                        and bool(tts_audio_duration_seconds)
+                        and float(tts_audio_duration_seconds) > duration_overflow_limit_seconds
+                    )
+                    if is_overflow_after_sentence_trim and rewrite_attempt < SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS:
+                        rewritten_script = _rewrite_script_for_duration_overflow(
+                            current_script_text,
+                            target_min_chars=target_min_chars_for_voice,
+                            target_max_chars=target_max_chars_for_voice,
+                            target_max_seconds=resolved_target_duration_max_seconds,
+                            actual_duration_seconds=tts_audio_duration_seconds,
+                            gender=gender,
+                            rewrite_attempt=rewrite_attempt + 1,
+                            max_rewrite_attempts=SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS,
+                            fit_script_to_character_budget=fit_script_to_character_budget,
+                            find_unshowable_asset_reference_issues=find_unshowable_asset_reference_issues,
+                        )
+                        if rewritten_script:
+                            logger.warning(
+                                "Single scenario %s still over max duration after sentence trim (%.2fs > %.2fs). Rewriting script for retry %s/%s.",
+                                res_job_id,
+                                float(tts_audio_duration_seconds or 0.0),
+                                duration_overflow_limit_seconds,
+                                rewrite_attempt + 1,
+                                SCENARIO_DURATION_REWRITE_MAX_ATTEMPTS,
+                            )
+                            current_script_text = rewritten_script
+                            script_text = rewritten_script
+                            scenario_json["script"] = rewritten_script
+                            continue
+
+                    if is_overflow_after_sentence_trim:
+                        logger.warning(
+                            "Single scenario %s remains above configured max+tolerance (%.2fs > %.2fs) after all retries.",
+                            res_job_id,
+                            float(tts_audio_duration_seconds or 0.0),
+                            duration_overflow_limit_seconds,
+                        )
+                    break
+
+                if not tts_script:
+                    raise ValueError("Prepared TTS script is empty after duration-fit step")
+
                 video_keyword_segments = extract_visual_keyword_segments(
                     scenario_text=script_text,
                     tts_text=tts_script,

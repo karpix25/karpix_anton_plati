@@ -36,6 +36,8 @@ TARGET_WORDS_PER_SECOND = _get_env_float("SCENARIO_TARGET_WORDS_PER_SECOND", 2.2
 # Keep a safety buffer so "до N сек" is respected more reliably in real TTS output.
 TARGET_WORD_BUDGET_MAX_RATIO = _get_env_float("SCENARIO_TARGET_WORD_BUDGET_MAX_RATIO", 0.9, minimum=0.7, maximum=1.0)
 TARGET_WORD_BUDGET_MIN_RATIO = _get_env_float("SCENARIO_TARGET_WORD_BUDGET_MIN_RATIO", 0.82, minimum=0.6, maximum=1.0)
+TARGET_CHAR_BUDGET_MAX_RATIO = _get_env_float("SCENARIO_TARGET_CHAR_BUDGET_MAX_RATIO", 0.95, minimum=0.7, maximum=1.0)
+TARGET_CHAR_BUDGET_MIN_RATIO = _get_env_float("SCENARIO_TARGET_CHAR_BUDGET_MIN_RATIO", 0.88, minimum=0.6, maximum=1.0)
 
 def _openrouter_client():
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -228,12 +230,17 @@ def normalize_narrator_gender(gender, default="female") -> str:
     return default
 
 
+def count_spoken_characters(text: str | None) -> int:
+    return len(re.sub(r"\s+", "", text or ""))
+
+
 def _resolve_duration_targets(
     source_duration_seconds=None,
     source_wpm=None,
     target_duration_seconds=None,
     target_duration_min_seconds=None,
     target_duration_max_seconds=None,
+    voice_chars_per_minute=None,
 ):
     fallback_duration = float(target_duration_seconds or source_duration_seconds or 50)
     resolved_min = float(target_duration_min_seconds or target_duration_seconds or fallback_duration)
@@ -256,12 +263,35 @@ def _resolve_duration_targets(
     min_word_target = max(int(math.ceil(resolved_min * effective_wps * TARGET_WORD_BUDGET_MIN_RATIO)), 1)
     max_word_target = max(int(math.floor(resolved_max * effective_wps * TARGET_WORD_BUDGET_MAX_RATIO)), min_word_target)
 
+    resolved_voice_chars_per_minute = 0.0
+    try:
+        resolved_voice_chars_per_minute = float(voice_chars_per_minute or 0)
+    except (TypeError, ValueError):
+        resolved_voice_chars_per_minute = 0.0
+    if resolved_voice_chars_per_minute < 0:
+        resolved_voice_chars_per_minute = 0.0
+
+    min_char_target = None
+    max_char_target = None
+    if resolved_voice_chars_per_minute > 0:
+        min_char_target = max(
+            int(math.ceil((resolved_min / 60.0) * resolved_voice_chars_per_minute * TARGET_CHAR_BUDGET_MIN_RATIO)),
+            1,
+        )
+        max_char_target = max(
+            int(math.floor((resolved_max / 60.0) * resolved_voice_chars_per_minute * TARGET_CHAR_BUDGET_MAX_RATIO)),
+            min_char_target,
+        )
+
     return {
         "min_seconds": resolved_min,
         "max_seconds": resolved_max,
         "center_seconds": resolved_center,
         "min_word_target": min_word_target,
         "max_word_target": max_word_target,
+        "voice_chars_per_minute": resolved_voice_chars_per_minute if resolved_voice_chars_per_minute > 0 else None,
+        "min_char_target": min_char_target,
+        "max_char_target": max_char_target,
         "duration_range_label": f"{resolved_min:.0f}-{resolved_max:.0f} сек",
     }
 
@@ -463,7 +493,7 @@ def _hook_context_from_source_cards(topic_card=None, structure_card=None):
         return _hook_context_from_transcript("")
 
 
-def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
+def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female", voice_chars_per_minute=None):
     """
     Produces a very close rewrite of the source transcript.
     The structure, pacing, theme, and dramatic arc should stay almost identical.
@@ -486,12 +516,25 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
         target_duration_seconds=target_duration_seconds,
         target_duration_min_seconds=target_duration_min_seconds,
         target_duration_max_seconds=target_duration_max_seconds,
+        voice_chars_per_minute=voice_chars_per_minute,
     )
     min_word_target = duration_targets["min_word_target"]
     max_word_target = duration_targets["max_word_target"]
+    min_char_target = duration_targets.get("min_char_target")
+    max_char_target = duration_targets.get("max_char_target")
     duration_label = f"{source_duration_seconds:.1f} сек" if source_duration_seconds else "не определена"
     wpm_label = f"{source_wpm:.1f} слов/мин" if source_wpm else "не определен"
     desired_duration_label = duration_targets["duration_range_label"]
+    voice_speed_label = (
+        f"{duration_targets['voice_chars_per_minute']:.1f} симв/мин"
+        if duration_targets.get("voice_chars_per_minute")
+        else "не откалибрована"
+    )
+    char_target_line = (
+        f"- Target character-count range (non-space): {min_char_target}-{max_char_target}\n"
+        f"    - Active voice calibrated speed: {voice_speed_label}\n"
+        "    - Character range is a priority length constraint for this voice.\n"
+    ) if min_char_target and max_char_target else ""
     hook_context = _hook_context_from_transcript(transcript)
     hook_blueprint = _hook_blueprint(hook_context["opening"] or transcript)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
@@ -592,6 +635,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Source word count: {source_word_count}
     - Source speaking pace: {wpm_label}
     - Target word-count range: {min_word_target}-{max_word_target}
+    {char_target_line}
     - Aim for the desired target duration while respecting the source speaking density.
     - If the rewrite becomes meaningfully longer than the target, compress it.
 
@@ -682,6 +726,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
         "source_words_per_minute": {source_wpm or 0},
         "target_duration_range_seconds": "{desired_duration_label}",
         "target_word_count_range": "{min_word_target}-{max_word_target}",
+        "target_character_count_range": "{f'{min_char_target}-{max_char_target}' if min_char_target and max_char_target else 'not_set'}",
         "preserved_fact_units": ["List 5-10 concrete fact units preserved or concretely adapted"],
         "pattern_preservation_notes": "How the underlying pattern and slot structure were preserved",
         "hook_preservation_notes": "How the source hook format and first 1-2 sentences were preserved structurally",
@@ -700,7 +745,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
             "rewrite_type": "close_rewrite"
         }
 
-def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
+def generate_scenario(audit_json, niche="General", target_product_info=None, brand_voice=None, target_audience=None, transcript_meta=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female", voice_chars_per_minute=None):
     """
     Generates a NEW scenario by "Mirroring" the viral DNA of the source video 
     into a script for the target product.
@@ -726,9 +771,21 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
         target_duration_seconds=target_duration_seconds,
         target_duration_min_seconds=target_duration_min_seconds,
         target_duration_max_seconds=target_duration_max_seconds,
+        voice_chars_per_minute=voice_chars_per_minute,
     )
     word_min = max(duration_targets["min_word_target"], 30)
     word_max = max(duration_targets["max_word_target"], 60)
+    min_char_target = duration_targets.get("min_char_target")
+    max_char_target = duration_targets.get("max_char_target")
+    voice_speed_label = (
+        f"{duration_targets['voice_chars_per_minute']:.1f} симв/мин"
+        if duration_targets.get("voice_chars_per_minute")
+        else "не откалибрована"
+    )
+    char_target_hint = (
+        f"- Целевой диапазон символов (без пробелов): {min_char_target}-{max_char_target}. "
+        f"Скорость активного голоса: {voice_speed_label}."
+    ) if min_char_target and max_char_target else ""
     duration_label = f"{source_duration:.1f} сек" if source_duration else "неизвестна"
     desired_duration_label = duration_targets["duration_range_label"]
     source_hook = atoms.get("verbal_hook") or ""
@@ -758,6 +815,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     - Длительность оригинала: {duration_label}
     - Желаемая длительность финального сценария: {desired_duration_label}
     - Целевое количество слов: {word_min} - {word_max} слов. 
+    {char_target_hint}
     [ВАЖНО] Подгоняйте итоговый сценарий под желаемую длительность финального видео.
 
     ЦЕЛЕВОЙ КОНТЕКСТ (Target Product):
@@ -802,7 +860,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
             "script": "Error generating script"
         }
 
-def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
+def generate_clustered_scenario(reference_audits, niche="General", target_product_info=None, topic=None, angle=None, variation_index=1, total_variations=1, brand_voice=None, target_audience=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female", voice_chars_per_minute=None):
     """
     Generates a scenario from a cluster of similar references instead of a single audit.
     This keeps the resulting script much closer to a chosen topic and angle.
@@ -820,9 +878,21 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
         target_duration_seconds=target_duration_seconds,
         target_duration_min_seconds=target_duration_min_seconds,
         target_duration_max_seconds=target_duration_max_seconds,
+        voice_chars_per_minute=voice_chars_per_minute,
     )
     word_min = max(duration_targets["min_word_target"], 30)
     word_max = max(duration_targets["max_word_target"], 60)
+    min_char_target = duration_targets.get("min_char_target")
+    max_char_target = duration_targets.get("max_char_target")
+    voice_speed_label = (
+        f"{duration_targets['voice_chars_per_minute']:.1f} симв/мин"
+        if duration_targets.get("voice_chars_per_minute")
+        else "не откалибрована"
+    )
+    char_target_hint = (
+        f"- Целевой диапазон символов (без пробелов): {min_char_target}-{max_char_target} "
+        f"(скорость голоса: {voice_speed_label})"
+    ) if min_char_target and max_char_target else ""
     normalized_references = []
     for idx, audit in enumerate(reference_audits, start=1):
         atoms = audit.get("atoms", {})
@@ -884,6 +954,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     - Аудитория: {audience_context}
     - Желаемая длительность: {duration_targets["duration_range_label"]}
     - Целевой диапазон слов: {word_min}-{word_max}
+    {char_target_hint}
 
     ЗАДАЧА:
     1. Выделите ОБЩИЙ ПАТТЕРН всех референсов (общий тип хука, структура аргументации, тип финала).
@@ -926,7 +997,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
             "topic_angle": target_angle
         }
 
-def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female"):
+def generate_from_topic_and_structure(topic_card, structure_card, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female", voice_chars_per_minute=None):
     """
     Generates a new scenario by combining a reusable topic card and a reusable structure card.
     """
@@ -940,9 +1011,20 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
         target_duration_seconds=target_duration_seconds,
         target_duration_min_seconds=target_duration_min_seconds,
         target_duration_max_seconds=target_duration_max_seconds,
+        voice_chars_per_minute=voice_chars_per_minute,
     )
     word_min = max(duration_targets["min_word_target"], 30)
     word_max = max(duration_targets["max_word_target"], 60)
+    min_char_target = duration_targets.get("min_char_target")
+    max_char_target = duration_targets.get("max_char_target")
+    voice_speed_label = (
+        f"{duration_targets['voice_chars_per_minute']:.1f} симв/мин"
+        if duration_targets.get("voice_chars_per_minute")
+        else "не откалибрована"
+    )
+    char_target_hint = (
+        f"- Requested character-count range: {min_char_target}-{max_char_target} (non-space, voice speed {voice_speed_label})"
+    ) if min_char_target and max_char_target else ""
     hook_context = _hook_context_from_source_cards(topic_card=topic_card, structure_card=structure_card)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
@@ -1007,6 +1089,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     LENGTH TARGET:
     - Desired target duration: {duration_targets["duration_range_label"]}
     - Requested word-count range: {word_min}-{word_max} слов
+    {char_target_hint}
 
     TASK:
     1. Identify the CORE THESIS from the Structure Card.
@@ -1050,6 +1133,76 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
             "topic_family": topic_card.get("topic_family", topic_card.get("canonical_topic_family", "general_travel_topic")),
             "topic_short": topic_card.get("topic_short", topic_card.get("topic_cluster", "Без темы")),
         }
+
+
+def fit_script_to_character_budget(
+    script: str,
+    target_min_chars: int,
+    target_max_chars: int,
+    *,
+    gender: str = "female",
+    attempt_index: int = 1,
+    total_attempts: int = 1,
+) -> str:
+    source_script = re.sub(r"\s+", " ", str(script or "")).strip()
+    if not source_script:
+        return source_script
+
+    min_chars = max(int(target_min_chars or 1), 1)
+    max_chars = max(int(target_max_chars or min_chars), min_chars)
+    if min_chars == max_chars:
+        min_chars = max(1, min_chars - 2)
+        max_chars = max(min_chars, max_chars + 2)
+
+    source_char_count = count_spoken_characters(source_script)
+    gender = normalize_narrator_gender(gender)
+
+    prompt = f"""
+    SYSTEM:
+    You are a Russian script editor for talking-head videos.
+    Keep meaning, structure, persuasion, and natural flow, but fit strict character limits.
+
+    HARD RULES:
+    - Return strict JSON only.
+    - Keep the same language (Russian).
+    - Preserve core facts and CTA intent.
+    - Do not add visual directions.
+    - Keep grammar agreement for narrator gender: {gender}.
+    - Character count metric is NON-WHITESPACE characters.
+    - The rewritten script MUST be between {min_chars} and {max_chars} non-whitespace characters.
+    - This is duration-fit attempt {attempt_index} of {total_attempts}.
+
+    SOURCE SCRIPT (non-whitespace chars: {source_char_count}):
+    \"\"\"{source_script}\"\"\"
+
+    RETURN JSON:
+    {{
+      "script": "Rewritten script",
+      "non_whitespace_char_count": 0,
+      "fit_notes": "How length was adjusted while preserving meaning"
+    }}
+    """
+
+    try:
+        payload = _chat_json(prompt)
+    except Exception as error:
+        logger.error("Failed to fit script to character budget: %s", error)
+        return source_script
+
+    candidate = re.sub(r"\s+", " ", str((payload or {}).get("script") or "")).strip()
+    if not candidate:
+        return source_script
+
+    candidate_chars = count_spoken_characters(candidate)
+    if candidate_chars < min_chars or candidate_chars > max_chars:
+        logger.warning(
+            "Character-budget rewrite missed target: got=%s target=%s-%s",
+            candidate_chars,
+            min_chars,
+            max_chars,
+        )
+    return candidate
+
 
 def prepare_for_tts(script: str) -> str:
     """
