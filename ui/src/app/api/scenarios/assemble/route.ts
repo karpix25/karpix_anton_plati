@@ -198,27 +198,6 @@ function escapeFilterExpr(value: string) {
   return value.replace(/,/g, "\\,");
 }
 
-async function probeVideoDimensions(filePath: string) {
-  const { stdout } = await runCommandCapture("ffprobe", [
-    "-v",
-    "error",
-    "-select_streams",
-    "v:0",
-    "-show_entries",
-    "stream=width,height",
-    "-of",
-    "csv=p=0",
-    filePath,
-  ]);
-  const raw = stdout.trim();
-  const parts = raw.split(",");
-  if (parts.length < 2) return null;
-  const width = Number(parts[0]);
-  const height = Number(parts[1]);
-  if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
-  return { width, height };
-}
-
 /**
  * Builds a single continuous avatar filter with time-varying zoom that
  * cycles through AVATAR_PLANS at each B-roll boundary. Since the B-roll
@@ -226,9 +205,6 @@ async function probeVideoDimensions(filePath: string) {
  * invisible to the viewer.
  */
 function buildCyclingAvatarFilter(options: {
-  totalDuration: number;
-  faceCenterX: number;
-  faceCenterY: number;
   brollEndTimes: number[];
 }) {
   const zoomChangePoints: { threshold: number; zoom: number }[] = [
@@ -261,20 +237,12 @@ function buildCyclingAvatarFilter(options: {
   }
 
   const zoomExpr = escapeFilterExpr(zoomExprRaw);
-  
-  // CRITICAL FIX: The anchor point for zoom must be derived from the ORIGINAL person position.
-  // We use faceCenterX to keep the person as the center of the viewport regardless of the scale.
-  const xExpr = escapeFilterExpr(
-    `max(0,min(iw-ow,${options.faceCenterX}*(${zoomExprRaw})-ow/2))`
-  );
-  const yExpr = escapeFilterExpr(
-    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.42))`
-  );
 
   return [
     "setpts=PTS-STARTPTS",
     `scale=iw*(${zoomExpr}):-1:eval=frame`, // Use -1 to keep aspect ratio perfect
-    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}`,
+    // Force geometric center crop on every frame to avoid horizontal drift.
+    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=(iw-ow)/2:y=(ih-oh)/2`,
     `fps=${OUTPUT_FPS}`,
     "format=yuv420p",
     "setsar=1",
@@ -799,7 +767,6 @@ async function buildMontage(scenarioId: number) {
   await mkdir(workdir, { recursive: true });
 
   const sourceCache = new Map<string, string>();
-  const dimensionCache = new Map<string, { width: number; height: number }>();
 
   const avatarSourcePath =
     sourceCache.get(scenario.heygen_video_url) ||
@@ -872,26 +839,7 @@ async function buildMontage(scenarioId: number) {
   // 1. Render continuous avatar base video (full duration with cycling zoom)
   const avatarBasePath = path.join(workdir, "avatar_base.mp4");
   {
-    let dims = dimensionCache.get(avatarSourcePath);
-    if (!dims) {
-      try {
-        const probed = await probeVideoDimensions(avatarSourcePath);
-        if (probed) {
-          dims = probed;
-          dimensionCache.set(avatarSourcePath, probed);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    // Face detection is intentionally disabled to eliminate horizontal drift.
-    // We keep a fixed anchor: center by X, and a stable upper-center line by Y.
-    const faceCenterX = dims ? dims.width / 2 : OUTPUT_WIDTH / 2;
-    const faceCenterY = dims ? dims.height * 0.42 : OUTPUT_HEIGHT * 0.42;
     const avatarBaseFilter = buildCyclingAvatarFilter({
-      totalDuration,
-      faceCenterX,
-      faceCenterY,
       brollEndTimes: brollSegments.map((s) => s.end),
     });
     await runCommand("ffmpeg", [
