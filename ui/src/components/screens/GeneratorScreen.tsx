@@ -275,7 +275,7 @@ export function GeneratorScreen({
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
                 <Button
                   variant="outline"
-                  className="h-12 w-full min-w-0 shrink rounded-xl px-4 font-bold sm:justify-start"
+                  className="h-12 w-full min-w-0 shrink rounded-xl px-3 text-sm font-bold sm:justify-start"
                   onClick={onGenerateRandomBatch}
                   disabled={isGenerating || !topicCards.length || !structureCards.length}
                 >
@@ -284,10 +284,10 @@ export function GeneratorScreen({
                   ) : (
                     <Shuffle className="mr-2 h-4 w-4" />
                   )}
-                  <span className="truncate">4 рандомных</span>
+                  <span>4 микса</span>
                 </Button>
                 <Button
-                  className="primary-gradient h-12 w-full min-w-0 shrink rounded-xl px-4 font-bold text-white shadow-lg sm:justify-start"
+                  className="primary-gradient h-12 w-full min-w-0 shrink rounded-xl px-3 text-sm font-bold text-white shadow-lg sm:justify-start"
                   onClick={onGenerate}
                   disabled={!selectedTopic || !selectedStructure || isGenerating}
                 >
@@ -296,7 +296,7 @@ export function GeneratorScreen({
                   ) : (
                     <Zap className="mr-2 h-4 w-4" />
                   )}
-                  <span className="truncate">Сгенерировать микс</span>
+                  <span>Создать микс</span>
                 </Button>
               </div>
             </div>
