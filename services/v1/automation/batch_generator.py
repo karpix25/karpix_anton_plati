@@ -996,9 +996,21 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                             tts_sentence_trim_keep_gap_seconds,
                             True,
                         )
+                        # RE-TRANSCRIBE AFTER SENTENCE TRIM TO ENSURE 100% ACCURACY
+                        # This eliminates mathematical drift from trimming operations.
+                        try:
+                            logger.info(f"Re-transcribing final processed audio for {res_job_id} to ensure perfect sync.")
+                            final_deepgram_result = transcribe_media_deepgram(tts_audio_path)
+                            deepgram_result = final_deepgram_result
+                            effective_words = final_deepgram_result.get("words", [])
+                            tts_word_timestamps["words"] = effective_words
+                            tts_word_timestamps["transcript"] = final_deepgram_result.get("transcript", "")
+                        except Exception as re_transcribe_error:
+                            logger.warning(f"Re-transcription failed for {res_job_id}, falling back to mathematically adjusted words: {re_transcribe_error}")
+                            effective_words = adjusted_words
+                            tts_word_timestamps["words"] = adjusted_words
+
                         tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
-                        tts_word_timestamps["words"] = adjusted_words
-                        effective_words = adjusted_words
 
                     is_overflow_after_sentence_trim = (
                         duration_overflow_limit_seconds > 0

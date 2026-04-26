@@ -1,14 +1,24 @@
-# Copyright (c) 2025 Stephen G. Pope
-#
-# Scenario Service: Generates a new script based on the audit.
-
 import os
 import json
 import logging
 import re
-import ast
 import math
-from openai import OpenAI
+from datetime import datetime, timezone
+
+from services.v1.automation.utils.ai_utils import chat_json, chat_text
+from services.v1.automation.utils.text_utils import (
+    count_spoken_characters,
+    split_sentences,
+    normalize_text_for_comparison,
+    normalize_narrator_gender
+)
+from services.v1.automation.utils.prompts import (
+    HOOK_BAN_PHRASES,
+    FILLER_WORDS_BAN,
+    get_asset_visibility_guardrails,
+    get_spoken_numbers_guardrail,
+    get_forbidden_tags_guardrail
+)
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -39,165 +49,6 @@ TARGET_WORD_BUDGET_MIN_RATIO = _get_env_float("SCENARIO_TARGET_WORD_BUDGET_MIN_R
 TARGET_CHAR_BUDGET_MAX_RATIO = _get_env_float("SCENARIO_TARGET_CHAR_BUDGET_MAX_RATIO", 0.95, minimum=0.7, maximum=1.0)
 TARGET_CHAR_BUDGET_MIN_RATIO = _get_env_float("SCENARIO_TARGET_CHAR_BUDGET_MIN_RATIO", 0.88, minimum=0.6, maximum=1.0)
 
-def _openrouter_client():
-    api_key = os.getenv("OPENROUTER_API_KEY")
-    if api_key:
-        masked = api_key[:10] + "..." + api_key[-4:]
-        logger.info(f"Using OpenRouter API Key: {masked}")
-    else:
-        logger.error("OPENROUTER_API_KEY NOT FOUND IN ENVIRONMENT")
-        
-    return OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key
-    )
-
-def _clean_markdown_json(content: str) -> str:
-    value = (content or "").strip()
-    if "```json" in value:
-        value = value.split("```json", 1)[1].split("```", 1)[0].strip()
-    elif "```" in value:
-        value = value.split("```", 1)[1].split("```", 1)[0].strip()
-    return value
-
-
-def _extract_json_object(text: str) -> str | None:
-    value = (text or "").strip()
-    start = value.find("{")
-    if start < 0:
-        return None
-
-    depth = 0
-    in_string = False
-    escaped = False
-    for idx in range(start, len(value)):
-        ch = value[idx]
-        if escaped:
-            escaped = False
-            continue
-        if ch == "\\":
-            escaped = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return value[start : idx + 1]
-    return None
-
-
-def _try_parse_json_payload(raw_content: str):
-    cleaned = _clean_markdown_json(raw_content)
-    candidates = [cleaned]
-
-    extracted = _extract_json_object(cleaned)
-    if extracted and extracted not in candidates:
-        candidates.append(extracted)
-
-    for candidate in candidates:
-        if not candidate:
-            continue
-        try:
-            return json.loads(candidate)
-        except Exception:
-            pass
-
-        try:
-            parsed = ast.literal_eval(candidate)
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-
-        normalized = candidate.replace("“", '"').replace("”", '"').replace("’", "'")
-        normalized = re.sub(r'([{,]\s*)([A-Za-z_][A-Za-z0-9_\-]*)(\s*:)', r'\1"\2"\3', normalized)
-        normalized = normalized.replace("None", "null").replace("True", "true").replace("False", "false")
-        try:
-            parsed = ast.literal_eval(normalized)
-            if isinstance(parsed, dict):
-                return parsed
-        except Exception:
-            pass
-        if "'" in normalized and '"' not in normalized:
-            normalized = normalized.replace("'", '"')
-        try:
-            return json.loads(normalized)
-        except Exception:
-            pass
-
-    raise ValueError("Could not parse model response as valid JSON object")
-
-
-def _repair_json_with_model(client: OpenAI, raw_content: str):
-    repair_prompt = f"""
-Convert the following text to a strict valid JSON object.
-Rules:
-- Return only JSON.
-- No markdown fences.
-- Keep the same semantics.
-
-TEXT:
-{raw_content}
-"""
-    model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
-    repaired = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": repair_prompt}],
-        response_format={"type": "json_object"},
-    )
-    repaired_content = repaired.choices[0].message.content
-    return _try_parse_json_payload(repaired_content)
-
-
-def _chat_json(prompt):
-    client = _openrouter_client()
-    last_error = None
-
-    model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
-    for attempt in range(1, 3):
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"}
-            )
-            content = response.choices[0].message.content
-            try:
-                return _try_parse_json_payload(content)
-            except Exception as parse_error:
-                logger.warning("JSON parse failed in _chat_json (attempt %s): %s", attempt, parse_error)
-                logger.warning("Raw model response preview: %s", (content or "").replace("\n", " ")[:400])
-                try:
-                    return _repair_json_with_model(client, content)
-                except Exception as repair_error:
-                    last_error = repair_error
-                    logger.warning("JSON repair failed in _chat_json (attempt %s): %s", attempt, repair_error)
-        except Exception as request_error:
-            last_error = request_error
-            logger.error("OpenRouter request failed in _chat_json (attempt %s): %s", attempt, request_error)
-
-    logger.error("Error in _chat_json after retries: %s", last_error)
-    print(f"FAILED TO PARSE JSON: {last_error}")
-    raise last_error
-
-def _chat_text(prompt: str) -> str:
-    client = _openrouter_client()
-    model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"Error in _chat_text: {e}")
-        return ""
 
 def _pattern_framework(audit_json):
     if not audit_json:
@@ -211,27 +62,6 @@ def _transcript_meta(audit_json, transcript_meta=None):
     if not audit_json:
         return {}
     return audit_json.get("transcript_meta", {}) or {}
-
-
-def normalize_narrator_gender(gender, default="female") -> str:
-    raw = str(gender or "").strip().lower().replace("ё", "е")
-    if not raw:
-        return default
-
-    male_aliases = {"male", "man", "m", "м", "муж", "мужской"}
-    female_aliases = {"female", "woman", "f", "ж", "жен", "женский"}
-
-    if raw in male_aliases or raw.startswith("male") or raw.startswith("муж"):
-        return "male"
-    if raw in female_aliases or raw.startswith("female") or raw.startswith("жен"):
-        return "female"
-
-    logger.warning("Unknown narrator gender '%s', fallback to '%s'", gender, default)
-    return default
-
-
-def count_spoken_characters(text: str | None) -> int:
-    return len(re.sub(r"\s+", "", text or ""))
 
 
 def _resolve_duration_targets(
@@ -296,27 +126,6 @@ def _resolve_duration_targets(
     }
 
 
-HOOK_BAN_PHRASES = [
-    "думаешь",
-    "думаете",
-    "а вот и нет",
-    "забудьте",
-    "прикол в том",
-]
-
-FILLER_WORDS_BAN = [
-    "короче",
-    "типа",
-    "ну",
-    "как бы",
-    "в общем",
-    "в целом",
-    "значит",
-    "понимаешь",
-    "знаешь",
-    "по сути",
-]
-
 UNSHOWABLE_REFERENCE_NOUNS_PATTERN = (
     r"(?:"
     r"сайт(?:а|ы|ов)?|"
@@ -357,7 +166,7 @@ UNSHOWABLE_REFERENCE_PATTERNS = [
 
 
 def find_unshowable_asset_reference_issues(script: str):
-    normalized = re.sub(r"\s+", " ", (script or "").strip()).lower().replace("ё", "е")
+    normalized = normalize_text_for_comparison(script)
     if not normalized:
         return []
 
@@ -378,57 +187,12 @@ def has_unshowable_asset_reference_issues(script: str) -> bool:
     return bool(find_unshowable_asset_reference_issues(script))
 
 
-def _asset_visibility_guardrails() -> str:
-    return """
-    ASSET VISIBILITY CONSTRAINTS:
-    - We cannot show real third-party websites, app screens, or arbitrary consumer products unless a real asset was prepared in advance.
-    - Therefore do NOT write lines that point at a concrete unseen object as if the viewer can see it on screen.
-    - Forbidden examples: "вот эти сайты", "вот этот сайт", "первый сайт", "второй сайт", "вот этот крем", "вот этот спрей", "вот это приложение".
-    - If you need to mention resources or items, speak generically and non-pointingly: "есть сервис, который...", "одна платформа помогает...", "несколько сайтов с визовой информацией", "средство от комаров", "крем с высоким SPF".
-    - Do not build the script around numbered unseen websites or products that imply on-screen demonstration.
-    - The script must remain truthful for a talking-head video even if no external website/product footage is shown.
-    """
-
-
-def _spoken_numbers_guardrail() -> str:
-    return """
-    SPOKEN NUMBERS RULE:
-    - ALL numbers in the final Russian script must be written out in words, never as Arabic numerals.
-    - This applies to counts, prices, percentages, years, dates, times, ranges, ratios, durations, limits, and list numbers.
-    - Examples: "двадцать", "сто пятьдесят", "девяносто восемь процентов", "две тысячи двадцать шестой год", "от трех до пяти дней".
-    - Do not output forms like "20", "1500", "98%", "2026", "3-5 дней", even if the source used digits.
-    - If an exact number sounds unnatural in speech, rewrite it into a natural spoken form while preserving the meaning as closely as possible.
-    """
-
-
-def _forbidden_tags_guardrail() -> str:
-    return """
-    FORBIDDEN TAGS RULE:
-    - DO NOT use any interjection or emotion tags in the script.
-    - Strictly forbidden: (breath), (inhale), (chuckle), (chuckles), (sighs), (snorts), (gasps), (emm), (hum), (laughter), (pause).
-    - Do not put any instructions in parentheses inside the script.
-    - The output must be pure spoken text only.
-    """
-
-
-def _split_sentences(text: str):
-    cleaned = re.sub(r"\s+", " ", (text or "").strip())
-    if not cleaned:
-        return []
-    parts = re.split(r"(?<=[.!?])\s+", cleaned)
-    return [part.strip() for part in parts if part.strip()]
-
-
-def _normalize_hook_text(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip()).lower().replace("ё", "е")
-
-
 def _hook_context_from_transcript(transcript: str):
-    sentences = _split_sentences(transcript)
+    sentences = split_sentences(transcript)
     first_sentence = sentences[0] if len(sentences) > 0 else ""
     second_sentence = sentences[1] if len(sentences) > 1 else ""
     opening = " ".join([part for part in [first_sentence, second_sentence] if part]).strip()
-    normalized_opening = opening.lower().replace("ё", "е")
+    normalized_opening = normalize_text_for_comparison(opening)
     allowed_ban_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase in normalized_opening]
     return {
         "opening": opening,
@@ -439,7 +203,7 @@ def _hook_context_from_transcript(transcript: str):
 
 
 def _classify_hook_shape(text: str) -> str:
-    opening = _normalize_hook_text(text)
+    opening = normalize_text_for_comparison(text)
     if not opening:
         return "unknown"
     if re.match(r"^\d+\b", opening):
@@ -580,9 +344,9 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Treat third-party promo fragments in the source as replaceable scaffolding, not as facts that must be preserved.
     - This is variation #{variation_index} out of {total_variations}. The wording can shift, but the script should still feel like the same winning reel.
     - Do NOT default to generic anti-pattern hooks or stock openers that were NOT present in the source.
-    {_asset_visibility_guardrails()}
-    {_spoken_numbers_guardrail()}
-    {_forbidden_tags_guardrail()}
+    {get_asset_visibility_guardrails()}
+    {get_spoken_numbers_guardrail()}
+    {get_forbidden_tags_guardrail()}
 
     GENDER AGREEMENT (FOR RUSSIAN LANGUAGE):
     - The narrator's gender is: {gender}.
@@ -740,7 +504,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     """
 
     try:
-        return _chat_json(prompt)
+        return chat_json(prompt)
     except Exception as e:
         logger.error(f"Failed to rewrite reference script: {e}")
         return {
@@ -859,7 +623,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     """
     
     try:
-        return _chat_json(prompt)
+        return chat_json(prompt)
     except Exception as e:
         logger.error(f"Failed to generate scenario: {e}")
         return {
@@ -997,7 +761,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     """
 
     try:
-        return _chat_json(prompt)
+        return chat_json(prompt)
     except Exception as e:
         logger.error(f"Failed to generate clustered scenario: {e}")
         return {
@@ -1135,7 +899,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     """
 
     try:
-        return _chat_json(prompt)
+        return chat_json(prompt)
     except Exception as e:
         logger.error(f"Failed to generate from topic and structure: {e}")
         return {
@@ -1261,7 +1025,7 @@ def prepare_for_tts(script: str) -> str:
     """
     
     try:
-        processed = _chat_text(prompt)
+        processed = chat_text(prompt)
         # Clean up any potential markdown or garbage
         if processed.startswith("```"):
             processed = processed.split("\n", 1)[-1].rsplit("\n", 1)[0].strip()
