@@ -7,6 +7,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const scenarioId = Number(body?.scenarioId);
+    console.log(`[KIE] submit start: scenarioId=${String(body?.scenarioId ?? "NULL")}`);
 
     if (!Number.isFinite(scenarioId) || scenarioId <= 0) {
       return NextResponse.json({ error: "scenarioId is required" }, { status: 400 });
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
     }
 
     const result = await submitSavedKieTasks(scenario.job_id);
+    console.log(
+      `[KIE] submit success: scenarioId=${scenarioId} jobId=${scenario.job_id} stdoutLength=${result.stdout.length} stderrLength=${result.stderr.length}`
+    );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     console.error("KIE submit error:", error);

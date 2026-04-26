@@ -166,6 +166,9 @@ export function ScenariosScreen({
       [scenarioId]: { ...prev[scenarioId], ...update }
     }));
   };
+  const uiLog = (...args: unknown[]) => {
+    console.log("[UI][Scenarios]", ...args);
+  };
 
   const [isSavingBackgroundAudioTag, setIsSavingBackgroundAudioTag] = useState<Record<number, boolean>>({});
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
@@ -386,6 +389,7 @@ export function ScenariosScreen({
 
   const handleGenerateAudio = async (text: string, scenarioId: number) => {
     if (!text) return;
+    uiLog("TTS click", { scenarioId, textLength: text.length });
     updateProcessingState(scenarioId, { isGeneratingAudio: true });
     try {
       const response = await fetch("/api/tts", {
@@ -399,6 +403,7 @@ export function ScenariosScreen({
         const serverMessage = payload?.error || `HTTP ${response.status}`;
         throw new Error(serverMessage);
       }
+      uiLog("TTS request success", { scenarioId, status: response.status });
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -433,6 +438,10 @@ export function ScenariosScreen({
         const timestampData = await timestampResponse.json();
         setGeneratedWordTimestamps(timestampData.words || []);
         setGeneratedTranscript(timestampData.transcript || "");
+        uiLog("Deepgram timestamps success", {
+          scenarioId,
+          words: Array.isArray(timestampData.words) ? timestampData.words.length : 0,
+        });
 
         await fetch("/api/scenarios/timestamps", {
           method: "POST",
@@ -470,6 +479,7 @@ export function ScenariosScreen({
   const handleGenerateHeygenVideo = async () => {
     if (!selectedScenario?.id) return;
     const scenarioId = selectedScenario.id;
+    uiLog("HeyGen click", { scenarioId });
 
     updateProcessingState(scenarioId, { isStartingHeygen: true });
     try {
@@ -483,6 +493,11 @@ export function ScenariosScreen({
       if (!response.ok) {
         throw new Error(payload?.error || "Failed to start HeyGen avatar generation");
       }
+      uiLog("HeyGen start success", {
+        scenarioId,
+        videoId: payload?.videoId || null,
+        avatarId: payload?.avatarId || null,
+      });
 
       await Promise.resolve(onRefresh());
     } catch (error) {
@@ -496,6 +511,7 @@ export function ScenariosScreen({
   const handleAssembleMontage = async () => {
     if (!selectedScenario?.id) return;
     const scenarioId = selectedScenario.id;
+    uiLog("Montage click", { scenarioId });
 
     updateProcessingState(scenarioId, { isAssemblingMontage: true });
     try {
@@ -509,6 +525,7 @@ export function ScenariosScreen({
       if (!response.ok) {
         throw new Error(payload?.error || "Failed to assemble montage");
       }
+      uiLog("Montage success", { scenarioId });
 
       await Promise.resolve(onRefresh());
     } catch (error) {
@@ -527,6 +544,7 @@ export function ScenariosScreen({
     }
 
     const scenarioId = selectedScenario.id;
+    uiLog("Assemble all click", { scenarioId });
     updateProcessingState(scenarioId, { isAssemblingAll: true, assembleAllStep: "Стартуем полный пайплайн..." });
 
     try {
@@ -548,6 +566,7 @@ export function ScenariosScreen({
       const initialPrompts = currentScenario?.video_generation_prompts?.prompts || [];
       if (initialPrompts.length && hasStartableVideoPrompts(initialPrompts)) {
         updateProcessingState(scenarioId, { assembleAllStep: "Запускаем генерацию видео-перебивок..." });
+        uiLog("KIE submit from assemble-all", { scenarioId });
         const submitResponse = await fetch("/api/kie/submit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -557,12 +576,14 @@ export function ScenariosScreen({
         if (!submitResponse.ok) {
           throw new Error(submitPayload?.error || "Не удалось запустить KIE генерацию.");
         }
+        uiLog("KIE submit success from assemble-all", { scenarioId });
         await refreshCurrentScenario();
       }
 
       const heygenStatus = String(currentScenario?.heygen_status || "").toLowerCase();
       if (!currentScenario?.heygen_video_url && !isPendingHeygenStatus(heygenStatus)) {
         updateProcessingState(scenarioId, { assembleAllStep: "Запускаем рендер аватара..." });
+        uiLog("HeyGen submit from assemble-all", { scenarioId });
         const heygenResponse = await fetch("/api/heygen/avatar-video", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -572,6 +593,7 @@ export function ScenariosScreen({
         if (!heygenResponse.ok) {
           throw new Error(heygenPayload?.error || "Не удалось запустить HeyGen.");
         }
+        uiLog("HeyGen submit success from assemble-all", { scenarioId });
         await refreshCurrentScenario();
       }
 
@@ -616,6 +638,7 @@ export function ScenariosScreen({
       }
 
       updateProcessingState(scenarioId, { assembleAllStep: "Собираем финальный монтаж..." });
+      uiLog("Montage submit from assemble-all", { scenarioId });
       const assembleResponse = await fetch("/api/scenarios/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -625,6 +648,7 @@ export function ScenariosScreen({
       if (!assembleResponse.ok) {
         throw new Error(assemblePayload?.error || "Не удалось собрать монтаж.");
       }
+      uiLog("Assemble-all finished", { scenarioId });
 
       await refreshCurrentScenario();
       updateProcessingState(scenarioId, { assembleAllStep: "Готово" });
@@ -667,6 +691,7 @@ export function ScenariosScreen({
   const handleSubmitVideoPrompts = async () => {
     if (!selectedScenario?.id) return;
     const scenarioId = selectedScenario.id;
+    uiLog("KIE submit click", { scenarioId });
 
     updateProcessingState(scenarioId, { isSubmittingVideoPrompts: true });
     try {
@@ -680,6 +705,11 @@ export function ScenariosScreen({
       if (!response.ok) {
         throw new Error(payload?.error || "Failed to submit Seedance prompts");
       }
+      uiLog("KIE submit success", {
+        scenarioId,
+        stdoutLength: typeof payload?.stdout === "string" ? payload.stdout.length : 0,
+        stderrLength: typeof payload?.stderr === "string" ? payload.stderr.length : 0,
+      });
 
       await Promise.resolve(onRefresh());
     } catch (error) {

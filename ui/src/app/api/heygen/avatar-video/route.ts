@@ -527,6 +527,7 @@ export async function POST(request: Request) {
 
     const { scenarioId } = await request.json();
     const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
+    console.log(`[HEYGEN] POST start: scenarioId=${String(scenarioId ?? "NULL")}`);
 
     if (!Number.isFinite(resolvedScenarioId)) {
       return NextResponse.json({ error: "scenarioId is required" }, { status: 400 });
@@ -572,6 +573,9 @@ export async function POST(request: Request) {
     if (!videoId) {
       throw new Error("HeyGen create video response did not include video_id");
     }
+    console.log(
+      `[HEYGEN] video requested: scenarioId=${resolvedScenarioId} videoId=${videoId} avatarId=${avatar.avatar_id} lookId=${selectedTalkingPhoto?.talkingPhotoId || "NULL"}`
+    );
 
     await pool.query(
       `UPDATE generated_scenarios
@@ -602,6 +606,7 @@ export async function POST(request: Request) {
     if (!isReservedVariant && !usageMarked) {
       await markAvatarUsage(avatar.id, look?.id);
     }
+    console.log(`[HEYGEN] POST success: scenarioId=${resolvedScenarioId} videoId=${videoId}`);
 
     return NextResponse.json({
       status: "pending",
@@ -642,6 +647,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const scenarioId = Number.parseInt(searchParams.get("scenarioId") || "", 10);
+    console.log(`[HEYGEN] GET status check: scenarioId=${String(searchParams.get("scenarioId") || "NULL")}`);
 
     if (!Number.isFinite(scenarioId)) {
       return NextResponse.json({ error: "scenarioId is required" }, { status: 400 });

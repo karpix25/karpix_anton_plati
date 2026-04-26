@@ -573,6 +573,7 @@ export async function POST(request: Request) {
     await pool.query('ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS tts_word_timestamps JSONB');
     const { text, scenarioId } = await request.json();
     const rawText = typeof text === 'string' ? text : '';
+    console.log(`[TTS] POST start: scenarioId=${String(scenarioId ?? "NULL")} textLength=${rawText.length}`);
 
     if (!rawText.trim()) {
       return NextResponse.json({ error: 'Text is required' }, { status: 400 });
@@ -763,6 +764,9 @@ export async function POST(request: Request) {
           [filePath, requestText, audioDurationSeconds || null, timestampPayloadJson, resolvedScenarioId]
         );
       }
+      console.log(
+        `[TTS] POST success: scenarioId=${Number.isFinite(resolvedScenarioId) ? resolvedScenarioId : "NULL"} provider=${selectedProvider} voiceId=${selectedVoiceId} requestTextLength=${requestText.length}`
+      );
 
       return new Response(new Uint8Array(finalAudioBuffer), {
         headers: {
