@@ -99,9 +99,7 @@ const AVATAR_PLANS = [
   { start: 1.35, end: 1.55 }, // MEDIUM (Средний)
   { start: 1.70, end: 1.90 }, // CLOSE (Крупный)
 ];
-const AVATAR_ZOOM_MIN_SECONDS = 2.6;
 const MIN_AVATAR_GAP_SECONDS = 2.0;
-const AVATAR_FACE_FALLBACK_Y = 0.40;
 const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || "").trim() === "1";
 
 const VIDEO_URL_HINTS = [".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8"];
@@ -113,8 +111,6 @@ function pickFirstAvatarIntroSeconds(totalDuration: number) {
   // from visual_keyword_service.py to avoid timing gaps at the first B-roll cut.
   return Math.min(totalDuration, FIRST_AVATAR_INTRO_MIN_SECONDS);
 }
-
-type FaceBox = { x: number; y: number; w: number; h: number };
 
 async function ensureMontageColumns() {
   const statements = [
@@ -217,157 +213,6 @@ async function probeVideoDimensions(filePath: string) {
   const height = Number(parts[1]);
   if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
   return { width, height };
-}
-
-function parseFaceMetadata(raw: string): FaceBox | null {
-  const xMatches = [...raw.matchAll(/lavfi\.facedetect\.x=([0-9.]+)/g)];
-  const yMatches = [...raw.matchAll(/lavfi\.facedetect\.y=([0-9.]+)/g)];
-  const wMatches = [...raw.matchAll(/lavfi\.facedetect\.w=([0-9.]+)/g)];
-  const hMatches = [...raw.matchAll(/lavfi\.facedetect\.h=([0-9.]+)/g)];
-
-  const count = Math.min(
-    xMatches.length,
-    yMatches.length,
-    wMatches.length,
-    hMatches.length
-  );
-  if (count <= 0) return null;
-
-  let best: FaceBox | null = null;
-  let bestArea = -1;
-
-  for (let i = 0; i < count; i++) {
-    const x = Number(xMatches[i]?.[1]);
-    const y = Number(yMatches[i]?.[1]);
-    const w = Number(wMatches[i]?.[1]);
-    const h = Number(hMatches[i]?.[1]);
-    if (![x, y, w, h].every(Number.isFinite) || w <= 0 || h <= 0) continue;
-
-    const area = w * h;
-    if (area > bestArea) {
-      bestArea = area;
-      best = { x, y, w, h };
-    }
-  }
-
-  return best;
-}
-
-async function detectFaceAtTime(filePath: string, timeSeconds: number): Promise<FaceBox | null> {
-  try {
-    const { stdout, stderr } = await runCommandCapture("ffmpeg", [
-      "-y",
-      "-ss",
-      timeSeconds.toFixed(3),
-      "-i",
-      filePath,
-      "-frames:v",
-      "1",
-      "-vf",
-      "facedetect=mode=fast,metadata=print:file=-",
-      "-f",
-      "null",
-      "-",
-    ]);
-    return parseFaceMetadata(`${stdout}\n${stderr}`);
-  } catch {
-    return null;
-  }
-}
-
-function chooseStableFaceSampleTimes(duration: number) {
-  if (!Number.isFinite(duration) || duration <= 0) return [0];
-  const maxStart = Math.max(duration - 0.05, 0);
-  if (maxStart <= 0) return [0];
-
-  const candidates = [
-    Math.min(0.4, maxStart),
-    duration * 0.25,
-    duration * 0.5,
-    duration * 0.75,
-    Math.max(maxStart - 0.4, 0),
-  ];
-
-  const unique = new Set<number>();
-  for (const candidate of candidates) {
-    if (!Number.isFinite(candidate)) continue;
-    const clamped = Math.max(0, Math.min(maxStart, candidate));
-    unique.add(Number(clamped.toFixed(3)));
-  }
-
-  return [...unique].sort((a, b) => a - b);
-}
-
-function median(values: number[]) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  if (sorted.length % 2 === 1) return sorted[middle];
-  return (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-async function detectStableFaceCenter(filePath: string): Promise<FaceBox | null> {
-  const duration = await probeDurationSeconds(filePath);
-  const sampleTimes = chooseStableFaceSampleTimes(duration);
-  const detected: FaceBox[] = [];
-
-  for (const sampleTime of sampleTimes) {
-    const face = await detectFaceAtTime(filePath, sampleTime);
-    if (face) detected.push(face);
-  }
-  if (!detected.length) return null;
-
-  const centerX = median(detected.map((box) => box.x + box.w / 2));
-  const centerY = median(detected.map((box) => box.y + box.h / 2));
-  const width = Math.max(1, median(detected.map((box) => box.w)));
-  const height = Math.max(1, median(detected.map((box) => box.h)));
-
-  return {
-    x: Math.max(0, centerX - width / 2),
-    y: Math.max(0, centerY - height / 2),
-    w: width,
-    h: height,
-  };
-}
-
-function buildAvatarFilter(options: {
-  duration: number;
-  faceCenterX: number;
-  faceCenterY: number;
-  zoomStart: number;
-  zoomEnd: number;
-}) {
-  const duration = Math.max(0.1, options.duration);
-  const zoomStart = options.zoomStart;
-  const zoomEnd = options.zoomEnd;
-  const zoomExprRaw =
-    duration >= AVATAR_ZOOM_MIN_SECONDS
-      ? `${zoomStart}+(${zoomEnd}-${zoomStart})*min(t,${duration})/${duration}`
-      : `${zoomStart}`;
-  
-  const zoomExpr = escapeFilterExpr(zoomExprRaw);
-  
-  // Use face position as the anchor point for transformation
-  // Formula: target_x = face_x * zoom - screen_center_x
-  // We keep the face at the same relative horizontal position or slightly center it
-  const xExpr = escapeFilterExpr(
-    `max(0,min(iw-ow,${options.faceCenterX}*(${zoomExprRaw})-ow/2))`
-  );
-  
-  // For vertical position, we target slightly above the face center (eyes/forehead area)
-  // but keep it within bounds to prevent showing black bars
-  const yExpr = escapeFilterExpr(
-    `max(0,min(ih-oh,${options.faceCenterY}*(${zoomExprRaw})-oh*0.42))`
-  );
-  
-  return [
-    "setpts=PTS-STARTPTS",
-    `scale=iw*(${zoomExpr}):-1:eval=frame`, // Use -1 for height to maintain aspect ratio
-    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:x=${xExpr}:y=${yExpr}`,
-    `fps=${OUTPUT_FPS}`,
-    "format=yuv420p",
-    "setsar=1",
-  ].join(",");
 }
 
 /**
@@ -937,7 +782,6 @@ async function buildMontage(scenarioId: number) {
     sourceCache.get(scenario.heygen_video_url) ||
     (await materializeSource(scenario.heygen_video_url, workdir, "avatar_master"));
   sourceCache.set(scenario.heygen_video_url, avatarSourcePath);
-  const stableAvatarFaceBox = await detectStableFaceCenter(avatarSourcePath);
 
   let ttsAudioPath =
     scenario.tts_audio_path && existsSync(scenario.tts_audio_path)
@@ -1017,27 +861,10 @@ async function buildMontage(scenarioId: number) {
         // ignore
       }
     }
-    const frameCenterX = dims ? dims.width / 2 : OUTPUT_WIDTH / 2;
-    const detectedFaceCenterX = stableAvatarFaceBox
-      ? stableAvatarFaceBox.x + stableAvatarFaceBox.w / 2
-      : frameCenterX;
-    const detectedFaceCenterY = stableAvatarFaceBox
-      ? stableAvatarFaceBox.y + stableAvatarFaceBox.h / 2
-      : dims
-        ? dims.height * AVATAR_FACE_FALLBACK_Y
-        : OUTPUT_HEIGHT * 0.42;
-
-    // If the source is already centered, force exact center to avoid horizontal drift while zooming.
-    const nearCenter = dims
-      ? Math.abs(detectedFaceCenterX - frameCenterX) <= dims.width * 0.08
-      : false;
-    const resolvedFaceCenterX = nearCenter ? frameCenterX : detectedFaceCenterX;
-    const faceCenterX = dims
-      ? Math.max(0, Math.min(dims.width, resolvedFaceCenterX))
-      : resolvedFaceCenterX;
-    const faceCenterY = dims
-      ? Math.max(0, Math.min(dims.height, detectedFaceCenterY))
-      : detectedFaceCenterY;
+    // Face detection is intentionally disabled to eliminate horizontal drift.
+    // We keep a fixed anchor: center by X, and a stable upper-center line by Y.
+    const faceCenterX = dims ? dims.width / 2 : OUTPUT_WIDTH / 2;
+    const faceCenterY = dims ? dims.height * 0.42 : OUTPUT_HEIGHT * 0.42;
     const avatarBaseFilter = buildCyclingAvatarFilter({
       totalDuration,
       faceCenterX,
