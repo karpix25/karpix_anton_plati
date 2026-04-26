@@ -23,6 +23,8 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   const monthlyCount = draftSettings.monthly_final_video_count || 0;
   const monthlyLimit = draftSettings.monthly_final_video_limit || 1;
   const openJobs = draftSettings.open_final_video_jobs || 0;
+  const [dailyLimitInput, setDailyLimitInput] = React.useState(String(dailyLimit));
+  const [monthlyLimitInput, setMonthlyLimitInput] = React.useState(String(monthlyLimit));
 
   const targetMin = draftSettings.target_duration_min_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
   const targetMax = draftSettings.target_duration_max_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
@@ -36,6 +38,56 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   React.useEffect(() => {
     setTargetMaxInput(String(targetMax));
   }, [targetMax]);
+
+  React.useEffect(() => {
+    setDailyLimitInput(String(dailyLimit));
+  }, [dailyLimit]);
+
+  React.useEffect(() => {
+    setMonthlyLimitInput(String(monthlyLimit));
+  }, [monthlyLimit]);
+
+  const commitDailyLimitInput = () => {
+    const parsed = Number(dailyLimitInput);
+    let committedDaily = dailyLimit;
+    let committedMonthly = monthlyLimit;
+
+    setDraftSettings((prev) => {
+      const fallbackDaily = Number(prev.daily_final_video_limit || 1);
+      const fallbackMonthly = Number(prev.monthly_final_video_limit || fallbackDaily);
+      const normalizedDaily = Number.isFinite(parsed) ? Math.max(1, Math.round(parsed)) : fallbackDaily;
+      const normalizedMonthly = Math.max(fallbackMonthly, normalizedDaily);
+      committedDaily = normalizedDaily;
+      committedMonthly = normalizedMonthly;
+      return {
+        ...prev,
+        daily_final_video_limit: normalizedDaily,
+        monthly_final_video_limit: normalizedMonthly,
+      };
+    });
+
+    setDailyLimitInput(String(committedDaily));
+    setMonthlyLimitInput(String(committedMonthly));
+  };
+
+  const commitMonthlyLimitInput = () => {
+    const parsed = Number(monthlyLimitInput);
+    let committedMonthly = monthlyLimit;
+
+    setDraftSettings((prev) => {
+      const fallbackDaily = Number(prev.daily_final_video_limit || 1);
+      const fallbackMonthly = Number(prev.monthly_final_video_limit || fallbackDaily);
+      const normalizedMonthlyCandidate = Number.isFinite(parsed) ? Math.max(1, Math.round(parsed)) : fallbackMonthly;
+      const normalizedMonthly = Math.max(fallbackDaily, normalizedMonthlyCandidate);
+      committedMonthly = normalizedMonthly;
+      return {
+        ...prev,
+        monthly_final_video_limit: normalizedMonthly,
+      };
+    });
+
+    setMonthlyLimitInput(String(committedMonthly));
+  };
 
   const commitTargetMinInput = () => {
     const parsed = Number(targetMinInput);
@@ -171,17 +223,15 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
               <input
                 type="number"
                 min={1}
-                value={dailyLimit}
-                onChange={(event) =>
-                  setDraftSettings((prev) => {
-                    const nextDaily = Math.max(1, parseInt(event.target.value) || 1);
-                    return {
-                      ...prev,
-                      daily_final_video_limit: nextDaily,
-                      monthly_final_video_limit: Math.max(prev.monthly_final_video_limit || nextDaily, nextDaily),
-                    };
-                  })
-                }
+                step={1}
+                value={dailyLimitInput}
+                onChange={(event) => setDailyLimitInput(event.target.value)}
+                onBlur={commitDailyLimitInput}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
                 className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/10"
               />
             </div>
@@ -192,13 +242,15 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
               <input
                 type="number"
                 min={dailyLimit}
-                value={monthlyLimit}
-                onChange={(event) =>
-                  setDraftSettings((prev) => ({
-                    ...prev,
-                    monthly_final_video_limit: Math.max(prev.daily_final_video_limit || 1, parseInt(event.target.value) || 1),
-                  }))
-                }
+                step={1}
+                value={monthlyLimitInput}
+                onChange={(event) => setMonthlyLimitInput(event.target.value)}
+                onBlur={commitMonthlyLimitInput}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  }
+                }}
                 className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-3 text-sm font-bold text-foreground outline-none focus:ring-2 focus:ring-primary/10"
               />
             </div>
