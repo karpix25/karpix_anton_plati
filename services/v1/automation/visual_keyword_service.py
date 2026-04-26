@@ -567,6 +567,9 @@ class VisualSegmentProcessor:
         duration = max(MIN_BROLL_SEGMENT_SECONDS, first["slot_end"] - first["slot_start"])
         first["slot_start"] = round(FIRST_ATTENTION_CUT_MIN_SECONDS, 1)
         first["slot_end"] = round(min(self.total_duration, FIRST_ATTENTION_CUT_MIN_SECONDS + duration), 1)
+        # Keep timeline fields consistent for downstream consumers that may read word_* fields.
+        first["word_start"] = first["slot_start"]
+        first["word_end"] = first["slot_end"]
         if first["slot_end"] - first["slot_start"] < 0.5:
             return segments[1:]
         first["reason"] = f"{first.get('reason', '')}; forced_first_cut".strip("; ")
@@ -618,35 +621,27 @@ class VisualPromptBuilder:
     def build_system_prompt(self, scenario_text: str) -> str:
         product_keywords = _parse_product_keywords(self.config.product_keyword)
         prompt = f"""SYSTEM:
-Ты — эксперт по видеомонтажу и UGC. Твоя задача — отобрать визуальные образы из сценария.
-Сценарий: {scenario_text}
+Ты — extraction-движок для тайминга визуальных сегментов (не креативный копирайтер).
+Твоя цель: стабильно вернуть корректные таймкоды и короткие фразы для визуализации.
 
-ГЛАВНАЯ ДИРЕКТИВА:
-- Визуализируй прямой смысл (Literal Meaning).
-- Кадр строго 9:16 Cinematic Flow.
-- Никаких брендов и логотипов.
+СЦЕНАРИЙ:
+{scenario_text}
 
-ИНСТРУКЦИИ:
-- **keyword**: Главный объект (RU)
-- **phrase**: Действие или контекст (RU)
-- **visual_intent**: A technical description for the video generator (EN). 
-  Structure: [Shot Scale (CU/MS/WS)] + [Subject & Action] + [Cinematography/Lighting].
-  Example: "CU of a hand holding a gold credit card, Dolly In, warm Rembrandt lighting, 4K textures."
-
-    **TECHNICAL GUIDELINES (Veo-3 Meta-Framework):**
-    - **Cinematography**: Use Dolly, Truck, Pan, Tilt, Arc movements.
-    - **Shot Scales**: CU (Close-up), MS (Medium Shot), WS (Wide Shot), POV (Point of View), Over-shoulder.
-    - **Lighting**: Golden hour, Volumetric, Rembrandt, Soft diffused, Neon reflections.
-    - **No Vague Words**: Avoid "cinematic", "amazing", "beautiful". Use physical facts.
-    - **Appearance**: Visible people must be European-looking (light skin).
+ОБЯЗАТЕЛЬНЫЕ ПРАВИЛА:
+1. Не выдумывай факты, слова и тайминги. Используй только то, что есть в transcript с timestamp.
+2. Возвращай только валидный JSON без markdown и комментариев.
+3. Для каждого сегмента обязательно заполняй: slot_start, slot_end, word_start, word_end, keyword, phrase, visual_intent.
+4. keyword — 1-3 слова на русском; phrase — короткая фраза 2-8 слов на русском.
+5. visual_intent — короткая техническая фраза на английском для video model (shot + subject/action + camera/light).
+6. Первый сегмент должен начинаться в диапазоне 2.6-3.0s (если общая длительность позволяет).
+7. Времена должны быть в секундах, не отрицательные, slot_end > slot_start, word_end >= word_start.
 """
         if product_keywords:
             keywords_hint = ", ".join([f"'{k}'" for k in product_keywords])
             prompt += (
-                "\nГЛАВНЫЕ ПРОДУКТОВЫЕ КЛЮЧИ (PRODUCT_KEYWORDS): "
+                "\nPRODUCT_KEYWORDS (high priority): "
                 f"{keywords_hint}."
-                " Обязательно выдели сегмент(ы), где упоминается любой из этих ключей, "
-                "чтобы мы могли вставить реальное видео товара.\n"
+                " Обязательно выделяй сегменты, где реально произнесены эти ключи в transcript.\n"
             )
         
         if self.config.learned_rules:
@@ -657,23 +652,29 @@ class VisualPromptBuilder:
         product_keywords = _parse_product_keywords(self.config.product_keyword)
         timestamped_transcript = _get_timestamped_transcript(words)
         
-        user_msg = f"""TRANSCRIPT WITH TIMESTAMPS: {timestamped_transcript}
+        user_msg = f"""TRANSCRIPT WITH TIMESTAMPS:
+{timestamped_transcript}
 
-AVAILABLE SLOTS (Calculated by math, use them as reference but prioritize actual word timing if there's a match): 
+AVAILABLE SLOTS (reference windows):
 {json.dumps(slots)}
 
 TASK:
-1. Identify up to {len(slots)} key segments from the transcript.
-2. For each segment, find EXACT word timings from the transcript above.
-3. Map them to the closest available slot or provide the exact word timings.
-4. ОСОБОЕ ТРЕБОВАНИЕ: Обязательно найди и заполни первый доступный временной слот (обычно начиная с 2.6s - 4.5s). Даже если в начале нет ярких действий, подбери визуальный образ, соответствующий теме вступления.
+1. Return up to {len(slots)} segments.
+2. Extract exact word timing from transcript: word_start/word_end.
+3. Set slot_start/slot_end close to word timing and within sensible window.
+4. First segment MUST start in 2.6-3.0s when possible.
+5. If uncertain, prefer fewer segments over guessed segments.
 
-CRITICAL: You MUST provide 'word_start' and 'word_end' based on the timestamps in the transcript.
+STRICT VALIDATION TARGET:
+- All timestamps are numbers in seconds.
+- slot_end > slot_start.
+- word_end >= word_start.
+- No duplicate segments with the same timing.
 """
         if product_keywords:
             keywords_hint = ", ".join([f"'{k}'" for k in product_keywords])
             user_msg += (
-                "ВАЖНО: Обязательно найди и выдели моменты, где говорится про любой из ключей: "
+                "PRODUCT_KEYWORDS: обязательно выдели реальные упоминания: "
                 f"{keywords_hint}.\n"
             )
         
@@ -694,6 +695,64 @@ CRITICAL: You MUST provide 'word_start' and 'word_end' based on the timestamps i
   ]
 }}"""
         return user_msg
+
+
+def _coerce_llm_segments(raw_segments: Any, total_dur: float) -> List[VisualSegment]:
+    if not isinstance(raw_segments, list):
+        return []
+    result: List[VisualSegment] = []
+    for item in raw_segments:
+        if not isinstance(item, dict):
+            continue
+        slot_start = _safe_float(item.get("slot_start"), -1.0)
+        slot_end = _safe_float(item.get("slot_end"), -1.0)
+        word_start = _safe_float(item.get("word_start"), slot_start)
+        word_end = _safe_float(item.get("word_end"), slot_end)
+        if slot_start < 0 or slot_end <= slot_start:
+            if word_start >= 0 and word_end > word_start:
+                slot_start, slot_end = word_start, word_end
+            else:
+                continue
+
+        slot_start = round(max(0.0, min(slot_start, total_dur)), 2)
+        slot_end = round(min(total_dur, max(slot_end, slot_start + 0.1)), 2)
+        word_start = round(max(0.0, min(word_start, total_dur)), 2)
+        word_end = round(min(total_dur, max(word_end, word_start)), 2)
+
+        result.append({
+            "slot_start": slot_start,
+            "slot_end": slot_end,
+            "word_start": word_start,
+            "word_end": word_end,
+            "keyword": str(item.get("keyword") or "").strip(),
+            "phrase": str(item.get("phrase") or "").strip(),
+            "visual_intent": str(item.get("visual_intent") or "").strip(),
+            "should_use_product_clip": bool(item.get("should_use_product_clip", False)),
+            "reason": str(item.get("reason") or "llm").strip(),
+        })
+    result.sort(key=lambda seg: (float(seg.get("slot_start", 0.0)), float(seg.get("slot_end", 0.0))))
+    return result
+
+
+def _enforce_first_segment_window(segments: List[VisualSegment], total_dur: float) -> None:
+    if not segments or total_dur <= FIRST_ATTENTION_CUT_MAX_SECONDS + 1.0:
+        return
+    first = segments[0]
+    first_start = _safe_float(first.get("slot_start"), FIRST_ATTENTION_CUT_MIN_SECONDS)
+    if FIRST_ATTENTION_CUT_MIN_SECONDS <= first_start <= FIRST_ATTENTION_CUT_MAX_SECONDS:
+        return
+
+    min_dur = MIN_PRODUCT_SEGMENT_SECONDS if first.get("asset_type") == "product_video" else MIN_BROLL_SEGMENT_SECONDS
+    current_dur = max(0.1, _safe_float(first.get("slot_end"), first_start) - first_start)
+    duration = max(min_dur, current_dur)
+    new_start = round(FIRST_ATTENTION_CUT_MIN_SECONDS, 2)
+    new_end = round(min(total_dur, new_start + duration), 2)
+    first["slot_start"] = new_start
+    first["slot_end"] = new_end
+    # Keep montage-consumed word timing aligned with final slot timing.
+    first["word_start"] = new_start
+    first["word_end"] = new_end
+    first["reason"] = f"{first.get('reason', '')}; forced_first_segment_window".strip("; ")
 
 # --- ORCHESTRATOR ---
 
@@ -719,7 +778,8 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
         total_dur = norm_words[-1]["end"]
         
         # 1. Build LLM Segments
-        segments = _build_semantic_llm_segments(config, scenario_text, norm_words, slots)
+        llm_segments = _build_semantic_llm_segments(config, scenario_text, norm_words, slots)
+        segments = _coerce_llm_segments(llm_segments, total_dur)
         
         # 1.5. Fix LLM Hallucinations in Timings
         if segments:
@@ -744,6 +804,8 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
                 # Update slot to match reality
                 seg["slot_start"] = new_start
                 seg["slot_end"] = new_end
+        
+        _enforce_first_segment_window(segments, total_dur)
 
         if not segments:
             segments = _fallback_segments(norm_words, slots)
@@ -766,15 +828,23 @@ def _build_semantic_llm_segments(config: GenerationConfig, scenario: str, words:
         builder = VisualPromptBuilder(config)
         client = _openrouter_client()
         model = os.getenv("SCENARIO_MODEL", "google/gemini-2.5-flash")
+        temperature = _safe_float(os.getenv("VISUAL_SEGMENTS_TEMPERATURE"), 0.1)
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": builder.build_system_prompt(scenario)},
                 {"role": "user", "content": builder.build_user_prompt(words, slots)}
             ],
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            temperature=max(0.0, min(temperature, 0.3)),
         )
-        data = json.loads(response.choices[0].message.content)
+        content = (response.choices[0].message.content or "").strip()
+        if "```json" in content:
+            content = content.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in content:
+            content = content.split("```", 1)[1].split("```", 1)[0].strip()
+
+        data = json.loads(content) if content else {}
         return data.get("segments")
     except Exception as e:
         logger.warning(f"LLM extraction failed: {e}")

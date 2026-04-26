@@ -498,8 +498,10 @@ function resolvePromptSource(
 function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
   const rawPrompts = (scenario.video_generation_prompts?.prompts || [])
     .map((item) => ({
-      start: Number(item.word_start ?? item.slot_start ?? 0),
-      end: Number(item.word_end ?? item.slot_end ?? 0),
+      // slot_* is post-processed final timing (guardrails/first-cut fixes),
+      // so it must have priority over raw word_* timestamps.
+      start: Number(item.slot_start ?? item.word_start ?? 0),
+      end: Number(item.slot_end ?? item.word_end ?? 0),
       assetType: item.asset_type || null,
       assetDurationSeconds: Number(item.asset_duration_seconds || 0),
       source: resolvePromptSource(item),
