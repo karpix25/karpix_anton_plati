@@ -192,93 +192,6 @@ def _probe_audio_duration_seconds(file_path):
         return None
 
 
-def _build_atempo_filter(speed_factor: float) -> str:
-    factor = max(float(speed_factor), 0.01)
-    filters: list[str] = []
-
-    while factor > 2.0:
-        filters.append("atempo=2.0")
-        factor /= 2.0
-
-    while factor < 0.5:
-        filters.append("atempo=0.5")
-        factor /= 0.5
-
-    filters.append(f"atempo={factor:.6f}")
-    return ",".join(filters)
-
-
-def _fit_tts_audio_to_max_duration(
-    audio_path: str | None,
-    max_duration_seconds: float | None,
-    *,
-    tolerance_seconds: float = 0.2,
-    max_speedup: float = 1.45,
-) -> tuple[str | None, float | None]:
-    if not audio_path or not os.path.exists(audio_path):
-        return audio_path, _probe_audio_duration_seconds(audio_path)
-
-    try:
-        resolved_max = float(max_duration_seconds or 0)
-    except (TypeError, ValueError):
-        resolved_max = 0.0
-    if resolved_max <= 0:
-        return audio_path, _probe_audio_duration_seconds(audio_path)
-
-    current_duration = _probe_audio_duration_seconds(audio_path)
-    if not current_duration or current_duration <= resolved_max + max(0.0, float(tolerance_seconds)):
-        return audio_path, current_duration
-
-    speedup = current_duration / resolved_max
-    if speedup <= 1.0:
-        return audio_path, current_duration
-    if speedup > float(max_speedup):
-        logger.warning(
-            "Skip hard-fit for TTS audio (speedup %.3fx > %.2fx limit): %s",
-            speedup,
-            max_speedup,
-            audio_path,
-        )
-        return audio_path, current_duration
-
-    stem, ext = os.path.splitext(audio_path)
-    fitted_path = f"{stem}_fit{ext or '.mp3'}"
-    atempo_filter = _build_atempo_filter(speedup)
-
-    try:
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-i",
-                audio_path,
-                "-filter:a",
-                atempo_filter,
-                "-vn",
-                "-c:a",
-                "mp3",
-                "-q:a",
-                "2",
-                fitted_path,
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-    except Exception as error:
-        logger.warning("Failed to fit TTS audio duration for %s: %s", audio_path, error)
-        return audio_path, current_duration
-
-    fitted_duration = _probe_audio_duration_seconds(fitted_path) or current_duration
-    logger.info(
-        "Fitted TTS audio duration: %.3fs -> %.3fs (max %.3fs, speedup %.3fx)",
-        current_duration,
-        fitted_duration,
-        resolved_max,
-        speedup,
-    )
-    return fitted_path, fitted_duration
-
 def _merge_intervals(intervals: list[tuple[float, float]], gap_tolerance: float = 0.015) -> list[tuple[float, float]]:
     if not intervals:
         return []
@@ -1027,11 +940,6 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                         )
 
                     tts_audio_duration_seconds = _probe_audio_duration_seconds(tts_audio_path)
-                    if resolved_target_duration_max_seconds > 0:
-                        tts_audio_path, tts_audio_duration_seconds = _fit_tts_audio_to_max_duration(
-                            tts_audio_path,
-                            resolved_target_duration_max_seconds,
-                        )
 
                     is_overflow_after_fit = (
                         duration_overflow_limit_seconds > 0

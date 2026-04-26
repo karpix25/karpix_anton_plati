@@ -56,39 +56,18 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f0f4f7]">
-      {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-[#e5ebf0] bg-white/80 px-8 py-4 backdrop-blur-md">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black tracking-tight text-foreground uppercase italicLine">
-              Контент машина
-            </h1>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">
-              Настройки проекта: {props.selectedClientId || "Unselected"}
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            {props.canDeleteProject ? (
-              <Button
-                variant="ghost"
-                className="h-11 rounded-xl px-4 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
-                onClick={state.handleDeleteProject}
-                disabled={props.isDeletingProject}
-              >
-                {props.isDeletingProject ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                Удалить проект
-              </Button>
-            ) : null}
-          </div>
-        </div>
-      </header>
-
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Navigation Sidebar */}
         <aside className="w-80 shrink-0 overflow-hidden border-r border-[#e5ebf0] bg-white/40 p-6">
            <nav className="space-y-2">
-             <div className="mb-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-4">Основные разделы</div>
+             <div className="mb-4 px-4">
+               <h1 className="text-2xl font-black tracking-tight text-foreground uppercase italicLine">
+                 Контент машина
+               </h1>
+               <p className="mt-1 text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em]">
+                 Настройки проекта: {props.selectedClientId || "Unselected"}
+               </p>
+             </div>
              {tabs.map((tab) => {
                const Icon = tab.icon;
                const isActive = activeTab === tab.id;
@@ -110,6 +89,18 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
            </nav>
 
            <div className="mt-12 space-y-6 px-4">
+              {props.canDeleteProject ? (
+                <Button
+                  variant="ghost"
+                  className="h-11 w-full rounded-xl border border-rose-100 bg-rose-50/60 px-4 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
+                  onClick={state.handleDeleteProject}
+                  disabled={props.isDeletingProject}
+                >
+                  {props.isDeletingProject ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                  Удалить проект
+                </Button>
+              ) : null}
+
               <div className="rounded-2xl bg-indigo-50/50 p-5 border border-indigo-100">
                  <div className="flex items-center gap-2 text-indigo-600 mb-2">
                     <AlertCircle className="h-4 w-4" />

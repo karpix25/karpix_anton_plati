@@ -525,6 +525,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     duration_label = f"{source_duration_seconds:.1f} сек" if source_duration_seconds else "не определена"
     wpm_label = f"{source_wpm:.1f} слов/мин" if source_wpm else "не определен"
     desired_duration_label = duration_targets["duration_range_label"]
+    preferred_center_duration_label = f"{duration_targets['center_seconds']:.0f} сек"
     voice_speed_label = (
         f"{duration_targets['voice_chars_per_minute']:.1f} симв/мин"
         if duration_targets.get("voice_chars_per_minute")
@@ -632,11 +633,13 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     SOURCE PACING CONSTRAINTS:
     - Source duration: {duration_label}
     - Desired target duration range: {desired_duration_label}
+    - Preferred target duration center: {preferred_center_duration_label}
     - Source word count: {source_word_count}
     - Source speaking pace: {wpm_label}
     - Target word-count range: {min_word_target}-{max_word_target}
     {char_target_line}
     - Aim for the desired target duration while respecting the source speaking density.
+    - Prefer durations around the target center; do not intentionally push every script to the upper boundary.
     - If the rewrite becomes meaningfully longer than the target, compress it.
 
     PATTERN FRAMEWORK:
@@ -788,6 +791,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     ) if min_char_target and max_char_target else ""
     duration_label = f"{source_duration:.1f} сек" if source_duration else "неизвестна"
     desired_duration_label = duration_targets["duration_range_label"]
+    preferred_center_duration_label = f"{duration_targets['center_seconds']:.0f} сек"
     source_hook = atoms.get("verbal_hook") or ""
     normalized_source_hook = source_hook.lower().replace("ё", "е")
     hook_blueprint = _hook_blueprint(source_hook)
@@ -814,9 +818,11 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     ОГРАНИЧЕНИЯ ПО ДЛИНЕ:
     - Длительность оригинала: {duration_label}
     - Желаемая длительность финального сценария: {desired_duration_label}
+    - Предпочтительный центр диапазона: {preferred_center_duration_label}
     - Целевое количество слов: {word_min} - {word_max} слов. 
     {char_target_hint}
     [ВАЖНО] Подгоняйте итоговый сценарий под желаемую длительность финального видео.
+    [ВАЖНО] Не тяните каждый сценарий к верхней границе диапазона без необходимости.
 
     ЦЕЛЕВОЙ КОНТЕКСТ (Target Product):
     - Продукт: {product_context}
@@ -893,6 +899,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
         f"- Целевой диапазон символов (без пробелов): {min_char_target}-{max_char_target} "
         f"(скорость голоса: {voice_speed_label})"
     ) if min_char_target and max_char_target else ""
+    preferred_center_duration_label = f"{duration_targets['center_seconds']:.0f} сек"
     normalized_references = []
     for idx, audit in enumerate(reference_audits, start=1):
         atoms = audit.get("atoms", {})
@@ -953,8 +960,10 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     - Тон бренда: {voice_context}
     - Аудитория: {audience_context}
     - Желаемая длительность: {duration_targets["duration_range_label"]}
+    - Предпочтительный центр диапазона: {preferred_center_duration_label}
     - Целевой диапазон слов: {word_min}-{word_max}
     {char_target_hint}
+    - Не стремитесь искусственно к верхней границе диапазона, если смысл можно уложить ближе к центру.
 
     ЗАДАЧА:
     1. Выделите ОБЩИЙ ПАТТЕРН всех референсов (общий тип хука, структура аргументации, тип финала).
@@ -1025,6 +1034,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     char_target_hint = (
         f"- Requested character-count range: {min_char_target}-{max_char_target} (non-space, voice speed {voice_speed_label})"
     ) if min_char_target and max_char_target else ""
+    preferred_center_duration_label = f"{duration_targets['center_seconds']:.0f} сек"
     hook_context = _hook_context_from_source_cards(topic_card=topic_card, structure_card=structure_card)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
@@ -1088,8 +1098,10 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
 
     LENGTH TARGET:
     - Desired target duration: {duration_targets["duration_range_label"]}
+    - Preferred center duration: {preferred_center_duration_label}
     - Requested word-count range: {word_min}-{word_max} слов
     {char_target_hint}
+    - Do not systematically optimize to the upper bound if the message fits closer to the center.
 
     TASK:
     1. Identify the CORE THESIS from the Structure Card.
