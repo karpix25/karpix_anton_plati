@@ -107,12 +107,7 @@ const MIN_PRODUCT_SEGMENT_SECONDS = 3;
 const DEFAULT_PRODUCT_CLIP_SECONDS = 4;
 const FRAME_EPSILON_SECONDS = 1 / OUTPUT_FPS;
 const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.8;
-const AVATAR_PLANS = [
-  { start: 1.00, end: 1.20 }, // WIDE (Общий)
-  { start: 1.35, end: 1.55 }, // MEDIUM (Средний)
-];
 const MIN_AVATAR_GAP_SECONDS = 2.5;
-const AVATAR_ANIMATE_ZOOM = String(process.env.MONTAGE_AVATAR_ANIMATE_ZOOM || "").trim() === "1";
 
 const VIDEO_URL_HINTS = [".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8"];
 const IMAGE_URL_HINTS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".svg"];
@@ -209,65 +204,15 @@ function escapeFilterExpr(value: string) {
 }
 
 /**
- * Builds a single continuous avatar filter with time-varying zoom that
- * cycles through AVATAR_PLANS at each B-roll boundary. Since the B-roll
- * overlay hides the avatar during transitions, the zoom change is
- * invisible to the viewer.
+ * Builds a simple static avatar filter without any zoom animations.
+ * Ensures the avatar is scaled and cropped to the target 9:16 resolution.
  */
-function buildCyclingAvatarFilter(options: {
-  brollEndTimes: number[];
-}) {
-  const intervals: { start: number; end: number; zStart: number; zEnd: number }[] = [];
-  
-  let lastT = 0;
-  for (let i = 0; i <= options.brollEndTimes.length; i++) {
-    const endT = options.brollEndTimes[i] || 9999; // 9999 as "infinity" for the last segment
-    const planIdx = i % AVATAR_PLANS.length;
-    const plan = AVATAR_PLANS[planIdx];
-    
-    intervals.push({
-      start: lastT,
-      end: endT,
-      zStart: plan.start,
-      zEnd: plan.end,
-    });
-    lastT = endT;
-  }
-
-  // Build zoom expression
-  // If ANIMATE: zStart + (zEnd - zStart) * (t - start) / (end - start)
-  // Else: zEnd (constant for segment)
-  let zoomExprRaw = "";
-  if (AVATAR_ANIMATE_ZOOM) {
-    zoomExprRaw = String(intervals[intervals.length - 1].zEnd);
-    for (let i = intervals.length - 1; i >= 0; i--) {
-      const { start, end, zStart, zEnd } = intervals[i];
-      const duration = end - start;
-      const progress = duration > 0 ? `(t-${start.toFixed(3)})/${duration.toFixed(3)}` : "0";
-      const segmentZoom = `${zStart.toFixed(3)}+(${zEnd.toFixed(3)}-${zStart.toFixed(3)})*${progress}`;
-      zoomExprRaw = i === intervals.length - 1 
-        ? segmentZoom 
-        : `if(lt(t,${end.toFixed(3)}),${segmentZoom},${zoomExprRaw})`;
-    }
-  } else {
-    zoomExprRaw = String(intervals[intervals.length - 1].zEnd);
-    for (let i = intervals.length - 2; i >= 0; i--) {
-      const { end, zEnd } = intervals[i];
-      zoomExprRaw = `if(lt(t,${end.toFixed(3)}),${zEnd.toFixed(3)},${zoomExprRaw})`;
-    }
-  }
-
-  const zoomExpr = escapeFilterExpr(zoomExprRaw);
-
+function buildSimpleAvatarFilter() {
   return [
     "setpts=PTS-STARTPTS",
     "setsar=1",
-    // 1. Scale and crop to exact 9:16 base FIRST to ensure we have a centered 1080x1920 frame
+    // Scale and crop to exact 9:16 1080x1920
     `scale=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:force_original_aspect_ratio=increase`,
-    `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:(iw-ow)/2:(ih-oh)/2`,
-    // 2. Apply zoom relative to this centered base
-    `scale=iw*(${zoomExpr}):-1:eval=frame`,
-    // 3. Final crop to target size, always anchoring at the center
     `crop=${OUTPUT_WIDTH}:${OUTPUT_HEIGHT}:(iw-ow)/2:(ih-oh)/2`,
     `fps=${OUTPUT_FPS}`,
     "format=yuv420p",
@@ -1053,9 +998,7 @@ async function buildMontage(scenarioId: number) {
   // 1. Render continuous avatar base video (full duration with cycling zoom)
   const avatarBasePath = path.join(workdir, "avatar_base.mp4");
   {
-    const avatarBaseFilter = buildCyclingAvatarFilter({
-      brollEndTimes: brollSegments.map((s) => s.end),
-    });
+    const avatarBaseFilter = buildSimpleAvatarFilter();
     await runCommand("ffmpeg", [
       "-y",
       "-i",
