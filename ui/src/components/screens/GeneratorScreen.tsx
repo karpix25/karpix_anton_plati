@@ -150,33 +150,6 @@ export function GeneratorScreen({
             Выбери одну тему и один паттерн, чтобы создать совершенно новый сценарий.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="outline"
-            className="h-12 rounded-xl px-6 font-bold"
-            onClick={onGenerateRandomBatch}
-            disabled={isGenerating || !topicCards.length || !structureCards.length}
-          >
-            {isGenerating ? (
-              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Shuffle className="mr-2 h-4 w-4" />
-            )}
-            4 рандомных
-          </Button>
-          <Button
-            className="primary-gradient h-12 rounded-xl px-8 font-bold text-white shadow-lg"
-            onClick={onGenerate}
-            disabled={!selectedTopic || !selectedStructure || isGenerating}
-          >
-            {isGenerating ? (
-              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Zap className="mr-2 h-4 w-4" />
-            )}
-            Сгенерировать микс
-          </Button>
-        </div>
       </div>
 
       <section className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_350px]">
@@ -298,6 +271,35 @@ export function GeneratorScreen({
         {/* Builder Sidebar */}
         <div className="relative">
           <div className="sticky top-24 space-y-6">
+            <div className="rounded-2xl border border-slate-100 bg-white/70 p-4 shadow-xl backdrop-blur-md">
+              <div className="grid grid-cols-[1fr_2fr] gap-3">
+                <Button
+                  variant="outline"
+                  className="h-12 rounded-xl px-4 font-bold"
+                  onClick={onGenerateRandomBatch}
+                  disabled={isGenerating || !topicCards.length || !structureCards.length}
+                >
+                  {isGenerating ? (
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Shuffle className="mr-2 h-4 w-4" />
+                  )}
+                  4 рандомных
+                </Button>
+                <Button
+                  className="primary-gradient h-12 rounded-xl px-4 font-bold text-white shadow-lg"
+                  onClick={onGenerate}
+                  disabled={!selectedTopic || !selectedStructure || isGenerating}
+                >
+                  {isGenerating ? (
+                    <LoaderCircle className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Zap className="mr-2 h-4 w-4" />
+                  )}
+                  Сгенерировать микс
+                </Button>
+              </div>
+            </div>
             <div className="rounded-2xl border border-slate-100 bg-white/70 p-6 shadow-xl backdrop-blur-md">
               <h3 className="mb-6 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 Конструктор микса
