@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import ast
+import math
 from openai import OpenAI
 
 # Set up logging
@@ -14,6 +15,27 @@ logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
+
+
+def _get_env_float(name: str, default: float, minimum: float | None = None, maximum: float | None = None) -> float:
+    raw = os.getenv(name)
+    try:
+        value = float(raw) if raw is not None else float(default)
+    except (TypeError, ValueError):
+        value = float(default)
+
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+# UI uses ~2.2 words/sec as operator-facing pace model; keep backend aligned.
+TARGET_WORDS_PER_SECOND = _get_env_float("SCENARIO_TARGET_WORDS_PER_SECOND", 2.2, minimum=1.2, maximum=3.0)
+# Keep a safety buffer so "до N сек" is respected more reliably in real TTS output.
+TARGET_WORD_BUDGET_MAX_RATIO = _get_env_float("SCENARIO_TARGET_WORD_BUDGET_MAX_RATIO", 0.9, minimum=0.7, maximum=1.0)
+TARGET_WORD_BUDGET_MIN_RATIO = _get_env_float("SCENARIO_TARGET_WORD_BUDGET_MIN_RATIO", 0.82, minimum=0.6, maximum=1.0)
 
 def _openrouter_client():
     api_key = os.getenv("OPENROUTER_API_KEY")
@@ -220,9 +242,19 @@ def _resolve_duration_targets(
     resolved_max = max(resolved_max, resolved_min)
     resolved_center = float(target_duration_seconds or ((resolved_min + resolved_max) / 2.0))
 
-    effective_wpm = float(source_wpm or 150.0)
-    min_word_target = max(int(effective_wpm * (resolved_min / 60.0) * 0.9), 1)
-    max_word_target = max(int(effective_wpm * (resolved_max / 60.0) * 1.1), min_word_target)
+    source_wps = 0.0
+    try:
+        source_wps = float(source_wpm or 0) / 60.0
+    except (TypeError, ValueError):
+        source_wps = 0.0
+
+    # Use conservative pace to avoid overruns (prefer stricter of source pace and configured pace).
+    effective_wps = TARGET_WORDS_PER_SECOND
+    if source_wps > 0:
+        effective_wps = min(TARGET_WORDS_PER_SECOND, source_wps)
+
+    min_word_target = max(int(math.ceil(resolved_min * effective_wps * TARGET_WORD_BUDGET_MIN_RATIO)), 1)
+    max_word_target = max(int(math.floor(resolved_max * effective_wps * TARGET_WORD_BUDGET_MAX_RATIO)), min_word_target)
 
     return {
         "min_seconds": resolved_min,
