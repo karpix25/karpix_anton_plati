@@ -15,6 +15,8 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   isManualFinalRunPending,
   onManualFinalRun,
 }) => {
+  const MIN_DURATION_SECONDS = 15;
+  const MAX_DURATION_SECONDS = 120;
   const autoActive = draftSettings.auto_generate_final_videos ?? false;
   const dailyCount = draftSettings.daily_final_video_count || 0;
   const dailyLimit = draftSettings.daily_final_video_limit || 1;
@@ -22,8 +24,75 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   const monthlyLimit = draftSettings.monthly_final_video_limit || 1;
   const openJobs = draftSettings.open_final_video_jobs || 0;
 
-  const targetMin = draftSettings.target_duration_min_seconds || draftSettings.target_duration_seconds || 15;
-  const targetMax = draftSettings.target_duration_max_seconds || draftSettings.target_duration_seconds || 15;
+  const targetMin = draftSettings.target_duration_min_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
+  const targetMax = draftSettings.target_duration_max_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
+  const [targetMinInput, setTargetMinInput] = React.useState(String(targetMin));
+  const [targetMaxInput, setTargetMaxInput] = React.useState(String(targetMax));
+
+  React.useEffect(() => {
+    setTargetMinInput(String(targetMin));
+  }, [targetMin]);
+
+  React.useEffect(() => {
+    setTargetMaxInput(String(targetMax));
+  }, [targetMax]);
+
+  const commitTargetMinInput = () => {
+    const parsed = Number(targetMinInput);
+    let committedMin = targetMin;
+    let committedMax = targetMax;
+
+    setDraftSettings((prev) => {
+      const fallbackMin =
+        Number(prev.target_duration_min_seconds || prev.target_duration_seconds || MIN_DURATION_SECONDS);
+      const fallbackMax =
+        Number(prev.target_duration_max_seconds || prev.target_duration_seconds || fallbackMin);
+      const normalizedMin = Number.isFinite(parsed)
+        ? Math.max(MIN_DURATION_SECONDS, Math.min(MAX_DURATION_SECONDS, parsed))
+        : fallbackMin;
+      const normalizedMax = Math.max(normalizedMin, fallbackMax);
+      committedMin = normalizedMin;
+      committedMax = normalizedMax;
+      return {
+        ...prev,
+        target_duration_seconds: Math.round((normalizedMin + normalizedMax) / 2),
+        target_duration_min_seconds: normalizedMin,
+        target_duration_max_seconds: normalizedMax,
+      };
+    });
+
+    setTargetMinInput(String(committedMin));
+    setTargetMaxInput(String(committedMax));
+  };
+
+  const commitTargetMaxInput = () => {
+    const parsed = Number(targetMaxInput);
+    let committedMin = targetMin;
+    let committedMax = targetMax;
+
+    setDraftSettings((prev) => {
+      const fallbackMin =
+        Number(prev.target_duration_min_seconds || prev.target_duration_seconds || MIN_DURATION_SECONDS);
+      const fallbackMax =
+        Number(prev.target_duration_max_seconds || prev.target_duration_seconds || fallbackMin);
+      const normalizedMaxCandidate = Number.isFinite(parsed)
+        ? Math.max(MIN_DURATION_SECONDS, Math.min(MAX_DURATION_SECONDS, parsed))
+        : fallbackMax;
+      const normalizedMax = Math.max(fallbackMin, normalizedMaxCandidate);
+      const normalizedMin = Math.min(fallbackMin, normalizedMax);
+      committedMin = normalizedMin;
+      committedMax = normalizedMax;
+      return {
+        ...prev,
+        target_duration_seconds: Math.round((normalizedMin + normalizedMax) / 2),
+        target_duration_min_seconds: normalizedMin,
+        target_duration_max_seconds: normalizedMax,
+      };
+    });
+
+    setTargetMinInput(String(committedMin));
+    setTargetMaxInput(String(committedMax));
+  };
 
   // Approximate words calculation (similar to original logic)
   const estMin = Math.round(targetMin * 2.2);
@@ -174,50 +243,32 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
              <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-center block">От</label>
                 <div className="relative">
-                  <input
-                    type="number"
-                    min={15}
-                    max={120}
-                    step={5}
-                    value={targetMin}
-                    onChange={(event) =>
-                      setDraftSettings((prev) => {
-                        const nextMin = Math.max(15, Math.min(120, Number(event.target.value) || 15));
-                        const nextMax = Math.max(nextMin, Number(prev.target_duration_max_seconds || nextMin));
-                        return {
-                          ...prev,
-                          target_duration_min_seconds: nextMin,
-                          target_duration_max_seconds: nextMax,
-                        };
-                      })
-                    }
-                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-4 text-center text-lg font-black text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                  />
+	                  <input
+	                    type="number"
+	                    min={MIN_DURATION_SECONDS}
+	                    max={MAX_DURATION_SECONDS}
+	                    step={5}
+	                    value={targetMinInput}
+	                    onChange={(event) => setTargetMinInput(event.target.value)}
+	                    onBlur={commitTargetMinInput}
+	                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-4 text-center text-lg font-black text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+	                  />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground uppercase">с</span>
                 </div>
              </div>
              <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground text-center block">До</label>
                 <div className="relative">
-                  <input
-                    type="number"
-                    min={15}
-                    max={120}
-                    step={5}
-                    value={targetMax}
-                    onChange={(event) =>
-                      setDraftSettings((prev) => {
-                        const nextMax = Math.max(targetMin, Math.min(120, Number(event.target.value) || targetMin));
-                        const nextMin = Math.min(Number(prev.target_duration_min_seconds || nextMax), nextMax);
-                        return {
-                          ...prev,
-                          target_duration_min_seconds: nextMin,
-                          target_duration_max_seconds: nextMax,
-                        };
-                      })
-                    }
-                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-4 text-center text-lg font-black text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-                  />
+	                  <input
+	                    type="number"
+	                    min={MIN_DURATION_SECONDS}
+	                    max={MAX_DURATION_SECONDS}
+	                    step={5}
+	                    value={targetMaxInput}
+	                    onChange={(event) => setTargetMaxInput(event.target.value)}
+	                    onBlur={commitTargetMaxInput}
+	                    className="w-full rounded-xl border-none bg-[#f0f4f7] px-4 py-4 text-center text-lg font-black text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+	                  />
                   <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-bold text-muted-foreground uppercase">с</span>
                 </div>
              </div>

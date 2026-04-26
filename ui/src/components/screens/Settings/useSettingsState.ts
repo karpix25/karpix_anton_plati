@@ -68,6 +68,31 @@ export const useSettingsState = ({
   const [lastSavedAvatars, setLastSavedAvatars] = useState<HeygenAvatarConfig[] | null>(null);
 
   const subtitlePreviewRef = useRef<HTMLDivElement>(null);
+  const onSaveRef = useRef(onSave);
+  const onSaveHeygenAvatarsRef = useRef(onSaveHeygenAvatars);
+  const draftSettingsRef = useRef(draftSettings);
+  const normalizedSettingsRef = useRef(normalizeSettings(settings));
+  const lastSavedSettingsRef = useRef<Settings | null>(null);
+
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
+
+  useEffect(() => {
+    onSaveHeygenAvatarsRef.current = onSaveHeygenAvatars;
+  }, [onSaveHeygenAvatars]);
+
+  useEffect(() => {
+    draftSettingsRef.current = draftSettings;
+  }, [draftSettings]);
+
+  useEffect(() => {
+    normalizedSettingsRef.current = normalizeSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    lastSavedSettingsRef.current = lastSavedSettings;
+  }, [lastSavedSettings]);
 
   // Synchronize with props only if they actually represent different data
   useEffect(() => {
@@ -111,12 +136,27 @@ export const useSettingsState = ({
     if (JSON.stringify(draftSettings) === JSON.stringify(lastSavedSettings)) return;
     
     const timer = setTimeout(() => {
-      onSave(draftSettings);
+      onSaveRef.current(draftSettings);
       setLastSavedSettings(draftSettings);
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [draftSettings, onSave, lastSavedSettings, settings]);
+  }, [draftSettings, lastSavedSettings, settings]);
+
+  useEffect(() => {
+    return () => {
+      const latestDraft = draftSettingsRef.current;
+      const latestProps = normalizedSettingsRef.current;
+      const latestSaved = lastSavedSettingsRef.current;
+      const equalsProps = JSON.stringify(latestDraft) === JSON.stringify(latestProps);
+      const equalsLastSaved = latestSaved
+        ? JSON.stringify(latestDraft) === JSON.stringify(latestSaved)
+        : false;
+      if (!equalsProps && !equalsLastSaved) {
+        onSaveRef.current(latestDraft);
+      }
+    };
+  }, []);
 
   // Debounced HeyGen Auto-save
   useEffect(() => {
@@ -136,12 +176,12 @@ export const useSettingsState = ({
         }))
         .filter((avatar) => avatar.avatar_id && avatar.avatar_name);
 
-      onSaveHeygenAvatars(sanitized);
+      onSaveHeygenAvatarsRef.current(sanitized);
       setLastSavedAvatars(avatarConfigs);
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [avatarConfigs, onSaveHeygenAvatars, lastSavedAvatars, initialAvatarConfigs]);
+  }, [avatarConfigs, lastSavedAvatars, initialAvatarConfigs]);
 
   // HeyGen motion polling
   useEffect(() => {

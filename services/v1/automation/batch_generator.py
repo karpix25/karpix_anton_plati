@@ -557,6 +557,13 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     target_duration_seconds = client.get("target_duration_seconds")
     target_duration_min_seconds = client.get("target_duration_min_seconds")
     target_duration_max_seconds = client.get("target_duration_max_seconds")
+    logger.info(
+        "Duration targets for client %s: center=%s min=%s max=%s",
+        client_id,
+        target_duration_seconds,
+        target_duration_min_seconds,
+        target_duration_max_seconds,
+    )
     broll_interval_seconds = client.get("broll_interval_seconds")
     broll_timing_mode = client.get("broll_timing_mode")
     broll_pacing_profile = client.get("broll_pacing_profile")
