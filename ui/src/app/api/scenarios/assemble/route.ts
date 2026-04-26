@@ -50,6 +50,8 @@ type ScenarioRow = {
         prompts?: Array<{
           slot_start?: number;
           slot_end?: number;
+          word_start?: number;
+          word_end?: number;
           asset_type?: string | null;
           use_ready_asset?: boolean;
           asset_url?: string | null;
@@ -318,7 +320,7 @@ function getTotalDurationSeconds(scenario: ScenarioRow) {
     .filter((value) => Number.isFinite(value) && value > 0);
 
   const promptEnds = (scenario.video_generation_prompts?.prompts || [])
-    .map((item) => Number(item.slot_end || 0))
+    .map((item) => Number(item.word_end ?? item.slot_end ?? 0))
     .filter((value) => Number.isFinite(value) && value > 0);
 
   return Math.max(...wordEnds, ...promptEnds, 0);
@@ -494,8 +496,8 @@ function resolvePromptSource(
 function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
   const rawPrompts = (scenario.video_generation_prompts?.prompts || [])
     .map((item) => ({
-      start: Number(item.slot_start || 0),
-      end: Number(item.slot_end || 0),
+      start: Number(item.word_start ?? item.slot_start ?? 0),
+      end: Number(item.word_end ?? item.slot_end ?? 0),
       assetType: item.asset_type || null,
       source: resolvePromptSource(item),
     }));
@@ -605,7 +607,7 @@ function normalizePromptWindows(
   for (let index = 0; index < normalized.length; index += 1) {
     const item = normalized[index];
     const minimumDuration = item.assetType === "product_video" ? MIN_PRODUCT_SEGMENT_SECONDS : MIN_BROLL_SEGMENT_SECONDS;
-    let start = item.start;
+    const start = item.start;
     let end = item.end;
     let needed = minimumDuration - (end - start);
 
@@ -613,18 +615,11 @@ function normalizePromptWindows(
       continue;
     }
 
-    const previousEnd = index > 0 ? normalized[index - 1].end : 0;
     const nextStart = index + 1 < normalized.length ? normalized[index + 1].start : totalDuration;
 
     const extendRight = Math.min(needed, Math.max(0, nextStart - end));
     end += extendRight;
     needed -= extendRight;
-
-    if (needed > 0) {
-      const shiftLeft = Math.min(needed, Math.max(0, start - previousEnd));
-      start -= shiftLeft;
-      needed -= shiftLeft;
-    }
 
     item.start = Math.max(0, Number(start.toFixed(3)));
     item.end = Math.min(totalDuration, Number(end.toFixed(3)));

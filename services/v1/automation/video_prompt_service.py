@@ -107,6 +107,8 @@ def _build_prompt_segment_inputs(keyword_segments: List[Dict[str, Any]]) -> List
         prepared.append({
             "slot_start": segment.get("slot_start"),
             "slot_end": segment.get("slot_end"),
+            "word_start": segment.get("word_start"),
+            "word_end": segment.get("word_end"),
             "keyword": segment.get("keyword"),
             "phrase": segment.get("phrase"),
             "visual_intent": segment.get("visual_intent"),
@@ -282,8 +284,11 @@ KEYWORD SEGMENTS:
             use_ready_asset = asset_type == "product_video"
             
             final_prompts.append({
-                "slot_start": ai_p.get("slot_start") or segment.get("slot_start"),
-                "slot_end": ai_p.get("slot_end") or segment.get("slot_end"),
+                # Keep source timings immutable to avoid desync drift introduced by LLM rewrites.
+                "slot_start": segment.get("slot_start"),
+                "slot_end": segment.get("slot_end"),
+                "word_start": segment.get("word_start"),
+                "word_end": segment.get("word_end"),
                 "keyword": segment.get("keyword"),
                 "phrase": segment.get("phrase"),
                 "prompt": ai_p.get("prompt"),
@@ -327,6 +332,8 @@ KEYWORD SEGMENTS:
             fallback.append({
                 "slot_start": segment.get("slot_start"),
                 "slot_end": segment.get("slot_end"),
+                "word_start": segment.get("word_start"),
+                "word_end": segment.get("word_end"),
                 "keyword": segment.get("keyword"),
                 "phrase": segment.get("phrase"),
                 "asset_type": segment.get("asset_type"),

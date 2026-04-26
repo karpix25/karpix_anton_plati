@@ -5,7 +5,7 @@ export const SEEDANCE_15_PRO_GENERATION_COST_USD = 0.07;
 export const GROK_IMAGINE_TEXT_TO_VIDEO_COST_USD = 0.1;
 export const VEO3_QUALITY_COST_USD = 0.15;
 export const VEO3_FAST_COST_USD = 0.08;
-export const VEO3_LITE_COST_USD = 0.3;
+export const VEO3_LITE_COST_USD = 0.15;
 export const HEYGEN_COST_PER_MINUTE_USD = 1;
 
 export type BrollGeneratorModel =

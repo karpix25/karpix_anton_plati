@@ -592,16 +592,11 @@ class VisualSegmentProcessor:
             start, end = seg["slot_start"], seg["slot_end"]
             min_dur = MIN_PRODUCT_SEGMENT_SECONDS if seg.get("asset_type") == "product_video" else MIN_BROLL_SEGMENT_SECONDS
             if end - start >= min_dur - 0.01: continue
-            prev_end = segments[i-1]["slot_end"] if i > 0 else 0.0
             next_start = segments[i+1]["slot_start"] if i+1 < len(segments) else self.total_duration
             needed = min_dur - (end - start)
             ext_right = min(needed, next_start - end)
             end += ext_right
-            needed -= ext_right
-            if needed > 0:
-                shift_left = min(needed, start - prev_end)
-                start -= shift_left
-            seg["slot_start"], seg["slot_end"] = round(start, 1), round(min(end, self.total_duration), 1)
+            seg["slot_start"], seg["slot_end"] = round(start, 2), round(min(end, self.total_duration), 2)
         return segments
 
 # --- PROMPT BUILDER ---
@@ -725,15 +720,16 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
             w_start = seg.get("word_start")
             w_end = seg.get("word_end")
             if isinstance(w_start, (int, float)) and isinstance(w_end, (int, float)):
-                # Expand slot to fully cover words with lead-in and lead-out padding
-                new_start = round(max(0.0, w_start - 0.4), 1)
-                new_end = round(min(total_dur, w_end + 0.4), 1)
+                # Keep a strict anchor to the spoken word timing.
+                # We may only extend to the right for minimum-duration guardrails.
+                new_start = round(max(0.0, float(w_start)), 2)
+                new_end = round(min(total_dur, float(w_end)), 2)
                 
                 # Enforce minimum duration constraints
                 min_dur = MIN_PRODUCT_SEGMENT_SECONDS if seg.get("asset_type") == "product_video" else MIN_BROLL_SEGMENT_SECONDS
                 if (new_end - new_start) < min_dur:
-                    # If still too short, expand rightwards
-                    new_end = round(min(total_dur, new_start + min_dur), 1)
+                    # Expand only to the right to avoid early trigger before the spoken keyword.
+                    new_end = round(min(total_dur, new_start + min_dur), 2)
                 
                 # Update slot to match reality
                 seg["slot_start"] = new_start
