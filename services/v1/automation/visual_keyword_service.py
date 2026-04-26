@@ -439,6 +439,7 @@ class ProductAssetManager:
         last_product_end = -100.0 # Track when the last product clip ended
         used_asset_ids: set[str] = set()
         product_cooldown = 12.0 # Minimum gap between two product clips
+        merge_adjacent_product_gap = 1.0 # Merge adjacent/near product mentions into one clip window
         
         for seg in segments:
             # Check LLM's identified keyword and phrase, and the actual transcript words in this slot
@@ -477,6 +478,26 @@ class ProductAssetManager:
                     seg["reason"] = f"{seg.get('reason', '')}; product_cooldown_active".strip("; ")
 
             if use_product:
+                # Merge consecutive product mentions into a single product segment
+                # so montage uses one full clip instead of duplicated back-to-back inserts.
+                if result and result[-1].get("asset_type") == "product_video":
+                    prev = result[-1]
+                    prev_end = _safe_float(prev.get("slot_end"), slot_start)
+                    current_end = _safe_float(seg.get("slot_end"), slot_start + MIN_PRODUCT_SEGMENT_SECONDS)
+                    gap = slot_start - prev_end
+                    prev_keyword_norm = _normalize_text(str(prev.get("keyword") or ""))
+                    curr_keyword_norm = _normalize_text(str(matched_keyword or segment_keyword or self.config.product_keyword or ""))
+                    same_keyword = bool(prev_keyword_norm and curr_keyword_norm and prev_keyword_norm == curr_keyword_norm)
+
+                    if gap <= merge_adjacent_product_gap or (same_keyword and gap <= 3.0):
+                        prev["slot_end"] = round(max(prev_end, current_end), 2)
+                        prev_word_end = _safe_float(prev.get("word_end"), prev_end)
+                        curr_word_end = _safe_float(seg.get("word_end"), current_end)
+                        prev["word_end"] = round(max(prev_word_end, curr_word_end), 2)
+                        prev["reason"] = f"{prev.get('reason', '')}; merged_adjacent_product_segment".strip("; ")
+                        last_product_end = _safe_float(prev.get("slot_end"), last_product_end)
+                        continue
+
                 asset = self.pick_asset(exclude_ids=used_asset_ids)
                 if asset:
                     used_asset_ids.add(asset["id"])
