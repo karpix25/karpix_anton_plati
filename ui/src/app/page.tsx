@@ -518,7 +518,12 @@ export default function CuratorDashboard() {
       />
 
       <div className="flex-1 xl:pl-64">
-        <Header screenTitle={currentScreenTitle} selectedClientName={selectedClient?.name} />
+        <Header
+          screenTitle={currentScreenTitle}
+          selectedClientName={selectedClient?.name}
+          showSettingsSaveStatus={screen === "settings"}
+          isSavingSettings={saveSettingsMutation.isPending || saveHeygenAvatarsMutation.isPending}
+        />
 
         <section className="px-4 pb-20 pt-24 xl:px-8">
           {screen === "dashboard" && (

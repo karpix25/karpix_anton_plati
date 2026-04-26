@@ -18,11 +18,8 @@ import {
   Video, 
   BrainCircuit, 
   Users, 
-  Save, 
   Trash2,
-  AlertCircle,
-  CloudCheck,
-  CloudUpload
+  AlertCircle
 } from "lucide-react";
 
 interface SettingsScreenProps {
@@ -72,39 +69,17 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
           </div>
           
           <div className="flex items-center gap-3">
-             {props.canDeleteProject ? (
-                <>
-                  <Button
-                    variant="ghost"
-                    className="h-11 rounded-xl px-4 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
-                    onClick={state.handleDeleteProject}
-                    disabled={props.isDeletingProject}
-                  >
-                    {props.isDeletingProject ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                    Удалить проект
-                  </Button>
-
-                  <div className="mx-2 h-8 w-px bg-[#e5ebf0]" />
-                </>
-              ) : null}
-
-              <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-slate-50 border border-slate-100 shadow-inner min-w-[140px] justify-center transition-all duration-300">
-                {props.isSaving || props.isSavingHeygenAvatars ? (
-                  <>
-                    <LoaderCircle className="h-4 w-4 animate-spin text-primary" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                      Сохранение...
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <CloudCheck className="h-4 w-4 text-emerald-500" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">
-                      Сохранено
-                    </span>
-                  </>
-                )}
-              </div>
+            {props.canDeleteProject ? (
+              <Button
+                variant="ghost"
+                className="h-11 rounded-xl px-4 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
+                onClick={state.handleDeleteProject}
+                disabled={props.isDeletingProject}
+              >
+                {props.isDeletingProject ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                Удалить проект
+              </Button>
+            ) : null}
           </div>
         </div>
       </header>
