@@ -1101,7 +1101,7 @@ async function buildMontage(scenarioId: number) {
         "-i",
         sourcePath,
         "-t",
-        clipDuration,
+        (segment.end - segment.start + 0.1).toFixed(3),
         "-an",
         "-vf",
         commonBrollFilter,
@@ -1230,7 +1230,7 @@ async function buildMontage(scenarioId: number) {
     const clip = readyBrollClips[i];
     const outLabel = `ov${i}`;
     filterParts.push(
-      `[${currentVideoLabel}][b${i}]overlay=0:0:eof_action=pass:enable='between(t,${clip.start.toFixed(3)},${clip.end.toFixed(3)})'[${outLabel}]`
+      `[${currentVideoLabel}][b${i}]overlay=0:0:eof_action=pass:enable='between(t,${clip.start.toFixed(3)},${(clip.end + 0.02).toFixed(3)})'[${outLabel}]`
     );
     currentVideoLabel = outLabel;
   }
