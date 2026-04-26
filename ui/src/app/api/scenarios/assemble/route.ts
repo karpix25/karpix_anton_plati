@@ -98,15 +98,14 @@ type TimelinePromptWindow = {
   source: string | null;
 };
 
-const OUTPUT_WIDTH = 720;
-const OUTPUT_HEIGHT = 1280;
+const OUTPUT_WIDTH = 1080;
+const OUTPUT_HEIGHT = 1920;
 const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
 const DEFAULT_PRODUCT_CLIP_SECONDS = 4;
 const FRAME_EPSILON_SECONDS = 1 / OUTPUT_FPS;
-const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.5;
-const FIRST_AVATAR_INTRO_MAX_SECONDS = 3.0;
+const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.8;
 const AVATAR_PLANS = [
   { start: 1.00, end: 1.20 }, // WIDE (Общий)
   { start: 1.35, end: 1.55 }, // MEDIUM (Средний)
@@ -1152,7 +1151,7 @@ async function buildMontage(scenarioId: number) {
       subtitle_margin_percent: Number(
         scenario.subtitle_margin_percent ??
           Math.round(
-            (Number(scenario.subtitle_margin_v || 140) / 1280) * 100
+            (Number(scenario.subtitle_margin_v || 140) / OUTPUT_HEIGHT) * 100
           )
       ),
     },

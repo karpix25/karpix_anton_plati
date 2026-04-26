@@ -210,7 +210,7 @@ export default function CuratorDashboard() {
       broll_timing_mode: selectedClient?.broll_timing_mode || "coverage_percent",
       broll_pacing_profile: selectedClient?.broll_pacing_profile || "balanced",
       broll_pause_threshold_seconds: selectedClient?.broll_pause_threshold_seconds || 0.45,
-      broll_coverage_percent: selectedClient?.broll_coverage_percent || 35,
+      broll_coverage_percent: selectedClient?.broll_coverage_percent || 55,
       broll_semantic_relevance_priority: selectedClient?.broll_semantic_relevance_priority || "balanced",
       broll_product_clip_policy: selectedClient?.broll_product_clip_policy || "contextual",
       broll_generator_model: selectedClient?.broll_generator_model || "veo3_lite",

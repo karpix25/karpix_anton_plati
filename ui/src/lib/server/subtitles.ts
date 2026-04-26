@@ -9,6 +9,9 @@ import {
   SYSTEM_SUBTITLE_FALLBACK_FAMILY,
 } from "@/lib/subtitles";
 
+const SUBTITLE_PLAY_RES_X = 1080;
+const SUBTITLE_PLAY_RES_Y = 1920;
+
 type SubtitleRenderSettings = Pick<
   Settings,
   | "subtitles_enabled"
@@ -211,14 +214,14 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
   const backColour =
     settings.subtitle_style_preset === "soft_box" ? hexToAssColor("#000000", "7A") : hexToAssColor("#000000", "FF");
   const borderStyle = settings.subtitle_style_preset === "soft_box" ? 3 : 1;
-  const fontSize = settings.subtitle_style_preset === "impact" ? 28 : settings.subtitle_style_preset === "soft_box" ? 24 : 25;
+  const fontSize = settings.subtitle_style_preset === "impact" ? 42 : settings.subtitle_style_preset === "soft_box" ? 36 : 38;
   const outline = settings.subtitle_style_preset === "impact"
     ? clamp(Number(settings.subtitle_outline_width || 3) + 1, 0, 8)
     : clamp(Number(settings.subtitle_outline_width || 3), 0, 8);
   const presetMargin = SUBTITLE_PRESET_DEFAULT_MARGIN_V[settings.subtitle_style_preset] || 140;
   const presetMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[settings.subtitle_style_preset] || 11;
   const explicitPercent = Number(settings.subtitle_margin_percent);
-  const derivedPercent = (Number(settings.subtitle_margin_v ?? presetMargin) / 1280) * 100;
+  const derivedPercent = (Number(settings.subtitle_margin_v ?? presetMargin) / SUBTITLE_PLAY_RES_Y) * 100;
   const resolvedPercent = clamp(
     Number.isFinite(explicitPercent)
       ? explicitPercent
@@ -228,7 +231,7 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
     0,
     100
   );
-  const marginV = clamp(Math.round((resolvedPercent / 100) * 1280), 0, 1180);
+  const marginV = clamp(Math.round((resolvedPercent / 100) * SUBTITLE_PLAY_RES_Y), 0, SUBTITLE_PLAY_RES_Y - 100);
   const spacing = settings.subtitle_style_preset === "impact" ? 0.4 : 0;
   const bold = Number(settings.subtitle_font_weight) === 400 ? 0 : -1;
 
@@ -236,13 +239,13 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
 ScriptType: v4.00+
 WrapStyle: 2
 ScaledBorderAndShadow: yes
-PlayResX: 720
-PlayResY: 1280
+PlayResX: ${SUBTITLE_PLAY_RES_X}
+PlayResY: ${SUBTITLE_PLAY_RES_Y}
 Collisions: Normal
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Subtitle,${fontFamily},${fontSize},${primaryColour},${primaryColour},${outlineColour},${backColour},${bold},0,0,0,100,100,${spacing},0,${borderStyle},${outline},0,2,42,42,${marginV},1
+Style: Subtitle,${fontFamily},${fontSize},${primaryColour},${primaryColour},${outlineColour},${backColour},${bold},0,0,0,100,100,${spacing},0,${borderStyle},${outline},0,2,63,63,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

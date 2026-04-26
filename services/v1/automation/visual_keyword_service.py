@@ -46,7 +46,7 @@ class GenerationConfig:
     timing_mode: str = "coverage_percent"
     pacing_profile: str = "balanced"
     pause_threshold: float = 0.45
-    coverage_percent: float = 75.0
+    coverage_percent: float = 55.0
     relevance_priority: str = "balanced"
     product_clip_policy: str = "contextual"
     product_keyword: Optional[str] = None
@@ -60,10 +60,15 @@ STRONG_BOUNDARY_RE = re.compile(r"[.!?;:]$")
 SOFT_BOUNDARY_RE = re.compile(r"[,)]$")
 PRODUCT_KEYWORD_SPLIT_RE = re.compile(r"[,\n;]+")
 NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Zа-яА-ЯёЁ]+")
+AVATAR_ONLY_HOOK_SECONDS = 2.8
 MIN_BROLL_SEGMENT_SECONDS = 2.0
 MIN_PRODUCT_SEGMENT_SECONDS = 3.0
-FIRST_ATTENTION_CUT_MIN_SECONDS = 2.6
-FIRST_ATTENTION_CUT_MAX_SECONDS = 3.0
+FIRST_ATTENTION_CUT_MIN_SECONDS = AVATAR_ONLY_HOOK_SECONDS
+PRODUCT_CLIP_LEAD_SECONDS = 0.2
+PRODUCT_CLIP_DEFAULT_SECONDS = 4.0
+PRODUCT_CLIP_MAX_SECONDS = 5.0
+PRODUCT_CLIP_COOLDOWN_SECONDS = 12.0
+PRODUCT_CLIP_MERGE_GAP_SECONDS = 1.0
 
 RUSSIAN_STEM_SUFFIXES = (
     "иями", "ями", "ами", "ого", "ему", "ому", "ыми", "ими", "его", "ее",
@@ -456,8 +461,128 @@ class ProductAssetManager:
 
         return None
 
+    def _resolve_product_clip_duration(self, asset: Optional[Dict[str, Any]] = None) -> float:
+        duration = _safe_float((asset or {}).get("duration_seconds"), 0.0)
+        if duration <= 0:
+            duration = _resolve_primary_product_duration_seconds(self.config)
+        if duration <= 0:
+            duration = PRODUCT_CLIP_DEFAULT_SECONDS
+        return min(max(duration, MIN_PRODUCT_SEGMENT_SECONDS), PRODUCT_CLIP_MAX_SECONDS)
+
+    def _build_product_mention_segments(self, words: List[Word], total_duration: float) -> List[VisualSegment]:
+        product_keywords = _parse_product_keywords(self.config.product_keyword)
+        if not product_keywords or not words or total_duration <= AVATAR_ONLY_HOOK_SECONDS:
+            return []
+
+        mentions: List[VisualSegment] = []
+        used_asset_ids: set[str] = set()
+        last_product_end = -100.0
+        word_tokens = [_tokenize(w["word"]) for w in words]
+        word_stems = [[_stem_token(token) for token in tokens] for tokens in word_tokens]
+
+        for keyword in product_keywords:
+            keyword_tokens = _tokenize(keyword)
+            if not keyword_tokens:
+                continue
+            keyword_stems = [_stem_token(token) for token in keyword_tokens]
+            window = len(keyword_stems)
+            if window <= 0 or window > len(words):
+                continue
+
+            for index in range(0, len(words) - window + 1):
+                candidate = [stems[0] if stems else "" for stems in word_stems[index:index + window]]
+                if candidate != keyword_stems:
+                    continue
+
+                keyword_start = _safe_float(words[index].get("start"), 0.0)
+                keyword_end = _safe_float(words[index + window - 1].get("end"), keyword_start)
+                start = max(AVATAR_ONLY_HOOK_SECONDS, keyword_start - PRODUCT_CLIP_LEAD_SECONDS)
+                if start < last_product_end + PRODUCT_CLIP_COOLDOWN_SECONDS:
+                    continue
+
+                asset = self.pick_asset(exclude_ids=used_asset_ids)
+                if not asset:
+                    continue
+
+                used_asset_ids.add(asset["id"])
+                duration = self._resolve_product_clip_duration(asset)
+                end = min(total_duration, start + duration)
+                if end - start < MIN_PRODUCT_SEGMENT_SECONDS:
+                    start = max(AVATAR_ONLY_HOOK_SECONDS, end - MIN_PRODUCT_SEGMENT_SECONDS)
+                if end - start < MIN_PRODUCT_SEGMENT_SECONDS:
+                    continue
+
+                mention_words = words[index:index + window]
+                phrase = " ".join(w["punctuated_word"] or w["word"] for w in mention_words)
+                mentions.append({
+                    "slot_start": round(start, 2),
+                    "slot_end": round(end, 2),
+                    "word_start": round(keyword_start, 2),
+                    "word_end": round(keyword_end, 2),
+                    "keyword": keyword,
+                    "phrase": phrase,
+                    "visual_intent": "product proof clip timed to the spoken product mention",
+                    "asset_type": "product_video",
+                    "asset_url": asset["url"],
+                    "asset_id": asset["id"],
+                    "asset_name": asset["name"],
+                    "asset_duration_seconds": _safe_float(asset.get("duration_seconds"), duration),
+                    "generate_video": False,
+                    "clip_role": "product_demo",
+                    "reason": "direct_product_mention_timing",
+                })
+                last_product_end = end
+
+        return self._merge_product_segments(sorted(mentions, key=lambda seg: (seg["slot_start"], seg["slot_end"])))
+
+    def _merge_product_segments(self, segments: List[VisualSegment]) -> List[VisualSegment]:
+        merged: List[VisualSegment] = []
+        for seg in segments:
+            prev = merged[-1] if merged else None
+            if (
+                prev
+                and _safe_float(seg.get("slot_start"), 0.0) <= _safe_float(prev.get("slot_end"), 0.0) + PRODUCT_CLIP_MERGE_GAP_SECONDS
+                and str(prev.get("asset_url") or "") == str(seg.get("asset_url") or "")
+            ):
+                prev["slot_end"] = round(max(_safe_float(prev.get("slot_end"), 0.0), _safe_float(seg.get("slot_end"), 0.0)), 2)
+                prev["word_end"] = round(max(_safe_float(prev.get("word_end"), 0.0), _safe_float(seg.get("word_end"), 0.0)), 2)
+                prev["phrase"] = " ".join(filter(None, [str(prev.get("phrase") or ""), str(seg.get("phrase") or "")])).strip()
+                prev["reason"] = f"{prev.get('reason', '')}; merged_direct_product_mention".strip("; ")
+                continue
+            merged.append(dict(seg))
+        return merged
+
+    def _subtract_product_windows(self, segment: VisualSegment, product_segments: List[VisualSegment]) -> List[VisualSegment]:
+        fragments: List[VisualSegment] = [dict(segment)]
+        for product in product_segments:
+            product_start = _safe_float(product.get("slot_start"), 0.0)
+            product_end = _safe_float(product.get("slot_end"), 0.0)
+            next_fragments: List[VisualSegment] = []
+            for fragment in fragments:
+                start = _safe_float(fragment.get("slot_start"), 0.0)
+                end = _safe_float(fragment.get("slot_end"), start)
+                if product_end <= start or product_start >= end:
+                    next_fragments.append(fragment)
+                    continue
+                if product_start > start:
+                    left = dict(fragment)
+                    left["slot_end"] = round(product_start, 2)
+                    if left["slot_end"] - start >= MIN_BROLL_SEGMENT_SECONDS:
+                        next_fragments.append(left)
+                if product_end < end:
+                    right = dict(fragment)
+                    right["slot_start"] = round(product_end, 2)
+                    if end - right["slot_start"] >= MIN_BROLL_SEGMENT_SECONDS:
+                        next_fragments.append(right)
+            fragments = next_fragments
+            if not fragments:
+                break
+        return fragments
+
     def apply_assets(self, segments: List[VisualSegment], words: List[Word], slots: List[TimingSlot]) -> List[VisualSegment]:
         product_keywords = _parse_product_keywords(self.config.product_keyword)
+        total_duration = words[-1]["end"] if words else 0.0
+        direct_product_segments = self._build_product_mention_segments(words, total_duration)
         if not product_keywords:
             return segments
         
@@ -466,8 +591,8 @@ class ProductAssetManager:
         
         last_product_end = -100.0 # Track when the last product clip ended
         used_asset_ids: set[str] = set()
-        product_cooldown = 12.0 # Minimum gap between two product clips
-        merge_adjacent_product_gap = 1.0 # Merge adjacent/near product mentions into one clip window
+        product_cooldown = PRODUCT_CLIP_COOLDOWN_SECONDS # Minimum gap between two product clips
+        merge_adjacent_product_gap = PRODUCT_CLIP_MERGE_GAP_SECONDS # Merge adjacent/near product mentions into one clip window
         
         for seg in segments:
             # Check LLM's identified keyword and phrase, and the actual transcript words in this slot
@@ -538,6 +663,7 @@ class ProductAssetManager:
                         "asset_duration_seconds": _safe_float(asset.get("duration_seconds"), 0.0),
                         "generate_video": False,
                         "keyword": matched_keyword or self.config.product_keyword,
+                        "clip_role": "product_demo",
                     })
                 else:
                     # No more unique assets or failed to pick one? Fallback to generation
@@ -547,7 +673,18 @@ class ProductAssetManager:
                 seg.update({"asset_type": "generated_video", "generate_video": True})
             
             result.append(seg)
-        return result
+
+        product_segments = self._merge_product_segments([
+            *[dict(seg) for seg in result if seg.get("asset_type") == "product_video"],
+            *direct_product_segments,
+        ])
+        non_product_segments = [dict(seg) for seg in result if seg.get("asset_type") != "product_video"]
+
+        carved_non_products: List[VisualSegment] = []
+        for seg in non_product_segments:
+            carved_non_products.extend(self._subtract_product_windows(seg, product_segments))
+
+        return sorted([*product_segments, *carved_non_products], key=lambda seg: (_safe_float(seg.get("slot_start"), 0.0), _safe_float(seg.get("slot_end"), 0.0)))
 
     def _find_forced_product_segment(self, words: List[Word], slots: List[TimingSlot], keyword: str) -> Optional[VisualSegment]:
         normalized_keywords = _parse_product_keywords(keyword)
@@ -579,11 +716,28 @@ class VisualSegmentProcessor:
 
     def process(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         if not segments: return []
-        ordered = self._resolve_overlaps(segments)
-        enforced = self._enforce_first_attention_cut(ordered)
-        capped = self._enforce_coverage_limit(enforced)
+        after_hook = self._enforce_avatar_only_hook(segments)
+        ordered = self._resolve_overlaps(after_hook)
+        capped = self._enforce_coverage_limit(ordered)
         final = self._enforce_minimum_durations(capped)
         return final
+
+    def _enforce_avatar_only_hook(self, segments: List[VisualSegment]) -> List[VisualSegment]:
+        if not segments:
+            return []
+        results: List[VisualSegment] = []
+        for seg in segments:
+            item = dict(seg)
+            start = _safe_float(item.get("slot_start"), 0.0)
+            end = _safe_float(item.get("slot_end"), start)
+            if end <= AVATAR_ONLY_HOOK_SECONDS:
+                item["reason"] = f"{item.get('reason', '')}; dropped_inside_avatar_hook".strip("; ")
+                continue
+            if start < AVATAR_ONLY_HOOK_SECONDS:
+                item["slot_start"] = round(AVATAR_ONLY_HOOK_SECONDS, 2)
+                item["reason"] = f"{item.get('reason', '')}; shifted_after_avatar_hook".strip("; ")
+            results.append(item)
+        return results
 
     def _resolve_overlaps(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         if not segments: return []
@@ -597,7 +751,14 @@ class VisualSegmentProcessor:
             if resolved:
                 prev_end = resolved[-1]["slot_end"]
                 if start < prev_end + min_avatar_len:
-                    if start < prev_end or (start - prev_end < min_avatar_len):
+                    if seg.get("asset_type") == "product_video" and resolved[-1].get("asset_type") != "product_video":
+                        prev = resolved[-1]
+                        prev_min_len = MIN_PRODUCT_SEGMENT_SECONDS if prev.get("asset_type") == "product_video" else MIN_BROLL_SEGMENT_SECONDS
+                        if start - prev["slot_start"] >= prev_min_len:
+                            prev["slot_end"] = round(start, 2)
+                        else:
+                            resolved.pop()
+                    elif start < prev_end or (start - prev_end < min_avatar_len):
                         start = prev_end
                 if end - start < min_slot_len:
                     end = min(self.total_duration, start + min_slot_len)
@@ -606,23 +767,6 @@ class VisualSegmentProcessor:
             seg["slot_start"], seg["slot_end"] = round(start, 2), round(min(end, self.total_duration), 2)
             resolved.append(seg)
         return resolved
-
-    def _enforce_first_attention_cut(self, segments: List[VisualSegment]) -> List[VisualSegment]:
-        if not segments or self.total_duration <= FIRST_ATTENTION_CUT_MAX_SECONDS + 1.0:
-            return segments
-        first = segments[0]
-        if FIRST_ATTENTION_CUT_MIN_SECONDS <= first["slot_start"] <= FIRST_ATTENTION_CUT_MAX_SECONDS:
-            return segments
-        duration = max(MIN_BROLL_SEGMENT_SECONDS, first["slot_end"] - first["slot_start"])
-        first["slot_start"] = round(FIRST_ATTENTION_CUT_MIN_SECONDS, 1)
-        first["slot_end"] = round(min(self.total_duration, FIRST_ATTENTION_CUT_MIN_SECONDS + duration), 1)
-        # Keep timeline fields consistent for downstream consumers that may read word_* fields.
-        first["word_start"] = first["slot_start"]
-        first["word_end"] = first["slot_end"]
-        if first["slot_end"] - first["slot_start"] < 0.5:
-            return segments[1:]
-        first["reason"] = f"{first.get('reason', '')}; forced_first_cut".strip("; ")
-        return self._resolve_overlaps(segments)
 
     def _enforce_coverage_limit(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         coverage_target = self.config.coverage_percent
@@ -689,7 +833,7 @@ class VisualPromptBuilder:
 3. Для каждого сегмента обязательно заполняй: slot_start, slot_end, word_start, word_end, keyword, phrase, visual_intent.
 4. keyword — 1-3 слова на русском; phrase — короткая фраза 2-8 слов на русском.
 5. visual_intent — короткая техническая фраза на английском для video model (shot + subject/action + camera/light).
-6. Первый сегмент должен начинаться в диапазоне 2.6-3.0s (если общая длительность позволяет).
+6. Первые {AVATAR_ONLY_HOOK_SECONDS:.1f}s всегда остаются за аватаром с лицом; B-roll не должен начинаться раньше.
 7. Времена должны быть в секундах, не отрицательные, slot_end > slot_start, word_end >= word_start.
 """
         if product_keywords:
@@ -719,7 +863,7 @@ TASK:
 1. Return up to {len(slots)} segments.
 2. Extract exact word timing from transcript: word_start/word_end.
 3. Set slot_start/slot_end close to word timing and within sensible window.
-4. First segment MUST start in 2.6-3.0s when possible.
+4. First segment MUST start after {AVATAR_ONLY_HOOK_SECONDS:.1f}s because the opening hook is always avatar-only.
 5. If uncertain, prefer fewer segments over guessed segments.
 
 STRICT VALIDATION TARGET:
@@ -797,24 +941,19 @@ def _coerce_llm_segments(raw_segments: Any, total_dur: float) -> List[VisualSegm
 
 
 def _enforce_first_segment_window(segments: List[VisualSegment], total_dur: float) -> None:
-    if not segments or total_dur <= FIRST_ATTENTION_CUT_MAX_SECONDS + 1.0:
+    if not segments or total_dur <= AVATAR_ONLY_HOOK_SECONDS:
         return
-    first = segments[0]
-    first_start = _safe_float(first.get("slot_start"), FIRST_ATTENTION_CUT_MIN_SECONDS)
-    if FIRST_ATTENTION_CUT_MIN_SECONDS <= first_start <= FIRST_ATTENTION_CUT_MAX_SECONDS:
-        return
-
-    min_dur = MIN_PRODUCT_SEGMENT_SECONDS if first.get("asset_type") == "product_video" else MIN_BROLL_SEGMENT_SECONDS
-    current_dur = max(0.1, _safe_float(first.get("slot_end"), first_start) - first_start)
-    duration = max(min_dur, current_dur)
-    new_start = round(FIRST_ATTENTION_CUT_MIN_SECONDS, 2)
-    new_end = round(min(total_dur, new_start + duration), 2)
-    first["slot_start"] = new_start
-    first["slot_end"] = new_end
-    # Keep montage-consumed word timing aligned with final slot timing.
-    first["word_start"] = new_start
-    first["word_end"] = new_end
-    first["reason"] = f"{first.get('reason', '')}; forced_first_segment_window".strip("; ")
+    for segment in segments:
+        start = _safe_float(segment.get("slot_start"), 0.0)
+        end = _safe_float(segment.get("slot_end"), start)
+        if end <= AVATAR_ONLY_HOOK_SECONDS:
+            segment["slot_start"] = AVATAR_ONLY_HOOK_SECONDS
+            segment["slot_end"] = AVATAR_ONLY_HOOK_SECONDS
+            segment["reason"] = f"{segment.get('reason', '')}; dropped_inside_avatar_hook".strip("; ")
+            continue
+        if start < AVATAR_ONLY_HOOK_SECONDS:
+            segment["slot_start"] = round(AVATAR_ONLY_HOOK_SECONDS, 2)
+            segment["reason"] = f"{segment.get('reason', '')}; shifted_after_avatar_hook".strip("; ")
 
 # --- ORCHESTRATOR ---
 
@@ -825,7 +964,7 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
             timing_mode="coverage_percent",
             pacing_profile=kwargs.get("broll_pacing_profile", "balanced"),
             pause_threshold=float(kwargs.get("broll_pause_threshold_seconds") or 0.45),
-            coverage_percent=float(kwargs.get("broll_coverage_percent") or 35.0),
+            coverage_percent=float(kwargs.get("broll_coverage_percent") or 55.0),
             relevance_priority=kwargs.get("broll_semantic_relevance_priority", "balanced"),
             product_clip_policy=kwargs.get("broll_product_clip_policy", "contextual"),
             product_keyword=kwargs.get("product_keyword"),
