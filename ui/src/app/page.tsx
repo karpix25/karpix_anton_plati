@@ -600,27 +600,29 @@ export default function CuratorDashboard() {
           )}
 
           {screen === "settings" && (
-            <SettingsScreen
-              key={`${activeClientId}-${heygenAvatars.length}-${heygenCatalog.length}`}
-              settings={clientSettings}
-              onSave={handleSaveSettings}
-              onDeleteProject={handleDeleteProject}
-              canDeleteProject={Boolean(authUser?.isSuperAdmin)}
-              isSaving={saveSettingsMutation.isPending}
-              isDeletingProject={deleteClientMutation.isPending}
-              selectedClientId={activeClientId}
-              heygenAvatars={heygenAvatars}
-              heygenCatalog={heygenCatalog}
-              minimaxVoices={minimaxVoices}
-              elevenlabsVoices={elevenlabsVoices}
-              onSaveHeygenAvatars={(avatars) => saveHeygenAvatarsMutation.mutate(avatars)}
-              onRefreshHeygenCatalog={async () => {
-                const result = await heygenCatalogQuery.refetch();
-                return result.data || [];
-              }}
-              onRefreshWorkspace={refreshWorkspace}
-              isSavingHeygenAvatars={saveHeygenAvatarsMutation.isPending}
-            />
+            <div className="h-[calc(100vh-11rem)] min-h-0">
+              <SettingsScreen
+                key={`${activeClientId}-${heygenAvatars.length}-${heygenCatalog.length}`}
+                settings={clientSettings}
+                onSave={handleSaveSettings}
+                onDeleteProject={handleDeleteProject}
+                canDeleteProject={Boolean(authUser?.isSuperAdmin)}
+                isSaving={saveSettingsMutation.isPending}
+                isDeletingProject={deleteClientMutation.isPending}
+                selectedClientId={activeClientId}
+                heygenAvatars={heygenAvatars}
+                heygenCatalog={heygenCatalog}
+                minimaxVoices={minimaxVoices}
+                elevenlabsVoices={elevenlabsVoices}
+                onSaveHeygenAvatars={(avatars) => saveHeygenAvatarsMutation.mutate(avatars)}
+                onRefreshHeygenCatalog={async () => {
+                  const result = await heygenCatalogQuery.refetch();
+                  return result.data || [];
+                }}
+                onRefreshWorkspace={refreshWorkspace}
+                isSavingHeygenAvatars={saveHeygenAvatarsMutation.isPending}
+              />
+            </div>
           )}
         </section>
 

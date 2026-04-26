@@ -55,7 +55,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
   ] as const;
 
   return (
-    <div className="flex h-full flex-col bg-[#f0f4f7]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#f0f4f7]">
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-[#e5ebf0] bg-white/80 px-8 py-4 backdrop-blur-md">
         <div className="flex items-center justify-between">
@@ -84,9 +84,9 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Navigation Sidebar */}
-        <aside className="w-80 overflow-y-auto border-r border-[#e5ebf0] bg-white/40 p-6">
+        <aside className="w-80 shrink-0 overflow-hidden border-r border-[#e5ebf0] bg-white/40 p-6">
            <nav className="space-y-2">
              <div className="mb-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-4">Основные разделы</div>
              {tabs.map((tab) => {
@@ -127,7 +127,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto bg-slate-50/50 p-8 pt-6">
+        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50/50 p-8 pt-6">
           <div className="mx-auto max-w-5xl animate-in fade-in slide-in-from-bottom-4 duration-500">
              {activeTab === "branding" && (
                 <div className="space-y-8">
