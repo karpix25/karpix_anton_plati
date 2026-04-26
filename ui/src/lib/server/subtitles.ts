@@ -1,7 +1,7 @@
 import { existsSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { Settings, WordTimestamp } from "@/types";
+import { Settings, WordTimestamp, SubtitleFontFamily } from "@/types";
 import {
   SUBTITLE_FONT_OPTIONS,
   SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT,
