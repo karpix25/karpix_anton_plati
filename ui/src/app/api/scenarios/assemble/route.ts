@@ -55,6 +55,7 @@ type ScenarioRow = {
           asset_type?: string | null;
           use_ready_asset?: boolean;
           asset_url?: string | null;
+          asset_duration_seconds?: number | null;
           video_url?: string | null;
           result_urls?: string[] | null;
         }>;
@@ -94,6 +95,7 @@ const OUTPUT_HEIGHT = 1280;
 const OUTPUT_FPS = 30;
 const MIN_BROLL_SEGMENT_SECONDS = 2;
 const MIN_PRODUCT_SEGMENT_SECONDS = 3;
+const DEFAULT_PRODUCT_CLIP_SECONDS = 4;
 const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.5;
 const FIRST_AVATAR_INTRO_MAX_SECONDS = 3.0;
 const AVATAR_PLANS = [
@@ -499,6 +501,7 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
       start: Number(item.word_start ?? item.slot_start ?? 0),
       end: Number(item.word_end ?? item.slot_end ?? 0),
       assetType: item.asset_type || null,
+      assetDurationSeconds: Number(item.asset_duration_seconds || 0),
       source: resolvePromptSource(item),
     }));
 
@@ -599,17 +602,34 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
 }
 
 function normalizePromptWindows(
-  prompts: Array<{ start: number; end: number; assetType: string | null; source: string | null }>,
+  prompts: Array<{ start: number; end: number; assetType: string | null; assetDurationSeconds: number; source: string | null }>,
   totalDuration: number
 ) {
   const normalized = prompts.map((item) => ({ ...item }));
 
   for (let index = 0; index < normalized.length; index += 1) {
     const item = normalized[index];
-    const minimumDuration = item.assetType === "product_video" ? MIN_PRODUCT_SEGMENT_SECONDS : MIN_BROLL_SEGMENT_SECONDS;
     const start = item.start;
     let end = item.end;
-    let needed = minimumDuration - (end - start);
+
+    const desiredDuration =
+      item.assetType === "product_video"
+        ? Math.max(
+            MIN_PRODUCT_SEGMENT_SECONDS,
+            Number.isFinite(item.assetDurationSeconds) && item.assetDurationSeconds > 0
+              ? item.assetDurationSeconds
+              : DEFAULT_PRODUCT_CLIP_SECONDS
+          )
+        : MIN_BROLL_SEGMENT_SECONDS;
+
+    if (item.assetType === "product_video") {
+      const targetEnd = Math.max(end, start + desiredDuration);
+      item.start = Math.max(0, Number(start.toFixed(3)));
+      item.end = Math.min(totalDuration, Number(targetEnd.toFixed(3)));
+      continue;
+    }
+
+    let needed = desiredDuration - (end - start);
 
     if (needed <= 0) {
       continue;

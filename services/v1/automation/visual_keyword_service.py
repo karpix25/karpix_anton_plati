@@ -37,6 +37,7 @@ class VisualSegment(TypedDict, total=False):
     asset_url: Optional[str]
     asset_id: Optional[str]
     asset_name: Optional[str]
+    asset_duration_seconds: Optional[float]
     generate_video: bool
 
 @dataclass
@@ -401,6 +402,7 @@ class ProductAssetManager:
                 "url": url,
                 "name": str(asset.get("name") or asset.get("id") or "Product Asset").strip(),
                 "source_type": str(asset.get("source_type") or "video").strip(),
+                "duration_seconds": _safe_float(asset.get("duration_seconds"), 0.0),
             })
 
         primary_url = str(self.config.product_video_url or "").strip()
@@ -408,7 +410,14 @@ class ProductAssetManager:
             primary_asset = next((asset for asset in normalized if str(asset.get("url") or "").strip() == primary_url), None)
             if primary_asset:
                 return primary_asset
-            return {"id": primary_url, "url": primary_url, "name": "Product Video", "source_type": "video"}
+            return {
+                "id": primary_url,
+                "url": primary_url,
+                "name": "Product Video",
+                "source_type": "video",
+                # Default upload duration in this workspace is 4s; keep full clip by default.
+                "duration_seconds": 4.0,
+            }
 
         video_assets = [asset for asset in normalized if str(asset.get("source_type") or "").strip().lower() != "image"]
         if video_assets:
@@ -477,6 +486,7 @@ class ProductAssetManager:
                         "asset_url": asset["url"],
                         "asset_id": asset["id"],
                         "asset_name": asset["name"],
+                        "asset_duration_seconds": _safe_float(asset.get("duration_seconds"), 0.0),
                         "generate_video": False,
                         "keyword": matched_keyword or self.config.product_keyword,
                     })

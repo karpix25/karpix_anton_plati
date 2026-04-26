@@ -114,6 +114,7 @@ def _build_prompt_segment_inputs(keyword_segments: List[Dict[str, Any]]) -> List
             "visual_intent": segment.get("visual_intent"),
             "asset_type": segment.get("asset_type"),
             "asset_url": segment.get("asset_url"),
+            "asset_duration_seconds": segment.get("asset_duration_seconds"),
             "use_ready_asset": segment.get("asset_type") == "product_video",
             "must_show": segment.get("visual_intent") or segment.get("phrase") or segment.get("keyword"),
         })
@@ -295,6 +296,7 @@ KEYWORD SEGMENTS:
                 "pacing": ai_p.get("pacing", "normal"),
                 "asset_type": asset_type,
                 "asset_url": segment.get("asset_url"),
+                "asset_duration_seconds": segment.get("asset_duration_seconds"),
                 "use_ready_asset": use_ready_asset,
                 # If it's a ready asset, prompt_json is secondary/not needed
                 "prompt_json": ai_p if not use_ready_asset else None
@@ -338,6 +340,7 @@ KEYWORD SEGMENTS:
                 "phrase": segment.get("phrase"),
                 "asset_type": segment.get("asset_type"),
                 "asset_url": segment.get("asset_url"),
+                "asset_duration_seconds": segment.get("asset_duration_seconds"),
                 "use_ready_asset": use_ready_asset,
                 "prompt_json": None if use_ready_asset else {
                     "global_logic": f"Personal phone footage from a real trip. Natural imperfections, shifting auto-exposure, intimate framing. Single continuous shot, {duration:.1f} seconds.",
