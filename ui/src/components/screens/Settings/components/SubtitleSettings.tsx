@@ -57,17 +57,30 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
             Вшиваются в финальный монтаж. Выберите режим, стиль и кириллический шрифт.
           </p>
         </div>
-        <label className="flex items-center gap-3 rounded-xl bg-white border border-[#e5ebf0] px-4 py-2.5 text-sm font-semibold text-foreground cursor-pointer hover:bg-[#f8fafc] transition-colors">
-          <input
-            type="checkbox"
-            checked={subtitlesEnabled}
-            onChange={(event) =>
-              setDraftSettings((prev) => ({ ...prev, subtitles_enabled: event.target.checked }))
-            }
-            className="h-4 w-4 rounded border-[#d6e0e8] text-primary focus:ring-primary/20"
-          />
-          Включены
-        </label>
+        <div className="flex items-center gap-6">
+          <label className="flex items-center gap-3 rounded-xl bg-white border border-[#e5ebf0] px-4 py-2.5 text-sm font-semibold text-foreground cursor-pointer hover:bg-[#f8fafc] transition-colors">
+            <input
+              type="checkbox"
+              checked={draftSettings.typography_hook_enabled ?? false}
+              onChange={(event) =>
+                setDraftSettings((prev) => ({ ...prev, typography_hook_enabled: event.target.checked }))
+              }
+              className="h-4 w-4 rounded border-[#d6e0e8] text-primary focus:ring-primary/20"
+            />
+            Typography Hook (3s)
+          </label>
+          <label className="flex items-center gap-3 rounded-xl bg-white border border-[#e5ebf0] px-4 py-2.5 text-sm font-semibold text-foreground cursor-pointer hover:bg-[#f8fafc] transition-colors">
+            <input
+              type="checkbox"
+              checked={subtitlesEnabled}
+              onChange={(event) =>
+                setDraftSettings((prev) => ({ ...prev, subtitles_enabled: event.target.checked }))
+              }
+              className="h-4 w-4 rounded border-[#d6e0e8] text-primary focus:ring-primary/20"
+            />
+            Включены
+          </label>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">

@@ -45,6 +45,7 @@ type ScenarioRow = {
   subtitle_outline_width: number | null;
   subtitle_margin_v: number | null;
   subtitle_margin_percent: number | null;
+  typography_hook_enabled: boolean | null;
   video_generation_prompts:
     | {
         prompts?: Array<{
@@ -135,6 +136,7 @@ async function ensureMontageColumns() {
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_width NUMERIC(4,1) DEFAULT 3.0",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_v INTEGER DEFAULT 140",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_percent INTEGER DEFAULT 11",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS typography_hook_enabled BOOLEAN DEFAULT FALSE",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_video_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_status TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_error TEXT",
@@ -280,7 +282,8 @@ async function getScenario(scenarioId: number) {
         c.subtitle_outline_color,
         c.subtitle_outline_width,
         c.subtitle_margin_v,
-        c.subtitle_margin_percent
+        c.subtitle_margin_percent,
+        c.typography_hook_enabled
      FROM generated_scenarios gs
      LEFT JOIN clients c ON c.id = gs.client_id
      LEFT JOIN client_heygen_avatars a
@@ -1155,6 +1158,7 @@ async function buildMontage(scenarioId: number) {
             (Number(scenario.subtitle_margin_v || 140) / OUTPUT_HEIGHT) * 100
           )
       ),
+      typography_hook_enabled: !!scenario.typography_hook_enabled,
     },
     words: subtitleWords,
     totalDuration: audioDuration > 0 ? audioDuration : totalDuration,

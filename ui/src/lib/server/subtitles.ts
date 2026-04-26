@@ -24,6 +24,7 @@ type SubtitleRenderSettings = Pick<
   | "subtitle_outline_width"
   | "subtitle_margin_v"
   | "subtitle_margin_percent"
+  | "typography_hook_enabled"
 >;
 
 type SubtitleEvent = {
@@ -43,6 +44,7 @@ const DEFAULT_SUBTITLE_SETTINGS: SubtitleRenderSettings = {
   subtitle_outline_width: 3,
   subtitle_margin_v: SUBTITLE_PRESET_DEFAULT_MARGIN_V.classic,
   subtitle_margin_percent: SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT.classic,
+  typography_hook_enabled: false,
 };
 
 const WORD_SUBTITLE_LEAD_IN_SECONDS = 0.04;
@@ -83,9 +85,6 @@ function formatAssTime(seconds: number) {
 
 function escapeAssText(value: string) {
   return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\{/g, "\\{")
-    .replace(/\}/g, "\\}")
     .replace(/\n/g, "\\N");
 }
 
@@ -203,9 +202,63 @@ function buildPhraseBlockEvents(words: WordTimestamp[], totalDuration: number, p
 }
 
 function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSettings, totalDuration: number) {
-  return settings.subtitle_mode === "phrase_block"
+  const regularEvents = settings.subtitle_mode === "phrase_block"
     ? buildPhraseBlockEvents(words, totalDuration, settings.subtitle_style_preset)
     : buildWordByWordEvents(words, totalDuration, settings.subtitle_style_preset);
+
+  if (!settings.typography_hook_enabled) {
+    return regularEvents;
+  }
+
+  // Typography Hook Logic: 0-3 seconds
+  const HOOK_LIMIT = 3.0;
+  const hookWords = words
+    .map(normalizeWord)
+    .filter((w) => w.start < HOOK_LIMIT && w.text);
+
+  if (hookWords.length === 0) {
+    return regularEvents;
+  }
+
+  const hookEvents: SubtitleEvent[] = [];
+  const accumulatedWords: string[] = [];
+  
+  for (let i = 0; i < hookWords.length; i++) {
+    const word = hookWords[i];
+    accumulatedWords.push(word.text);
+    
+    const start = word.start;
+    const nextWord = hookWords[i+1];
+    const end = nextWord ? Math.min(nextWord.start, HOOK_LIMIT) : HOOK_LIMIT;
+    
+    if (end > start) {
+      // Create a "designed" text block
+      // Every 3-4 words add a newline. 
+      // Vary styles for some words.
+      let formattedText = "";
+      accumulatedWords.forEach((w, idx) => {
+        const isLast = idx === accumulatedWords.length - 1;
+        const needsNewline = (idx + 1) % 3 === 0 && !isLast;
+        
+        // Random-ish "beautiful" styling
+        const isSpecial = w.length > 5 || /^[A-ZА-Я]/.test(w);
+        const style = isSpecial ? "{\\b1\\fs110}" : "{\\b0\\fs90}";
+        
+        formattedText += `${style}${w}${isSpecial ? "{\\b0\\fs90}" : ""}${needsNewline ? "\\N" : " "}`;
+      });
+
+      hookEvents.push({
+        start,
+        end,
+        text: formattedText.trim(),
+      });
+    }
+  }
+
+  // Filter out regular events that overlap with the hook
+  const filteredRegular = regularEvents.filter(e => e.start >= HOOK_LIMIT);
+
+  return [...hookEvents, ...filteredRegular];
 }
 
 function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: SubtitleRenderSettings) {
@@ -246,13 +299,17 @@ Collisions: Normal
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Subtitle,${fontFamily},${fontSize},${primaryColour},${primaryColour},${outlineColour},${backColour},${bold},0,0,0,100,100,${spacing},0,${borderStyle},${outline},0,2,63,63,${marginV},1
+Style: Hook,${fontFamily},85,&H00FFFFFF,&H00FFFFFF,&H00111111,&H00000000,-1,0,0,0,100,100,0.5,0,1,4,0,5,60,60,140,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 ${events
   .map(
-    (event) =>
-      `Dialogue: 0,${formatAssTime(event.start)},${formatAssTime(event.end)},Subtitle,,0,0,0,,${escapeAssText(event.text)}`
+    (event) => {
+      const isHook = event.text.includes("{\\fs"); // Heuristic for hook events
+      const style = isHook ? "Hook" : "Subtitle";
+      return `Dialogue: 0,${formatAssTime(event.start)},${formatAssTime(event.end)},${style},,0,0,0,,${escapeAssText(event.text)}`;
+    }
   )
   .join("\n")}
 `;

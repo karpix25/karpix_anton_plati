@@ -54,6 +54,7 @@ export interface Client {
   learned_rules_scenario?: string;
   learned_rules_visual?: string;
   learned_rules_video?: string;
+  typography_hook_enabled?: boolean;
 }
 
 export type SubtitleMode = "word_by_word" | "phrase_block";
@@ -197,6 +198,7 @@ export interface Settings {
   learned_rules_scenario?: string;
   learned_rules_visual?: string;
   learned_rules_video?: string;
+  typography_hook_enabled?: boolean;
 }
 
 export interface MinimaxVoiceOption {
