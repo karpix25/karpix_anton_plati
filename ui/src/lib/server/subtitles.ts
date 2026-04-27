@@ -221,12 +221,24 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
     return regularEvents;
   }
 
+  // Russian stop words to ignore in high-impact typography hooks
+  const RUSSIAN_HOOK_STOP_WORDS = new Set([
+    "и", "в", "во", "не", "на", "с", "со", "как", "а", "то", "все", "она", "так", "его", "но", "да", "ты", "от", "же", "вы", "за", "бы", "по", "только", "ее", "её", "мне", "было", "вот", "от", "меня", "еще", "ещё", "о", "из", "ему", "теперь", "когда", "даже", "вдруг", "ли", "если", "уже", "или", "ни", "быть", "был", "него", "до", "вас", "нибудь", "опять", "у", "вам", "ведь", "там", "потом", "себя", "ничего", "ей", "они", "тут", "где", "есть", "надо", "ней", "для", "мы", "тебя", "их", "чем", "была", "сам", "чтоб", "без", "будто", "чего", "раз", "тоже", "себе", "под", "будет", "ж", "тогда", "кто", "этот", "того", "потому", "этого", "какой", "совсем", "ним", "здесь", "этом", "один", "почти", "про", "через", "над", "об", "мой", "моя", "мое", "мои", "моим", "моей", "моих", "твой", "твоя", "твое", "твои", "свой", "своя", "свое", "свои"
+  ]);
+
+  const valuableHookWords = hookWords.filter(w => {
+    const clean = w.text.toLowerCase().replace(/[^а-яёa-z0-9]/g, "");
+    return clean && !RUSSIAN_HOOK_STOP_WORDS.has(clean);
+  });
+
+  // Limit hook to first 4 valuable words for maximum impact
+  const maxHookWords = 4;
+  const activeHookWords = valuableHookWords.length > 0 
+    ? valuableHookWords.slice(0, maxHookWords)
+    : hookWords.slice(0, maxHookWords);
+
   const hookEvents: SubtitleEvent[] = [];
   const accumulatedWords: string[] = [];
-  
-  // Limit hook to first 4 words for maximum impact as per design reference
-  const maxHookWords = 4;
-  const activeHookWords = hookWords.slice(0, maxHookWords);
 
   for (let i = 0; i < activeHookWords.length; i++) {
     const word = activeHookWords[i];

@@ -520,8 +520,8 @@ def _classify_hook_shape(text: str) -> str:
     return "statement"
 
 
-def _hook_blueprint(text: str) -> dict:
-    context = _hook_context_from_transcript(text)
+def _hook_blueprint(text: str, gender: str = "female") -> dict:
+    context = _hook_context_from_transcript(text, gender)
     opening = context["opening"] or re.sub(r"\s+", " ", (text or "").strip())
     first_sentence = context["first_sentence"] or opening
     opening_words = first_sentence.split()
@@ -603,7 +603,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     ) if min_char_target and max_char_target else ""
     sanitized_transcript = _sanitize_reference_text_for_gender(transcript, gender)
     hook_context = _hook_context_from_transcript(sanitized_transcript, gender)
-    hook_blueprint = _hook_blueprint(hook_context["opening"] or transcript)
+    hook_blueprint = _hook_blueprint(hook_context["opening"] or sanitized_transcript, gender)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
     prompt = f"""
@@ -862,7 +862,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     source_hook = atoms.get("verbal_hook") or ""
     sanitized_source_hook = _sanitize_reference_text_for_gender(source_hook, gender)
     normalized_source_hook = sanitized_source_hook.lower().replace("ё", "е")
-    hook_blueprint = _hook_blueprint(sanitized_source_hook)
+    hook_blueprint = _hook_blueprint(sanitized_source_hook, gender)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in normalized_source_hook]
 
     prompt = f"""
@@ -975,6 +975,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     for idx, audit in enumerate(reference_audits, start=1):
         atoms = audit.get("atoms", {})
         strategy = audit.get("reference_strategy", {})
+        hook = _sanitize_reference_text_for_gender(atoms.get("verbal_hook") or "", gender)
         normalized_references.append({
             "reference_number": idx,
             "topic_cluster": strategy.get("topic_cluster"),
@@ -985,7 +986,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
             "proof_type": strategy.get("proof_type"),
             "cta_type": strategy.get("cta_type"),
             "constraints": strategy.get("content_constraints", []),
-            "hook": atoms.get("verbal_hook"),
+            "hook": hook,
             "trigger": atoms.get("psychological_trigger"),
             "skeleton": atoms.get("narrative_skeleton"),
             "tension_points": atoms.get("tension_points"),
@@ -999,7 +1000,7 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
             "reference_number": item.get("reference_number"),
             "hook": item.get("hook"),
             "trigger": item.get("trigger"),
-            "blueprint": _hook_blueprint(item.get("hook") or ""),
+            "blueprint": _hook_blueprint(item.get("hook") or "", gender),
         }
         for item in normalized_references[:6]
         if item.get("hook")
@@ -1164,7 +1165,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     - Opening sentence 1: {hook_context["first_sentence"] or "N/A"}
     - Opening sentence 2: {hook_context["second_sentence"] or "N/A"}
     - Proven opening block: {hook_context["opening"] or "N/A"}
-    - Hook blueprint: {json.dumps(_hook_blueprint(hook_context["opening"] or ""), ensure_ascii=False)}
+    - Hook blueprint: {json.dumps(_hook_blueprint(hook_context["opening"] or "", gender), ensure_ascii=False)}
 
     TARGET PRODUCT:
     {product_context}
