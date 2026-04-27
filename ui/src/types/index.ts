@@ -50,6 +50,7 @@ export interface Client {
   daily_final_video_count?: number;
   monthly_final_video_limit?: number;
   monthly_final_video_count?: number;
+  total_final_video_count?: number;
   open_final_video_jobs?: number;
   learned_rules_scenario?: string;
   learned_rules_visual?: string;
@@ -194,6 +195,7 @@ export interface Settings {
   daily_final_video_count: number;
   monthly_final_video_limit: number;
   monthly_final_video_count: number;
+  total_final_video_count?: number;
   open_final_video_jobs: number;
   learned_rules_scenario?: string;
   learned_rules_visual?: string;

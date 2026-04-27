@@ -196,6 +196,7 @@ export async function GET(request: Request) {
         c.*,
         COALESCE(stats.daily_final_video_count, 0) AS daily_final_video_count,
         COALESCE(stats.monthly_final_video_count, 0) AS monthly_final_video_count,
+        COALESCE(total_stats.total_final_video_count, 0) AS total_final_video_count,
         COALESCE(open_jobs.open_final_video_jobs, 0) AS open_final_video_jobs
       FROM clients c
       LEFT JOIN (
@@ -236,6 +237,14 @@ export async function GET(request: Request) {
           )
         GROUP BY gs.client_id
       ) stats ON stats.client_id = c.id
+      LEFT JOIN (
+        SELECT
+          gs.client_id,
+          COUNT(*)::int AS total_final_video_count
+        FROM generated_scenarios gs
+        WHERE gs.montage_status = 'completed'
+        GROUP BY gs.client_id
+      ) total_stats ON total_stats.client_id = c.id
       LEFT JOIN (
         SELECT
           fvj.client_id,

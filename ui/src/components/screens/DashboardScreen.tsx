@@ -1,6 +1,6 @@
 import { Network, ArrowRight } from "lucide-react";
-import { Client, Reference, Scenario, Screen, TopicCard } from "@/types";
-import { formatUsd, getTotalGenerationCosts } from "@/lib/generation-costs";
+import { Client, Screen, TopicCard } from "@/types";
+import { formatUsd } from "@/lib/generation-costs";
 
 interface DashboardScreenProps {
   selectedClient?: Client;
@@ -42,10 +42,15 @@ export function DashboardScreen({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-5">
         {[
           { label: "Референсы", value: totalReferences, helper: "Исходные материалы" },
           { label: "Сценарии", value: totalScenarios, helper: "Готовые тексты" },
+          {
+            label: "Финальные ролики",
+            value: Number(selectedClient?.total_final_video_count || 0),
+            helper: "Смонтировано (всего)",
+          },
           { label: "Темы", value: topicCards.length, helper: "Карточки тем" },
           { label: "Общий расход", value: formatUsd(totalCostUsd), helper: `${costStats.totalPrompts} prompts • ${heygenDurationSeconds.toFixed(1)}s HeyGen` },
         ].map((item) => (
