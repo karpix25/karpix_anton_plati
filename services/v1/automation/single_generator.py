@@ -20,8 +20,8 @@ logger = logging.getLogger("SingleGenerator")
 SILENCE_TRIM_ENABLED = os.getenv("TTS_SILENCE_TRIM_ENABLED", "true").strip().lower() in {"1", "true", "yes"}
 DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS = float(os.getenv("TTS_SILENCE_TRIM_MIN_DURATION_SECONDS", "0.35"))
 DEFAULT_SILENCE_TRIM_THRESHOLD_DB = float(os.getenv("TTS_SILENCE_TRIM_THRESHOLD_DB", "-45"))
-DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_GAP_SECONDS", "0.3"))
-DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.1"))
+DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_GAP_SECONDS", "0.1"))
+DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.06"))
 DEFAULT_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS", "0.06"))
 DEFAULT_PAUSE_TRIM_SILENCE_THRESHOLD_DB = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_THRESHOLD_DB", "-40"))
 DEFAULT_PAUSE_TRIM_MIN_OVERLAP_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_MIN_OVERLAP_SECONDS", "0.06"))
@@ -505,7 +505,7 @@ def _trim_sentence_gaps(
             f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]"
         )
         concat_inputs.append(f"[a{idx}]")
-    filter_parts.append(f"{''.join(concat_inputs)}concat=n={len(segments)}:v=0:a=1[out]")
+    filter_parts.append(f"{''.join(concat_inputs)}concat=n={len(segments)}:v=0:a=1,agate=threshold=0.003:range=0:attack=10:release=100[out]")
     filter_complex = ";".join(filter_parts)
 
     try:

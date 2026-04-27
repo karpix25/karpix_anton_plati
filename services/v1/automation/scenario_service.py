@@ -230,6 +230,26 @@ def normalize_narrator_gender(gender, default="female") -> str:
     return default
 
 
+def _gender_social_guardrail(gender: str) -> str:
+    normalized = normalize_narrator_gender(gender)
+    if normalized == "male":
+        return """
+    ГЕНДЕРНЫЙ СОЦИАЛЬНЫЙ КОНТЕКСТ (МУЖЧИНА):
+    - Диктор — мужчина. Контент ориентирован на гетеро-аудиторию.
+    - Используйте фразы: "мы с женой", "мы с моей девушкой", "супруга", "моя семья", "мы с пацанами".
+    - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО: "мой парень", "мой молодой человек", "мой муж".
+    - Если в референсе упоминается "парень", замените это на "девушка" или "жена" при сохранении смысла.
+    """
+    else:
+        return """
+    ГЕНДЕРНЫЙ СОЦИАЛЬНЫЙ КОНТЕКСТ (ЖЕНЩИНА):
+    - Диктор — женщина. Контент ориентирован на гетеро-аудиторию.
+    - Используйте фразы: "мой муж", "мой парень", "мой молодой человек", "мы с мужем", "мои подруги".
+    - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО: "моя жена", "моя девушка".
+    - Если в референсе упоминается "жена", замените это на "муж" или "парень" при сохранении смысла.
+    """
+
+
 def count_spoken_characters(text: str | None) -> int:
     return len(re.sub(r"\s+", "", text or ""))
 
@@ -584,8 +604,9 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     {_spoken_numbers_guardrail()}
     {_forbidden_tags_guardrail()}
 
-    GENDER AGREEMENT (FOR RUSSIAN LANGUAGE):
+    GENDER AGREEMENT AND SOCIAL CONTEXT (FOR RUSSIAN LANGUAGE):
     - The narrator's gender is: {gender}.
+    {_gender_social_guardrail(gender)}
     - Ensure all Russian verbs (past tense), adjectives, and pronouns match this gender.
     - Example for "{gender}": {"Я пошел/купил" if gender == "male" else "Я пошла/купила"}.
 
@@ -843,7 +864,10 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     6. **Human Touch**: Используйте маркеры живой речи из Linguistic Fingerprint оригинала (связки, обращения, темп).
     7. Не используйте указательные формулировки для внешних сайтов, приложений и товаров, которые зритель не увидит в кадре: нельзя "вот эти сайты", "первый сайт", "вот этот крем". Говорите только обобщенно: "есть сервис", "одна платформа", "несколько сайтов", "средство от комаров".
     8. Запрещены слова-паразиты и пустые вставки: {json.dumps(FILLER_WORDS_BAN, ensure_ascii=False)}.
-    9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
+    9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ И СОЦИАЛЬНЫЙ КОНТЕКСТ:
+       - Пол диктора — {gender}.
+       {_gender_social_guardrail(gender)}
+       - В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
     10. Все числа, даты, диапазоны, проценты, суммы и годы в итоговом сценарии пишите только словами, без арабских цифр.
 
     ВЕРНИТЕ JSON:
@@ -978,7 +1002,11 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
     8. Все числа, даты, диапазоны, проценты, суммы и годы в итоговом сценарии пишите только словами, без арабских цифр.
     9. Вариация №{variation_index} из {total_variations}.
     10. Не используйте указательные формулировки для неподготовленных внешних сайтов, приложений и товаров: нельзя "вот эти сайты", "первый сайт", "второй сайт", "вот этот спрей". Если нужно упомянуть ресурс или предмет, описывайте его обобщенно и без визуального указания.
-    11. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
+    11. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ И СОЦИАЛЬНЫЙ КОНТЕКСТ:
+        - Пол диктора — {gender}.
+        {_gender_social_guardrail(gender)}
+        - В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
+
 
     OPENING REFERENCES TO FOLLOW STRUCTURALLY:
     {json.dumps(reference_openings, ensure_ascii=False, indent=2)}
@@ -1072,7 +1100,10 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
     6. PRODUCT INTEGRATION: Woven the product naturally as the "Enabler". It shouldn't feel like a mid-roll ad, it should be the logical solution to the pain point mentioned.
     7. Avoid repetitive stock openers if they were not present in the source hook. Forbidden phrases unless present in the source opening: {json.dumps(banned_hook_phrases, ensure_ascii=False)}
     8. Do NOT use demonstrative references to third-party sites, apps, or consumer products that the viewer cannot literally see on screen. Forbidden examples: "вот эти сайты", "первый сайт", "вот этот крем". Use generic wording instead: "есть сервис", "одна платформа", "несколько сайтов", "крем с высоким SPF".
-    9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ: Пол диктора — {gender}. В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
+    9. ГРАММАТИЧЕСКОЕ СОГЛАСОВАНИЕ И СОЦИАЛЬНЫЙ КОНТЕКСТ:
+       - Пол диктора — {gender}.
+       {_gender_social_guardrail(gender)}
+       - В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
     10. All numbers in the final Russian script must be written as words, never as digits.
 
     TOPIC CARD (The "What"):
