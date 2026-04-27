@@ -1439,18 +1439,6 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
 
         processor = VisualSegmentProcessor(config, total_dur)
         final_segments = processor.process(segments)
-
-        # 4. Final safety net: after ALL processing, verify the first b-roll
-        # is still within the target window. The processor can shift/drop segments,
-        # so we must check again here.
-        final_segments = _ensure_early_first_broll(
-            final_segments,
-            norm_words,
-            total_dur,
-            allow_short_slot=True,
-            context_text=f"{scenario_text} {tts_text}",
-            use_semantic_selector_v2=use_semantic_selector_v2,
-        )
         
         return {"segments": final_segments, "updated_at": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
