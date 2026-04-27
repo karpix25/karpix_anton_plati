@@ -520,11 +520,7 @@ function enforceEarlyFirstBrollWindow(
 
   const minDuration = Math.min(totalDuration, getPromptMinDurationSeconds(donor));
   const start = toFrameTime(introSeconds);
-  let end = toFrameTime(Math.min(totalDuration, first.start - 0.1, start + minDuration));
-
-  if (end - start < MIN_BROLL_SEGMENT_SECONDS - FRAME_EPSILON_SECONDS) {
-    end = toFrameTime(Math.min(totalDuration, first.start - 0.1, start + MIN_BROLL_SEGMENT_SECONDS));
-  }
+  const end = toFrameTime(Math.min(totalDuration, start + minDuration));
   if (end - start < MIN_BROLL_SEGMENT_SECONDS - FRAME_EPSILON_SECONDS) {
     return sorted;
   }
