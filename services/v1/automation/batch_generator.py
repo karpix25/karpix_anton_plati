@@ -56,9 +56,9 @@ DEFAULT_SILENCE_TRIM_MIN_DURATION_SECONDS = float(os.getenv("TTS_SILENCE_TRIM_MI
 DEFAULT_SILENCE_TRIM_THRESHOLD_DB = float(os.getenv("TTS_SILENCE_TRIM_THRESHOLD_DB", "-45"))
 DEFAULT_SENTENCE_TRIM_MIN_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_MIN_GAP_SECONDS", "0.1"))
 DEFAULT_SENTENCE_TRIM_KEEP_GAP_SECONDS = float(os.getenv("TTS_SENTENCE_TRIM_KEEP_GAP_SECONDS", "0.06"))
-DEFAULT_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS", "0.06"))
-DEFAULT_PAUSE_TRIM_SILENCE_THRESHOLD_DB = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_THRESHOLD_DB", "-40"))
-DEFAULT_PAUSE_TRIM_MIN_OVERLAP_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_MIN_OVERLAP_SECONDS", "0.06"))
+DEFAULT_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_MIN_DURATION_SECONDS", "0.04"))
+DEFAULT_PAUSE_TRIM_SILENCE_THRESHOLD_DB = float(os.getenv("TTS_PAUSE_TRIM_SILENCE_THRESHOLD_DB", "-36"))
+DEFAULT_PAUSE_TRIM_MIN_OVERLAP_SECONDS = float(os.getenv("TTS_PAUSE_TRIM_MIN_OVERLAP_SECONDS", "0.04"))
 DEFAULT_PAUSE_TRIM_MAX_REMOVAL_SHARE = float(os.getenv("TTS_PAUSE_TRIM_MAX_REMOVAL_SHARE", "0.20"))
 SCENARIO_DURATION_OVERFLOW_TOLERANCE_SECONDS = max(
     0.0,
@@ -391,7 +391,7 @@ def _build_timing_safe_removal_intervals(
         return intervals
 
     resolved_min_gap = max(0.0, min(2.0, float(min_gap_seconds)))
-    resolved_keep_gap = max(0.08, min(0.5, float(keep_gap_seconds))) # Keep at least a small natural gap for safety
+    resolved_keep_gap = max(0.06, min(0.5, float(keep_gap_seconds))) # Keep at least a small natural gap for safety
 
     for idx in range(len(words) - 1):
         current = words[idx]
@@ -416,20 +416,20 @@ def _build_timing_safe_removal_intervals(
         if is_sentence_end:
             target_keep_gap = resolved_keep_gap # e.g. 0.3s
         elif is_soft_boundary:
-            target_keep_gap = max(0.22, resolved_keep_gap * 0.75) # keep safer pauses around commas/semicolons
+            target_keep_gap = max(0.18, resolved_keep_gap * 0.72) # keep safer pauses around commas/semicolons
         else:
-            target_keep_gap = max(0.16, resolved_keep_gap * 0.6) # keep safer internal pauses to protect consonant attacks
+            target_keep_gap = max(0.12, resolved_keep_gap * 0.52) # keep safer internal pauses to protect consonant attacks
 
         # Improved guards to prevent clipping first/last phonemes
         previous_word_duration = max(0.04, min(1.0, end_time - start_time))
         next_word_duration = max(0.04, min(1.0, next_end - next_start))
         
-        tail_guard = min(0.14, max(0.06, previous_word_duration * 0.22))
-        head_guard = min(0.18, max(0.09, next_word_duration * 0.30))
+        tail_guard = min(0.12, max(0.05, previous_word_duration * 0.18))
+        head_guard = min(0.16, max(0.08, next_word_duration * 0.26))
         
         available_gap = gap - tail_guard - head_guard
 
-        if available_gap <= target_keep_gap + 0.08:
+        if available_gap <= target_keep_gap + 0.06:
             continue
 
         extra_keep_gap = max(0.0, target_keep_gap - (tail_guard + head_guard))
@@ -442,7 +442,7 @@ def _build_timing_safe_removal_intervals(
         remove_start = end_time + keep_tail
         remove_end = next_start - keep_head
         
-        if remove_end - remove_start >= 0.08:
+        if remove_end - remove_start >= 0.06:
             intervals.append((remove_start, remove_end))
             
     return intervals
@@ -928,10 +928,7 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
 
                     if tts_silence_trim_enabled is None:
                         tts_silence_trim_enabled = SILENCE_TRIM_ENABLED
-                    should_run_silence_trim = (
-                        bool(tts_silence_trim_enabled)
-                        and not bool(tts_sentence_trim_enabled)
-                    )
+                    should_run_silence_trim = bool(tts_silence_trim_enabled)
                     if should_run_silence_trim:
                         tts_audio_path = _trim_tts_silence(
                             tts_audio_path,

@@ -43,8 +43,8 @@ const PAUSE_PRESET_CONFIG: Record<
   very_tight: {
     label: "Очень плотно",
     description: "Делает подачу быстрее и суше. Подходит для динамичных short-form роликов.",
-    minGapSeconds: 0.18,
-    keepGapSeconds: 0.08,
+    minGapSeconds: 0.12,
+    keepGapSeconds: 0.06,
     silenceTrimEnabled: true,
     sentenceTrimEnabled: true,
   },
