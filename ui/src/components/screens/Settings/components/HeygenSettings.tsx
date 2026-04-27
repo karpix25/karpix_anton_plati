@@ -3,6 +3,7 @@ import { HeygenAvatarConfig, Voice, Settings } from "@/types";
 import { Button } from "@/components/ui/button";
 import { LoaderCircle, Plus, Shuffle } from "lucide-react";
 import { HeygenAvatarItem } from "./HeygenAvatarItem";
+import { getAvatarConfigKey } from "../SettingsUtils";
 
 interface HeygenSettingsProps {
   avatarConfigs: HeygenAvatarConfig[];
@@ -104,12 +105,22 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
       </div>
 
       <div className="space-y-4">
-        {avatarConfigs.map((avatar, idx) => (
+        {avatarConfigs.map((avatar, idx) => {
+          const panelKey = getAvatarConfigKey(avatar, idx);
+          const legacyKeys = [
+            String(idx),
+            avatar.id ? `id:${avatar.id}` : "",
+            avatar.avatar_id ? `avatar:${avatar.avatar_id}` : "",
+            `index:${idx}`,
+          ].filter(Boolean);
+          const isExpanded = legacyKeys.some((key) => expandedAvatarPanels[key]) || false;
+
+          return (
           <HeygenAvatarItem
-            key={avatar.id || `avatar-${idx}`}
+            key={panelKey}
             avatar={avatar}
             avatarIndex={idx}
-            isExpanded={expandedAvatarPanels[idx] || (avatar.id ? expandedAvatarPanels[`id:${avatar.id}`] : expandedAvatarPanels[`avatar:${avatar.avatar_id}`]) || expandedAvatarPanels[`index:${idx}`] || false}
+            isExpanded={isExpanded}
             selectedClientId={selectedClientId}
             minimaxVoices={minimaxVoices}
             elevenlabsVoices={elevenlabsVoices}
@@ -128,7 +139,8 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
             handleGenerateMotionPrompt={handleGenerateMotionPrompt}
             setSelectedLookTabs={setSelectedLookTabs}
           />
-        ))}
+          );
+        })}
       </div>
 
     </div>

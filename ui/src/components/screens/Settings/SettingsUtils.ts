@@ -198,8 +198,8 @@ export const normalizeAvatar = (avatar: Partial<HeygenAvatarConfig> | null | und
 };
 
 export const getAvatarConfigKey = (avatar: HeygenAvatarConfig, avatarIndex: number) => {
-  if (avatar.id) return `id:${avatar.id}`;
   if (avatar.avatar_id) return `avatar:${avatar.avatar_id}`;
+  if (avatar.id) return `id:${avatar.id}`;
   return `index:${avatarIndex}`;
 };
 

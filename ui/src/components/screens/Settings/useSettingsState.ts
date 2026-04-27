@@ -34,6 +34,54 @@ interface UseSettingsStateProps {
   isDeletingProject: boolean;
 }
 
+const normalizeAvatarConfigs = (avatars: HeygenAvatarConfig[]) =>
+  avatars.map((avatar, index) => normalizeAvatar(avatar, index));
+
+const stripAvatarRowIds = (avatars: HeygenAvatarConfig[]) =>
+  normalizeAvatarConfigs(avatars).map((avatar) => ({
+    ...avatar,
+    id: undefined,
+    looks: (avatar.looks || []).map((look) => ({
+      ...look,
+      id: undefined,
+    })),
+  }));
+
+const areAvatarConfigsEquivalent = (left: HeygenAvatarConfig[], right: HeygenAvatarConfig[]) =>
+  JSON.stringify(stripAvatarRowIds(left)) === JSON.stringify(stripAvatarRowIds(right));
+
+const mergeServerAvatarIds = (local: HeygenAvatarConfig[], incoming: HeygenAvatarConfig[]) => {
+  const incomingByAvatarKey = new Map(
+    incoming.map((avatar, avatarIndex) => [
+      avatar.avatar_id ? `avatar:${avatar.avatar_id}` : `index:${avatarIndex}`,
+      avatar,
+    ])
+  );
+
+  return local.map((avatar, avatarIndex) => {
+    const avatarKey = avatar.avatar_id ? `avatar:${avatar.avatar_id}` : `index:${avatarIndex}`;
+    const incomingAvatar = incomingByAvatarKey.get(avatarKey);
+    if (!incomingAvatar) return avatar;
+
+    const incomingLooksByKey = new Map(
+      (incomingAvatar.looks || []).map((look, lookIndex) => [
+        look.look_id ? `look:${look.look_id}` : `index:${lookIndex}`,
+        look,
+      ])
+    );
+
+    return {
+      ...avatar,
+      id: incomingAvatar.id,
+      looks: (avatar.looks || []).map((look, lookIndex) => {
+        const lookKey = look.look_id ? `look:${look.look_id}` : `index:${lookIndex}`;
+        const incomingLook = incomingLooksByKey.get(lookKey);
+        return incomingLook ? { ...look, id: incomingLook.id } : look;
+      }),
+    };
+  });
+};
+
 export const useSettingsState = ({
   settings,
   avatarConfigs: initialAvatarConfigs,
@@ -52,7 +100,7 @@ export const useSettingsState = ({
 }: UseSettingsStateProps) => {
   const [draftSettings, setDraftSettings] = useState<Settings>(normalizeSettings(settings));
   const [avatarConfigs, setAvatarConfigs] = useState<HeygenAvatarConfig[]>(
-    initialAvatarConfigs.map((a, i) => normalizeAvatar(a, i))
+    normalizeAvatarConfigs(initialAvatarConfigs)
   );
 
   const [expandedAvatarPanels, setExpandedAvatarPanels] = useState<Record<string, boolean>>({});
@@ -71,8 +119,10 @@ export const useSettingsState = ({
   const onSaveRef = useRef(onSave);
   const onSaveHeygenAvatarsRef = useRef(onSaveHeygenAvatars);
   const draftSettingsRef = useRef(draftSettings);
+  const avatarConfigsRef = useRef(avatarConfigs);
   const normalizedSettingsRef = useRef(normalizeSettings(settings));
   const lastSavedSettingsRef = useRef<Settings | null>(null);
+  const lastSavedAvatarsRef = useRef<HeygenAvatarConfig[] | null>(null);
 
   useEffect(() => {
     onSaveRef.current = onSave;
@@ -87,12 +137,20 @@ export const useSettingsState = ({
   }, [draftSettings]);
 
   useEffect(() => {
+    avatarConfigsRef.current = avatarConfigs;
+  }, [avatarConfigs]);
+
+  useEffect(() => {
     normalizedSettingsRef.current = normalizeSettings(settings);
   }, [settings]);
 
   useEffect(() => {
     lastSavedSettingsRef.current = lastSavedSettings;
   }, [lastSavedSettings]);
+
+  useEffect(() => {
+    lastSavedAvatarsRef.current = lastSavedAvatars;
+  }, [lastSavedAvatars]);
 
   // Synchronize with props only if they actually represent different data
   useEffect(() => {
@@ -104,11 +162,30 @@ export const useSettingsState = ({
   }, [settings]); // Depend only on settings, not on draftSettings stable ref
 
   useEffect(() => {
-    const normalized = initialAvatarConfigs.map((a, i) => normalizeAvatar(a, i));
-    if (JSON.stringify(normalized) !== JSON.stringify(avatarConfigs)) {
-      setAvatarConfigs(normalized);
-      setLastSavedAvatars(normalized);
+    const normalized = normalizeAvatarConfigs(initialAvatarConfigs);
+    const currentAvatars = avatarConfigsRef.current;
+    const currentSaved = lastSavedAvatarsRef.current;
+
+    if (areAvatarConfigsEquivalent(normalized, currentAvatars)) {
+      const avatarsWithFreshIds = mergeServerAvatarIds(currentAvatars, normalized);
+      if (JSON.stringify(avatarsWithFreshIds) !== JSON.stringify(currentAvatars)) {
+        setAvatarConfigs(avatarsWithFreshIds);
+      }
+      if (!currentSaved || !areAvatarConfigsEquivalent(currentSaved, normalized)) {
+        setLastSavedAvatars(normalized);
+      }
+      return;
     }
+
+    const hasUnsavedLocalChanges = currentSaved
+      ? !areAvatarConfigsEquivalent(currentAvatars, currentSaved)
+      : false;
+    if (hasUnsavedLocalChanges) {
+      return;
+    }
+
+    setAvatarConfigs(normalized);
+    setLastSavedAvatars(normalized);
   }, [initialAvatarConfigs]);
 
   // Subtitle Preview Scale logic
@@ -160,13 +237,13 @@ export const useSettingsState = ({
 
   // Debounced HeyGen Auto-save
   useEffect(() => {
-    const normalizedProps = initialAvatarConfigs.map((a, i) => normalizeAvatar(a, i));
-    if (JSON.stringify(avatarConfigs) === JSON.stringify(normalizedProps)) return;
-    if (JSON.stringify(avatarConfigs) === JSON.stringify(lastSavedAvatars)) return;
+    const normalizedProps = normalizeAvatarConfigs(initialAvatarConfigs);
+    if (areAvatarConfigsEquivalent(avatarConfigs, normalizedProps)) return;
+    if (lastSavedAvatars && areAvatarConfigsEquivalent(avatarConfigs, lastSavedAvatars)) return;
 
     const timer = setTimeout(() => {
-      const sanitized = avatarConfigs
-        .map((avatar, avatarIndex) => normalizeAvatar(avatar, avatarIndex))
+      const normalizedCurrent = normalizeAvatarConfigs(avatarConfigs);
+      const sanitized = normalizedCurrent
         .map((avatar, avatarIndex) => ({
           ...avatar,
           sort_order: avatarIndex,
@@ -177,7 +254,7 @@ export const useSettingsState = ({
         .filter((avatar) => avatar.avatar_id && avatar.avatar_name);
 
       onSaveHeygenAvatarsRef.current(sanitized);
-      setLastSavedAvatars(avatarConfigs);
+      setLastSavedAvatars(normalizedCurrent);
     }, 5000);
 
     return () => clearTimeout(timer);

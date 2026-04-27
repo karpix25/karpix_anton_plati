@@ -68,7 +68,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
       }
     }
   }, [avatar.tts_provider, elevenlabsVoices]);
-  const selectedLookIndex = parseInt(selectedLookTabs[avatarIndex] || "0", 10);
+  const selectedLookIndex = parseInt(selectedLookTabs[String(avatarIndex)] || "0", 10);
   const avatarTtsProvider = avatar.tts_provider || "minimax";
   const currentVoiceId = avatarTtsProvider === "minimax" 
     ? (avatar.tts_voice_id || DEFAULT_MINIMAX_VOICE_ID)
@@ -289,7 +289,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                 {avatar.looks.length > 0 ? (
                   avatar.looks.map((look, lookIdx) => (
                     <HeygenLookItem
-                      key={look.id || `look-${lookIdx}`}
+                      key={look.look_id || (look.id ? `id:${look.id}` : `look-${lookIdx}`)}
                       avatar={avatar}
                       look={look}
                       avatarIndex={avatarIndex}
@@ -303,7 +303,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                       removeLook={removeLook}
                       handleGenerateLookMotion={handleGenerateLookMotion}
                       handleGenerateMotionPrompt={handleGenerateMotionPrompt}
-                      onSelect={() => setSelectedLookTabs(prev => ({ ...prev, [avatarIndex]: lookIdx.toString() }))}
+                      onSelect={() => setSelectedLookTabs(prev => ({ ...prev, [String(avatarIndex)]: lookIdx.toString() }))}
                     />
                   ))
                 ) : (
