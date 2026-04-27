@@ -107,6 +107,7 @@ const MIN_PRODUCT_SEGMENT_SECONDS = 3;
 const DEFAULT_PRODUCT_CLIP_SECONDS = 4;
 const FRAME_EPSILON_SECONDS = 1 / OUTPUT_FPS;
 const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.8;
+const FIRST_BROLL_LATEST_START_SECONDS = 3.5;
 const MIN_AVATAR_GAP_SECONDS = 2.5;
 
 const VIDEO_URL_HINTS = [".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8"];
@@ -495,6 +496,52 @@ function subtractReservedWindow(
   return chunks;
 }
 
+function enforceEarlyFirstBrollWindow(
+  prompts: TimelinePromptWindow[],
+  totalDuration: number
+) {
+  if (!prompts.length || totalDuration <= 0) return prompts;
+
+  const sorted = [...prompts].sort((a, b) => a.start - b.start);
+  const introSeconds = pickFirstAvatarIntroSeconds(totalDuration);
+  const latestAllowedStart = Math.max(
+    introSeconds,
+    Math.min(FIRST_BROLL_LATEST_START_SECONDS, totalDuration - MIN_BROLL_SEGMENT_SECONDS)
+  );
+  if (!Number.isFinite(latestAllowedStart) || latestAllowedStart <= 0) return sorted;
+
+  const first = sorted[0];
+  if (!first || first.start <= latestAllowedStart + FRAME_EPSILON_SECONDS) {
+    return sorted;
+  }
+
+  const donor = sorted.find((item) => item.assetType !== "product_video" && item.source);
+  if (!donor) return sorted;
+
+  const minDuration = Math.min(totalDuration, getPromptMinDurationSeconds(donor));
+  const start = toFrameTime(introSeconds);
+  let end = toFrameTime(Math.min(totalDuration, first.start - 0.1, start + minDuration));
+
+  if (end - start < MIN_BROLL_SEGMENT_SECONDS - FRAME_EPSILON_SECONDS) {
+    end = toFrameTime(Math.min(totalDuration, first.start - 0.1, start + MIN_BROLL_SEGMENT_SECONDS));
+  }
+  if (end - start < MIN_BROLL_SEGMENT_SECONDS - FRAME_EPSILON_SECONDS) {
+    return sorted;
+  }
+
+  const injected: TimelinePromptWindow = {
+    ...donor,
+    start,
+    end,
+  };
+  console.log(
+    `[montage] Enforcing early first b-roll: injected ${start.toFixed(2)}-${end.toFixed(2)}s ` +
+    `(previous first: ${first.start.toFixed(2)}s)`
+  );
+
+  return [injected, ...sorted].sort((a, b) => a.start - b.start);
+}
+
 function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSegment[] {
   const rawPrompts = (scenario.video_generation_prompts?.prompts || [])
     .map((item) => {
@@ -526,6 +573,8 @@ function buildTimeline(scenario: ScenarioRow, totalDuration: number): TimelineSe
     withSource.sort((a, b) => a.start - b.start),
     totalDuration
   );
+
+  prompts = enforceEarlyFirstBrollWindow(prompts, totalDuration);
 
   if (scenario.heygen_video_url && prompts.length) {
     const introSeconds = pickFirstAvatarIntroSeconds(totalDuration);

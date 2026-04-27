@@ -64,8 +64,9 @@ AVATAR_ONLY_HOOK_SECONDS = 2.8
 MIN_BROLL_SEGMENT_SECONDS = 2.0
 MIN_PRODUCT_SEGMENT_SECONDS = 3.0
 FIRST_ATTENTION_CUT_MIN_SECONDS = AVATAR_ONLY_HOOK_SECONDS
-FIRST_BROLL_LATEST_START_SECONDS = 5.5
+FIRST_BROLL_LATEST_START_SECONDS = 3.5
 FIRST_BROLL_TARGET_SECONDS = 2.6
+FIRST_BROLL_PHRASE_SOURCE_MAX_SECONDS = 3.0
 PRODUCT_CLIP_LEAD_SECONDS = 0.2
 PRODUCT_CLIP_DEFAULT_SECONDS = 4.0
 PRODUCT_CLIP_MAX_SECONDS = 5.0
@@ -788,6 +789,7 @@ class VisualPromptBuilder:
 5. visual_intent — короткая техническая фраза на английском для video model (shot + subject/action + camera/light).
 6. Первые {AVATAR_ONLY_HOOK_SECONDS:.1f}s всегда остаются за аватаром с лицом; B-roll не должен начинаться раньше.
 7. Времена должны быть в секундах, не отрицательные, slot_end > slot_start, word_end >= word_start.
+8. Для первой перебивки используй keyword/phrase из слов transcript, сказанных не позже 3.0s (если такие слова есть).
 """
         if product_keywords:
             keywords_hint = ", ".join([f"'{k}'" for k in product_keywords])
@@ -818,6 +820,7 @@ TASK:
 3. Set slot_start/slot_end close to word timing and within sensible window.
 4. First segment MUST start after {AVATAR_ONLY_HOOK_SECONDS:.1f}s because the opening hook is always avatar-only.
 5. If uncertain, prefer fewer segments over guessed segments.
+6. For the first segment, choose keyword/phrase from transcript words spoken at or before 3.0s, if available.
 
 STRICT VALIDATION TARGET:
 - All timestamps are numbers in seconds.
@@ -944,8 +947,18 @@ def _ensure_early_first_broll(segments: List[VisualSegment], words: List[Word], 
     if not window_words:
         return segments
 
-    chosen = max(window_words, key=lambda word: len(str(word.get("word") or "")))
-    phrase = " ".join(str(word.get("punctuated_word") or word.get("word") or "") for word in window_words[:6]).strip()
+    early_phrase_words = [
+        word for word in words
+        if _safe_float(word.get("start"), 0.0) <= FIRST_BROLL_PHRASE_SOURCE_MAX_SECONDS
+    ]
+    phrase_source_words = early_phrase_words[-6:] if early_phrase_words else window_words[:6]
+    if not phrase_source_words:
+        phrase_source_words = window_words[:6]
+
+    chosen = max(phrase_source_words, key=lambda word: len(str(word.get("word") or "")))
+    phrase = " ".join(
+        str(word.get("punctuated_word") or word.get("word") or "") for word in phrase_source_words
+    ).strip()
     early_segment: VisualSegment = {
         "slot_start": round(start, 2),
         "slot_end": round(end, 2),
