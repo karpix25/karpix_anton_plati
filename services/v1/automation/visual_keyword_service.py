@@ -48,7 +48,7 @@ class GenerationConfig:
     pause_threshold: float = 0.45
     coverage_percent: float = 55.0
     relevance_priority: str = "balanced"
-    product_clip_policy: str = "contextual"
+    product_clip_policy: str = "required"
     product_keyword: Optional[str] = None
     product_video_url: Optional[str] = None
     product_media_assets: Optional[List[Dict[str, Any]]] = None
@@ -1343,7 +1343,7 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
             pause_threshold=float(kwargs.get("broll_pause_threshold_seconds") or 0.45),
             coverage_percent=float(kwargs.get("broll_coverage_percent") or 55.0),
             relevance_priority=kwargs.get("broll_semantic_relevance_priority", "balanced"),
-            product_clip_policy=kwargs.get("broll_product_clip_policy", "contextual"),
+            product_clip_policy=kwargs.get("broll_product_clip_policy", "required"),
             product_keyword=kwargs.get("product_keyword"),
             product_video_url=kwargs.get("product_video_url"),
             product_media_assets=kwargs.get("product_media_assets"),
