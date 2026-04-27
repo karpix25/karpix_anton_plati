@@ -60,7 +60,7 @@ STRONG_BOUNDARY_RE = re.compile(r"[.!?;:]$")
 SOFT_BOUNDARY_RE = re.compile(r"[,)]$")
 PRODUCT_KEYWORD_SPLIT_RE = re.compile(r"[,\n;]+")
 NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Zа-яА-ЯёЁ]+")
-AVATAR_ONLY_HOOK_SECONDS = 0.0
+AVATAR_ONLY_HOOK_SECONDS = 2.5
 MIN_BROLL_SEGMENT_SECONDS = 2.0
 MIN_PRODUCT_SEGMENT_SECONDS = 3.0
 FIRST_ATTENTION_CUT_MIN_SECONDS = AVATAR_ONLY_HOOK_SECONDS
@@ -1007,6 +1007,9 @@ class VisualSegmentProcessor:
         final = self._enforce_minimum_durations(capped)
         
         # Hard snap to remove micro-gaps (< 0.1s)
+        # Only snap gaps BETWEEN segments or internal flashes.
+        # DO NOT snap the very first segment to 0.0 anymore, 
+        # as the user wants a mandatory avatar hook.
         return self._snap_segments(final)
 
     def _snap_segments(self, segments: List[VisualSegment]) -> List[VisualSegment]:
@@ -1018,14 +1021,9 @@ class VisualSegmentProcessor:
             if snapped:
                 prev = snapped[-1]
                 gap = item["slot_start"] - prev["slot_end"]
-                # If gap is too small for avatar (less than 2.5s), close it 100%
-                # We also handle micro-overlaps or zero gaps by snapping perfectly.
-                if gap < min_avatar_len:
+                # Only snap gaps between segments
+                if 0 < gap < min_avatar_len:
                     item["slot_start"] = prev["slot_end"]
-            else:
-                # First segment: if it starts near the beginning, snap to 0.0
-                if item["slot_start"] < min_avatar_len:
-                    item["slot_start"] = 0.0
             
             # Ensure slot_end doesn't go backwards
             if item["slot_end"] <= item["slot_start"]:
@@ -1037,6 +1035,7 @@ class VisualSegmentProcessor:
     def _enforce_avatar_only_hook(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         if not segments:
             return []
+        # Use the global AVATAR_ONLY_HOOK_SECONDS (2.5)
         results: List[VisualSegment] = []
         for seg in segments:
             item = dict(seg)
