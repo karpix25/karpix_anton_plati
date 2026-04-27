@@ -103,6 +103,7 @@ def _build_character_payload(avatar_id: str, look_id: Optional[str] = None) -> D
             "talking_photo_id": look_id,
             "scale": 1.0,
             "talking_photo_style": "square",
+            "use_avatar_iv_model": False,
         }
 
     return {
@@ -110,6 +111,7 @@ def _build_character_payload(avatar_id: str, look_id: Optional[str] = None) -> D
         "avatar_id": avatar_id,
         "avatar_style": "normal",
         "scale": 1.0,
+        "use_avatar_iv_model": False,
     }
 
 
