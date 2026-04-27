@@ -1510,9 +1510,6 @@ def _fix_llm_hallucinated_timings(segments: List[VisualSegment], words: List[Wor
         # while still prioritizing the closest match if multiples exist.
         MAX_DRIFT = 100.0
         
-        best_idx = -1
-        min_dist = float('inf')
-
         # 1. Try to match the exact phrase stems contiguous sequence
         if window > 0 and window <= len(word_stems):
             for i in range(len(word_stems) - window + 1):
