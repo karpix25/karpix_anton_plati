@@ -202,10 +202,45 @@ function buildPhraseBlockEvents(words: WordTimestamp[], totalDuration: number, p
   return events;
 }
 
+function applyMagicCharacterAnimation(text: string, baseDelayMs: number = 25) {
+  // We use ASS tags to animate each character:
+  // \alpha&HFF& - start invisible
+  // \blur6 - start blurry
+  // \fscy80 - start slightly squashed (simulates coming from below)
+  // \t(delay, delay+duration, ...) - animate to clear and full size
+  const chars = Array.from(text);
+  let result = "";
+  let currentDelay = 0;
+
+  chars.forEach((char) => {
+    if (char === " ") {
+      result += " ";
+      // Spaces don't need animation tags, but we keep a small delay for rhythm
+      currentDelay += baseDelayMs;
+      return;
+    }
+    
+    const duration = 220;
+    const tags = `{\\alpha&HFF&\\blur6\\fscy80\\t(${currentDelay},${currentDelay + duration},\\alpha&H00&\\blur0\\fscy100)}`;
+    result += `${tags}${char}`;
+    currentDelay += baseDelayMs;
+  });
+
+  return result;
+}
+
 function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSettings, totalDuration: number) {
   const regularEvents = settings.subtitle_mode === "phrase_block"
     ? buildPhraseBlockEvents(words, totalDuration, settings.subtitle_style_preset)
     : buildWordByWordEvents(words, totalDuration, settings.subtitle_style_preset);
+
+  // Apply "Magic" animation to regular word-by-word events if enabled
+  if (settings.subtitle_mode === "word_by_word") {
+    regularEvents.forEach(event => {
+      // For regular subtitles, we use a faster character delay to keep it readable
+      event.text = `{\\b1}${applyMagicCharacterAnimation(event.text, 15)}`;
+    });
+  }
 
   if (!settings.typography_hook_enabled) {
     return regularEvents;
@@ -252,22 +287,16 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
       let formattedText = "";
       accumulatedWords.forEach((w, idx) => {
         const isLast = idx === accumulatedWords.length - 1;
-        // Stack every 2 words or if it's the last word of a group
         const needsNewline = (idx + 1) % 2 === 0 && !isLast;
         
-        // Animation for the newest word
-        // \t(0,200,\fscx100\fscy100) - scales down from 140% to 100%
-        // \t(0,100,\alpha&H00&) - fades in quickly
-        const anim = isLast 
-          ? `{\\alpha&HFF&\\fscx140\\fscy140\\t(0,150,\\alpha&H00&\\fscx100\\fscy100)}` 
-          : "{\\alpha&H00&\\fscx100\\fscy100}";
+        // Only the NEW word (isLast) gets the character-by-character "Magic" animation.
+        // Previous words stay static to prevent visual noise.
+        const content = isLast 
+          ? applyMagicCharacterAnimation(w, 35) 
+          : `{\\alpha&H00&\\blur0\\fscy100}${w}`;
 
-        const style = `{\\b1}${anim}`;
-        
-        // Use a trick for tight line spacing: {\fscy40}\N{\fscy100} 
-        // This reduces the vertical gap between lines. 
-        // Force newline after every 2 words to keep it blocky.
-        formattedText += `${style}${w}${needsNewline ? "{\\fscy40}\\N{\\fscy100}" : " "}`;
+        const style = `{\\b1}${content}`;
+        formattedText += `${style}${needsNewline ? "{\\fscy40}\\N{\\fscy100}" : " "}`;
       });
 
       hookEvents.push({
