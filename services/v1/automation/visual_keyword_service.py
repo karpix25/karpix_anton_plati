@@ -1017,8 +1017,8 @@ class VisualSegmentProcessor:
             if snapped:
                 prev = snapped[-1]
                 gap = item["slot_start"] - prev["slot_end"]
-                # If gap is tiny (less than 0.1s), close it 100%
-                if 0 < gap < 0.1:
+                # If gap is too small for avatar (less than 2.5s), close it 100%
+                if 0 < gap < 2.5:
                     item["slot_start"] = prev["slot_end"]
                 # If they overlap slightly after other processing, fix it
                 elif gap < 0:
@@ -1050,7 +1050,7 @@ class VisualSegmentProcessor:
 
     def _resolve_overlaps(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         if not segments: return []
-        min_avatar_len = 2.0
+        min_avatar_len = 2.5
         min_slot_len = self.profile["slot_min"]
         ordered = sorted((dict(s) for s in segments), key=lambda x: (float(x.get("slot_start", 0)), float(x.get("slot_end", 0))))
         resolved: List[VisualSegment] = []
