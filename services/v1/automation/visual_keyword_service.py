@@ -1553,11 +1553,35 @@ def _fix_llm_hallucinated_timings(segments: List[VisualSegment], words: List[Wor
 
         if best_idx != -1:
             try:
-                seg["word_start"] = round(words[best_idx]["start"], 3)
-                # Safeguard against index out of bounds
+                real_word_start = round(words[best_idx]["start"], 3)
                 end_idx = min(best_idx + match_len - 1, len(words) - 1)
-                seg["word_end"] = round(words[end_idx]["end"], 3)
-                if min_dist > 2.0:
-                    logger.info(f"Synced '{seg.get('keyword')}' with drift {min_dist:.2f}s")
+                real_word_end = round(words[end_idx]["end"], 3)
+
+                # Compute how much the word actually drifted from LLM's estimate
+                old_word_start = float(seg.get("word_start", seg.get("slot_start", llm_start)))
+                slot_drift = real_word_start - old_word_start
+
+                # Update word timings
+                seg["word_start"] = real_word_start
+                seg["word_end"] = real_word_end
+
+                # CRITICAL: shift the entire slot by the same delta so the
+                # visual cut aligns with when the word is actually spoken.
+                # Without this, slot_start stays at the LLM's wrong value.
+                if abs(slot_drift) > 0.05:  # Only shift if drift is meaningful
+                    old_slot_start = float(seg.get("slot_start", 0.0))
+                    old_slot_end = float(seg.get("slot_end", old_slot_start))
+                    slot_dur = old_slot_end - old_slot_start
+                    new_slot_start = round(max(0.0, old_slot_start + slot_drift), 3)
+                    new_slot_end = round(new_slot_start + slot_dur, 3)
+                    seg["slot_start"] = new_slot_start
+                    seg["slot_end"] = new_slot_end
+                    if abs(slot_drift) > 1.0:
+                        logger.info(
+                            f"Slot shifted for '{seg.get('keyword')}': "
+                            f"{old_slot_start:.2f}s → {new_slot_start:.2f}s "
+                            f"(drift={slot_drift:+.2f}s)"
+                        )
             except Exception as e:
                 logger.warning(f"Failed to apply fixed timing: {e}")
+
