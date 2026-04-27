@@ -72,6 +72,17 @@ PRODUCT_CLIP_DEFAULT_SECONDS = 4.0
 PRODUCT_CLIP_MAX_SECONDS = 5.0
 PRODUCT_CLIP_COOLDOWN_SECONDS = 12.0
 PRODUCT_CLIP_MERGE_GAP_SECONDS = 1.0
+EARLY_PHRASE_MAX_GAP_SECONDS = 0.55
+EARLY_PHRASE_MIN_WORDS = 3
+EARLY_PHRASE_TARGET_WORDS = 4
+EARLY_PHRASE_MAX_WORDS = 6
+EARLY_PHRASE_MAX_CHARS = 42
+
+RUSSIAN_EARLY_HOOK_STOP_WORDS = {
+    "и", "в", "во", "на", "с", "со", "а", "но", "да", "или", "что", "как", "к",
+    "по", "из", "за", "до", "для", "у", "о", "об", "это", "этот", "эта", "эти",
+    "то", "та", "те", "я", "ты", "мы", "вы", "он", "она", "они", "же", "ли",
+}
 
 RUSSIAN_STEM_SUFFIXES = (
     "иями", "ями", "ами", "ого", "ему", "ому", "ыми", "ими", "его", "ее",
@@ -186,6 +197,110 @@ def _get_timestamped_transcript(words: List[Word]) -> str:
     for w in words:
         chunks.append(f"{w['word']} ({w['start']}s)")
     return " ".join(chunks)
+
+
+def _clean_single_token(value: str) -> str:
+    tokens = _tokenize(value)
+    return tokens[0] if tokens else ""
+
+
+def _score_phrase_words(words: List[Word]) -> float:
+    score = 0.0
+    for word in words:
+        token = _clean_single_token(str(word.get("word") or ""))
+        if not token:
+            continue
+        token_score = 0.7 + min(len(token), 10) * 0.1
+        if token in RUSSIAN_EARLY_HOOK_STOP_WORDS:
+            token_score -= 0.8
+        score += token_score
+    return score
+
+
+def _select_early_anchor_phrase(words: List[Word]) -> Optional[Dict[str, Any]]:
+    early_words = [
+        word for word in words
+        if _safe_float(word.get("start"), 0.0) <= FIRST_BROLL_PHRASE_SOURCE_MAX_SECONDS
+    ]
+    if not early_words:
+        return None
+
+    blocks: List[List[Word]] = []
+    current: List[Word] = []
+    for word in early_words:
+        start = _safe_float(word.get("start"), 0.0)
+        end = _safe_float(word.get("end"), start)
+        if current:
+            prev_end = _safe_float(current[-1].get("end"), _safe_float(current[-1].get("start"), 0.0))
+            if start - prev_end > EARLY_PHRASE_MAX_GAP_SECONDS:
+                blocks.append(current)
+                current = []
+
+        current.append(word)
+        punctuated = str(word.get("punctuated_word") or word.get("word") or "")
+        if STRONG_BOUNDARY_RE.search(punctuated) and len(current) >= EARLY_PHRASE_MIN_WORDS:
+            blocks.append(current)
+            current = []
+            break
+
+    if current:
+        blocks.append(current)
+    if not blocks:
+        return None
+
+    source = next((block for block in blocks if len(block) >= EARLY_PHRASE_MIN_WORDS), blocks[0])
+    max_words = min(EARLY_PHRASE_MAX_WORDS, len(source))
+    min_words = min(EARLY_PHRASE_TARGET_WORDS, max_words)
+    if min_words <= 0:
+        return None
+
+    best_window = source[:min_words]
+    best_score = _score_phrase_words(best_window)
+    for window_size in range(min_words, max_words + 1):
+        for start_idx in range(0, len(source) - window_size + 1):
+            window = source[start_idx:start_idx + window_size]
+            phrase_text = " ".join(
+                str(w.get("punctuated_word") or w.get("word") or "").strip() for w in window
+            ).strip()
+            if not phrase_text:
+                continue
+            if len(phrase_text) > EARLY_PHRASE_MAX_CHARS and window_size > EARLY_PHRASE_TARGET_WORDS:
+                continue
+            score = _score_phrase_words(window) - (start_idx * 0.12)
+            if score > best_score:
+                best_score = score
+                best_window = window
+
+    phrase = " ".join(
+        str(w.get("punctuated_word") or w.get("word") or "").strip() for w in best_window
+    ).strip()
+    if not phrase:
+        return None
+
+    keyword_word = best_window[0]
+    keyword_score = -10.0
+    for word in best_window:
+        token = _clean_single_token(str(word.get("word") or ""))
+        if not token:
+            continue
+        score = len(token) - (4 if token in RUSSIAN_EARLY_HOOK_STOP_WORDS else 0)
+        if score > keyword_score:
+            keyword_score = score
+            keyword_word = word
+
+    keyword = str(keyword_word.get("word") or keyword_word.get("punctuated_word") or "").strip()
+    if not keyword:
+        keyword = str(best_window[0].get("word") or "").strip()
+
+    return {
+        "phrase": phrase,
+        "keyword": keyword,
+        "keyword_start": round(_safe_float(keyword_word.get("start"), 0.0), 2),
+        "keyword_end": round(
+            _safe_float(keyword_word.get("end"), _safe_float(keyword_word.get("start"), 0.0)),
+            2,
+        ),
+    }
 
 
 def _keyword_matches_phrase(keyword: str, phrase: str) -> bool:
@@ -953,24 +1068,33 @@ def _ensure_early_first_broll(
     if not window_words:
         return segments
 
-    early_phrase_words = [
-        word for word in words
-        if _safe_float(word.get("start"), 0.0) <= FIRST_BROLL_PHRASE_SOURCE_MAX_SECONDS
-    ]
-    phrase_source_words = early_phrase_words[-6:] if early_phrase_words else window_words[:6]
-    if not phrase_source_words:
-        phrase_source_words = window_words[:6]
+    anchor = _select_early_anchor_phrase(words)
+    if anchor:
+        phrase = str(anchor.get("phrase") or "").strip()
+        keyword = str(anchor.get("keyword") or "").strip()
+        keyword_start = round(_safe_float(anchor.get("keyword_start"), start), 2)
+        keyword_end = round(_safe_float(anchor.get("keyword_end"), keyword_start), 2)
+    else:
+        fallback_words = window_words[:EARLY_PHRASE_TARGET_WORDS] or window_words[:1]
+        chosen = max(fallback_words, key=lambda word: len(str(word.get("word") or "")))
+        phrase = " ".join(
+            str(word.get("punctuated_word") or word.get("word") or "") for word in fallback_words
+        ).strip()
+        keyword = str(chosen.get("word") or "").strip()
+        keyword_start = round(_safe_float(chosen.get("start"), start), 2)
+        keyword_end = round(_safe_float(chosen.get("end"), keyword_start), 2)
 
-    chosen = max(phrase_source_words, key=lambda word: len(str(word.get("word") or "")))
-    phrase = " ".join(
-        str(word.get("punctuated_word") or word.get("word") or "") for word in phrase_source_words
-    ).strip()
+    if not keyword:
+        keyword = phrase.split(" ")[0] if phrase else ""
+    if keyword_end < keyword_start:
+        keyword_end = keyword_start
+
     early_segment: VisualSegment = {
         "slot_start": round(start, 2),
         "slot_end": round(end, 2),
-        "word_start": round(_safe_float(chosen.get("start"), start), 2),
-        "word_end": round(_safe_float(chosen.get("end"), start), 2),
-        "keyword": str(chosen.get("word") or "").strip(),
+        "word_start": keyword_start,
+        "word_end": keyword_end,
+        "keyword": keyword,
         "phrase": phrase,
         "visual_intent": "early context cutaway after avatar hook, vertical realistic b-roll",
         "asset_type": "generated_video",
