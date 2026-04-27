@@ -147,6 +147,21 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _is_enabled_flag(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return default
+    if normalized in {"1", "true", "yes", "on", "y"}:
+        return True
+    if normalized in {"0", "false", "no", "off", "n"}:
+        return False
+    return default
+
+
 def _normalize_text(value: str) -> str:
     cleaned = NON_ALNUM_RE.sub(" ", (value or "").lower().replace("ё", "е"))
     return " ".join(cleaned.split())
@@ -239,7 +254,7 @@ def _build_theme_token_frequency(words: List[Word], context_text: str = "") -> D
     return freq
 
 
-def _select_early_anchor_phrase(words: List[Word], context_text: str = "") -> Optional[Dict[str, Any]]:
+def _select_early_phrase_window(words: List[Word]) -> Optional[List[Word]]:
     early_words = [
         word for word in words
         if _safe_float(word.get("start"), 0.0) <= FIRST_BROLL_PHRASE_SOURCE_MAX_SECONDS
@@ -292,17 +307,60 @@ def _select_early_anchor_phrase(words: List[Word], context_text: str = "") -> Op
             if score > best_score:
                 best_score = score
                 best_window = window
+    return best_window
 
+
+def _build_anchor_result(window: List[Word], keyword_word: Word) -> Optional[Dict[str, Any]]:
     phrase = " ".join(
-        str(w.get("punctuated_word") or w.get("word") or "").strip() for w in best_window
+        str(w.get("punctuated_word") or w.get("word") or "").strip() for w in window
     ).strip()
     if not phrase:
         return None
 
-    theme_freq = _build_theme_token_frequency(words, context_text=context_text)
-    keyword_word = best_window[0]
+    keyword = str(keyword_word.get("word") or keyword_word.get("punctuated_word") or "").strip()
+    if not keyword:
+        keyword = str(window[0].get("word") or "").strip()
+
+    return {
+        "phrase": phrase,
+        "keyword": keyword,
+        "keyword_start": round(_safe_float(keyword_word.get("start"), 0.0), 2),
+        "keyword_end": round(
+            _safe_float(keyword_word.get("end"), _safe_float(keyword_word.get("start"), 0.0)),
+            2,
+        ),
+    }
+
+
+def _select_early_anchor_phrase_v1(window: List[Word]) -> Optional[Dict[str, Any]]:
+    keyword_word = window[0]
     keyword_score = -10.0
-    for idx, word in enumerate(best_window):
+    for idx, word in enumerate(window):
+        token = _clean_single_token(str(word.get("word") or ""))
+        if not token:
+            continue
+        score = float(len(token)) * 0.75
+        if token in RUSSIAN_EARLY_HOOK_STOP_WORDS:
+            score -= 3.0
+        punctuated = str(word.get("punctuated_word") or word.get("word") or "").strip()
+        if punctuated and punctuated[0].isupper():
+            score += 0.5
+        score -= float(idx) * 0.05
+        if score > keyword_score:
+            keyword_score = score
+            keyword_word = word
+    return _build_anchor_result(window, keyword_word)
+
+
+def _select_early_anchor_phrase_v2(
+    window: List[Word],
+    words: List[Word],
+    context_text: str = "",
+) -> Optional[Dict[str, Any]]:
+    theme_freq = _build_theme_token_frequency(words, context_text=context_text)
+    keyword_word = window[0]
+    keyword_score = -10.0
+    for idx, word in enumerate(window):
         token = _clean_single_token(str(word.get("word") or ""))
         if not token:
             continue
@@ -316,27 +374,27 @@ def _select_early_anchor_phrase(words: List[Word], context_text: str = "") -> Op
             score += 0.8
 
         if idx > 0:
-            prev_token = _clean_single_token(str(best_window[idx - 1].get("word") or ""))
+            prev_token = _clean_single_token(str(window[idx - 1].get("word") or ""))
             if prev_token in EARLY_GEO_CONTEXT_MARKERS:
                 score += 2.6
 
         if score > keyword_score:
             keyword_score = score
             keyword_word = word
+    return _build_anchor_result(window, keyword_word)
 
-    keyword = str(keyword_word.get("word") or keyword_word.get("punctuated_word") or "").strip()
-    if not keyword:
-        keyword = str(best_window[0].get("word") or "").strip()
 
-    return {
-        "phrase": phrase,
-        "keyword": keyword,
-        "keyword_start": round(_safe_float(keyword_word.get("start"), 0.0), 2),
-        "keyword_end": round(
-            _safe_float(keyword_word.get("end"), _safe_float(keyword_word.get("start"), 0.0)),
-            2,
-        ),
-    }
+def _select_early_anchor_phrase(
+    words: List[Word],
+    context_text: str = "",
+    use_semantic_selector_v2: bool = False,
+) -> Optional[Dict[str, Any]]:
+    window = _select_early_phrase_window(words)
+    if not window:
+        return None
+    if use_semantic_selector_v2:
+        return _select_early_anchor_phrase_v2(window, words, context_text=context_text)
+    return _select_early_anchor_phrase_v1(window)
 
 
 def _keyword_matches_phrase(keyword: str, phrase: str) -> bool:
@@ -1069,6 +1127,7 @@ def _ensure_early_first_broll(
     total_dur: float,
     allow_short_slot: bool = False,
     context_text: str = "",
+    use_semantic_selector_v2: bool = False,
 ) -> List[VisualSegment]:
     if total_dur <= AVATAR_ONLY_HOOK_SECONDS + MIN_BROLL_SEGMENT_SECONDS:
         return segments
@@ -1105,7 +1164,11 @@ def _ensure_early_first_broll(
     if not window_words:
         return segments
 
-    anchor = _select_early_anchor_phrase(words, context_text=context_text)
+    anchor = _select_early_anchor_phrase(
+        words,
+        context_text=context_text,
+        use_semantic_selector_v2=use_semantic_selector_v2,
+    )
     if anchor:
         phrase = str(anchor.get("phrase") or "").strip()
         keyword = str(anchor.get("keyword") or "").strip()
@@ -1144,6 +1207,13 @@ def _ensure_early_first_broll(
 
 def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcript: str, words: List[Dict[str, Any]], **kwargs) -> Dict[str, Any]:
     try:
+        use_semantic_selector_v2 = _is_enabled_flag(
+            kwargs.get("broll_use_semantic_keyword_selector_v2"),
+            default=_is_enabled_flag(
+                os.getenv("BROLL_USE_SEMANTIC_KEYWORD_SELECTOR_V2"),
+                default=True,
+            ),
+        )
         config = GenerationConfig(
             interval=float(kwargs.get("broll_interval_seconds") or 3.5),
             timing_mode="coverage_percent",
@@ -1200,6 +1270,7 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
             norm_words,
             total_dur,
             context_text=f"{scenario_text} {tts_text}",
+            use_semantic_selector_v2=use_semantic_selector_v2,
         )
             
         # 2. Handle product assets
@@ -1217,6 +1288,7 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
             total_dur,
             allow_short_slot=True,
             context_text=f"{scenario_text} {tts_text}",
+            use_semantic_selector_v2=use_semantic_selector_v2,
         )
         
         return {"segments": final_segments, "updated_at": datetime.now(timezone.utc).isoformat()}
