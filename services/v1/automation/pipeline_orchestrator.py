@@ -24,13 +24,9 @@ from services.v1.database.db_service import (
 )
 from services.v1.automation.notifier_service import send_telegram_notification, notify_service_payment_issue
 
-# Note: This assumes cloud_storage utilities exist or will be added to this workspace.
-try:
-    from services.cloud_storage import upload_file
-except ImportError:
-    # Use a dummy upload if the file is missing
-    def upload_file(path):
-        return f"file://{path}"
+# Use a dummy upload
+def upload_file(path):
+    return f"file://{path}"
 
 # Set up logging
 logger = logging.getLogger(__name__)

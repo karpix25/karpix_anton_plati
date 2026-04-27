@@ -84,6 +84,12 @@ RUSSIAN_EARLY_HOOK_STOP_WORDS = {
     "то", "та", "те", "я", "ты", "мы", "вы", "он", "она", "они", "же", "ли",
 }
 EARLY_THEME_MIN_TOKEN_LEN = 3
+GLOBAL_PRODUCT_KEYWORDS = [
+    "плати по миру",
+    "сервис плати по миру",
+    "карта плати по миру",
+    "платипомиру",
+]
 EARLY_GEO_CONTEXT_MARKERS = {
     "остров", "острове", "город", "городе", "страна", "стране", "район", "районе",
     "курорт", "курорте", "регион", "регионе", "провинция", "провинции",
@@ -403,6 +409,18 @@ def _keyword_matches_phrase(keyword: str, phrase: str) -> bool:
     if not keyword_tokens or not phrase_tokens:
         return False
 
+    # Special handling for the core brand "Плати по миру"
+    kw_stems = [_stem_token(t) for t in keyword_tokens]
+    kw_stem_str = " ".join(kw_stems)
+    
+    if "плат по мир" in kw_stem_str:
+        # Check if phrase contains both "плат" and "мир"
+        ph_stems = [_stem_token(t) for t in phrase_tokens]
+        has_plati = any(s == "плат" or s == "плати" for s in ph_stems)
+        has_miru = any(s == "мир" or s == "миру" for s in ph_stems)
+        if has_plati and has_miru:
+            return True
+
     # For multi-word product keys require contiguous phrase match in the same order.
     if len(keyword_tokens) > 1:
         if _contains_contiguous_sequence(phrase_tokens, keyword_tokens):
@@ -702,6 +720,12 @@ class ProductAssetManager:
 
     def _build_product_mention_segments(self, words: List[Word], total_duration: float) -> List[VisualSegment]:
         product_keywords = _parse_product_keywords(self.config.product_keyword)
+        
+        # Merge with global project-specific keywords
+        for gk in GLOBAL_PRODUCT_KEYWORDS:
+            if gk not in product_keywords:
+                product_keywords.append(gk)
+        
         if not product_keywords or not words or total_duration <= AVATAR_ONLY_HOOK_SECONDS:
             return []
 
@@ -766,6 +790,76 @@ class ProductAssetManager:
 
         return self._merge_product_segments(sorted(mentions, key=lambda seg: (seg["slot_start"], seg["slot_end"])))
 
+    def _match_product_keyword_in_segment(
+        self,
+        segment: VisualSegment,
+        product_keywords: List[str],
+    ) -> Optional[str]:
+        return (
+            _find_matching_product_keyword(product_keywords, str(segment.get("phrase") or ""))
+            or _find_matching_product_keyword(product_keywords, str(segment.get("keyword") or ""))
+        )
+
+    def _build_keyword_anchor_product_segments(
+        self,
+        segments: List[VisualSegment],
+        product_keywords: List[str],
+        total_duration: float,
+        existing_product_segments: Optional[List[VisualSegment]] = None,
+    ) -> List[VisualSegment]:
+        if not product_keywords or not segments:
+            return []
+
+        existing = existing_product_segments or []
+        used_asset_ids: set[str] = {
+            str(seg.get("asset_id") or "").strip()
+            for seg in existing
+            if str(seg.get("asset_id") or "").strip()
+        }
+        keyword_products: List[VisualSegment] = []
+
+        for seg in sorted((dict(item) for item in segments), key=lambda x: (_safe_float(x.get("slot_start"), 0.0), _safe_float(x.get("slot_end"), 0.0))):
+            if _segment_has_direct_product_mention(seg, existing):
+                continue
+
+            matched_keyword = self._match_product_keyword_in_segment(seg, product_keywords)
+            if not matched_keyword and not bool(seg.get("should_use_product_clip")):
+                continue
+
+            asset = self.pick_asset(exclude_ids=used_asset_ids)
+            if not asset:
+                continue
+
+            used_asset_ids.add(str(asset.get("id") or "").strip())
+
+            start = max(AVATAR_ONLY_HOOK_SECONDS, _safe_float(seg.get("slot_start"), 0.0))
+            raw_end = _safe_float(seg.get("slot_end"), start)
+            end = min(total_duration, max(raw_end, start + MIN_PRODUCT_SEGMENT_SECONDS))
+            if end - start < MIN_PRODUCT_SEGMENT_SECONDS:
+                continue
+
+            word_start = _safe_float(seg.get("word_start"), start)
+            word_end = _safe_float(seg.get("word_end"), max(word_start, start))
+            keyword_products.append({
+                "slot_start": round(start, 2),
+                "slot_end": round(end, 2),
+                "word_start": round(word_start, 2),
+                "word_end": round(max(word_end, word_start), 2),
+                "keyword": matched_keyword or str(seg.get("keyword") or product_keywords[0]).strip(),
+                "phrase": str(seg.get("phrase") or seg.get("keyword") or "").strip(),
+                "visual_intent": "product proof clip timed to selected product keyword segment",
+                "asset_type": "product_video",
+                "asset_url": str(asset.get("url") or "").strip(),
+                "asset_id": str(asset.get("id") or "").strip(),
+                "asset_name": str(asset.get("name") or "Product Video").strip(),
+                "asset_duration_seconds": _safe_float(asset.get("duration_seconds"), PRODUCT_CLIP_DEFAULT_SECONDS),
+                "generate_video": False,
+                "clip_role": "product_demo",
+                "reason": "keyword_anchor_product_fallback",
+            })
+
+        return keyword_products
+
     def _merge_product_segments(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         merged: List[VisualSegment] = []
         for seg in segments:
@@ -816,38 +910,66 @@ class ProductAssetManager:
         direct_product_segments = self._build_product_mention_segments(words, total_duration)
         if not product_keywords:
             return segments
-        if direct_product_segments:
-            # Product clips must be anchored to real TTS word timestamps. LLM semantic
-            # segments can mention the product too early, so keep them as generated
-            # B-roll and reserve product windows only from direct transcript matches.
-            non_product_segments = []
-            for seg in segments:
-                if _segment_has_direct_product_mention(seg, direct_product_segments):
-                    continue
-                product_like = (
-                    _find_matching_product_keyword(product_keywords, str(seg.get("phrase") or ""))
-                    or _find_matching_product_keyword(product_keywords, str(seg.get("keyword") or ""))
-                    or bool(seg.get("should_use_product_clip"))
-                )
-                if product_like:
-                    continue
-                item = dict(seg)
-                item.update({"asset_type": "generated_video", "generate_video": True})
-                non_product_segments.append(item)
 
-            carved_non_products: List[VisualSegment] = []
-            for seg in non_product_segments:
-                carved_non_products.extend(self._subtract_product_windows(seg, direct_product_segments))
+        # Build keyword-anchored fallback segments from already selected keyword cards.
+        # This ensures product clip appears where the selected product keyword is shown,
+        # even if strict direct transcript match was missed by timing drift.
+        fallback_product_segments = self._build_keyword_anchor_product_segments(
+            segments,
+            product_keywords,
+            total_duration,
+            existing_product_segments=direct_product_segments,
+        )
 
-            return sorted(
-                [*direct_product_segments, *carved_non_products],
+        product_segments = self._merge_product_segments(
+            sorted(
+                [*direct_product_segments, *fallback_product_segments],
                 key=lambda seg: (_safe_float(seg.get("slot_start"), 0.0), _safe_float(seg.get("slot_end"), 0.0)),
             )
+        )
 
-        return [
-            {**dict(seg), "asset_type": "generated_video", "generate_video": True}
-            for seg in segments
-        ]
+        if not product_segments and str(self.config.product_clip_policy or "").strip().lower() == "required":
+            forced = self._find_forced_product_segment(words, slots, ", ".join(product_keywords))
+            if forced:
+                asset = self.pick_asset()
+                if asset:
+                    forced["asset_type"] = "product_video"
+                    forced["asset_url"] = str(asset.get("url") or "").strip()
+                    forced["asset_id"] = str(asset.get("id") or "").strip()
+                    forced["asset_name"] = str(asset.get("name") or "Product Video").strip()
+                    forced["asset_duration_seconds"] = _safe_float(asset.get("duration_seconds"), PRODUCT_CLIP_DEFAULT_SECONDS)
+                    forced["generate_video"] = False
+                    forced["clip_role"] = "product_demo"
+                    product_segments = [forced]
+
+        if not product_segments:
+            return [
+                {**dict(seg), "asset_type": "generated_video", "generate_video": True}
+                for seg in segments
+            ]
+
+        non_product_segments = []
+        for seg in segments:
+            if _segment_has_direct_product_mention(seg, product_segments):
+                continue
+            product_like = (
+                self._match_product_keyword_in_segment(seg, product_keywords)
+                or bool(seg.get("should_use_product_clip"))
+            )
+            if product_like:
+                continue
+            item = dict(seg)
+            item.update({"asset_type": "generated_video", "generate_video": True})
+            non_product_segments.append(item)
+
+        carved_non_products: List[VisualSegment] = []
+        for seg in non_product_segments:
+            carved_non_products.extend(self._subtract_product_windows(seg, product_segments))
+
+        return sorted(
+            [*product_segments, *carved_non_products],
+            key=lambda seg: (_safe_float(seg.get("slot_start"), 0.0), _safe_float(seg.get("slot_end"), 0.0)),
+        )
 
     def _find_forced_product_segment(self, words: List[Word], slots: List[TimingSlot], keyword: str) -> Optional[VisualSegment]:
         normalized_keywords = _parse_product_keywords(keyword)
