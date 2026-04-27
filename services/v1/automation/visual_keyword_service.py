@@ -1415,6 +1415,14 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
         if not segments:
             segments = _fallback_segments(norm_words, slots)
             
+        segments = _ensure_early_first_broll(
+            segments,
+            norm_words,
+            total_dur,
+            context_text=f"{scenario_text} {tts_text}",
+            use_semantic_selector_v2=use_semantic_selector_v2,
+        )
+            
         # 2. Handle product assets
         asset_mgr = ProductAssetManager(config)
         segments = asset_mgr.apply_assets(segments, norm_words, slots)
@@ -1498,10 +1506,9 @@ def _fix_llm_hallucinated_timings(segments: List[VisualSegment], words: List[Wor
         
         llm_start = float(seg.get("word_start", seg.get("slot_start", 0.0)))
         
-        # Drift protection: only match words near where the LLM intended.
-        # This prevents accidental matching of common words (like 'the', 'and') 
-        # in completely different parts of the video.
-        MAX_DRIFT = 7.5 # 7.5 seconds is a generous window for LLM error vs reality
+        # Drift protection: Relaxed to 100s to act as a global search 
+        # while still prioritizing the closest match if multiples exist.
+        MAX_DRIFT = 100.0
         
         # 1. Try to match the exact phrase stems contiguous sequence
         if window > 0 and window <= len(word_stems):
