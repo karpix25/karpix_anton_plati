@@ -11,7 +11,6 @@ import {
   PACING_LABELS,
   BROLL_PACING_OPTIONS,
   BROLL_GENERATOR_OPTIONS,
-  PRODUCT_CLIP_POLICY_OPTIONS,
 } from "../SettingsConstants";
 
 interface VideoLogicSettingsProps {
@@ -31,11 +30,10 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
   const brollPacingProfile = draftSettings.broll_pacing_profile || "balanced";
   const brollCoveragePercent = toSafeNumber(draftSettings.broll_coverage_percent, 55);
   const brollGeneratorModel = draftSettings.broll_generator_model || "veo3_lite";
-  const productClipPolicy = draftSettings.broll_product_clip_policy || "contextual";
+  const productClipPolicy = draftSettings.broll_product_clip_policy || "required";
 
   const pacingPreview = BROLL_PACING_OPTIONS[brollPacingProfile];
   const generatorPreview = BROLL_GENERATOR_OPTIONS[brollGeneratorModel];
-  const policyPreview = PRODUCT_CLIP_POLICY_OPTIONS[productClipPolicy];
 
   return (
     <div className="space-y-6 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-6 shadow-sm">
@@ -142,28 +140,6 @@ export const VideoLogicSettings: React.FC<VideoLogicSettingsProps> = ({
           </div>
         </div>
 
-        <div className="grid gap-6 md:grid-cols-2 pt-2">
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Product Clip Policy
-            </label>
-            <Select
-              value={productClipPolicy}
-              onValueChange={(value: Settings["broll_product_clip_policy"]) =>
-                setDraftSettings((prev) => ({ ...prev, broll_product_clip_policy: value }))
-              }
-            >
-              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="contextual">Только если уместно</SelectItem>
-                <SelectItem value="required">Обязательно вставить</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-[10px] text-slate-400 font-medium px-1">{policyPreview.description}</p>
-          </div>
-        </div>
       </div>
     </div>
   );
