@@ -912,7 +912,12 @@ def _enforce_first_segment_window(segments: List[VisualSegment], total_dur: floa
             segment["reason"] = f"{segment.get('reason', '')}; shifted_after_avatar_hook".strip("; ")
 
 
-def _ensure_early_first_broll(segments: List[VisualSegment], words: List[Word], total_dur: float) -> List[VisualSegment]:
+def _ensure_early_first_broll(
+    segments: List[VisualSegment],
+    words: List[Word],
+    total_dur: float,
+    allow_short_slot: bool = False,
+) -> List[VisualSegment]:
     if total_dur <= AVATAR_ONLY_HOOK_SECONDS + MIN_BROLL_SEGMENT_SECONDS:
         return segments
 
@@ -928,11 +933,12 @@ def _ensure_early_first_broll(segments: List[VisualSegment], words: List[Word], 
     start = AVATAR_ONLY_HOOK_SECONDS
     latest_end_before_existing = first_start - 0.1 if first_start != float("inf") else total_dur
     end = min(total_dur, start + FIRST_BROLL_TARGET_SECONDS, latest_end_before_existing)
+    min_slot = 0.8 if allow_short_slot else MIN_BROLL_SEGMENT_SECONDS
     if end - start < MIN_BROLL_SEGMENT_SECONDS:
         end = min(total_dur, start + MIN_BROLL_SEGMENT_SECONDS)
     if first_start != float("inf") and end > first_start - 0.1:
         end = first_start - 0.1
-    if end - start < MIN_BROLL_SEGMENT_SECONDS:
+    if end - start < min_slot:
         return segments
 
     window_words = [
@@ -1037,6 +1043,14 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
         # 3. Final Guardrails
         processor = VisualSegmentProcessor(config, total_dur)
         final_segments = processor.process(segments)
+        # Hard final guard: UI segment list and montage prompts should always
+        # have the first B-roll no later than FIRST_BROLL_LATEST_START_SECONDS.
+        final_segments = _ensure_early_first_broll(
+            final_segments,
+            norm_words,
+            total_dur,
+            allow_short_slot=True,
+        )
         
         return {"segments": final_segments, "updated_at": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
