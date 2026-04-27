@@ -1005,31 +1005,7 @@ class VisualSegmentProcessor:
         ordered = self._resolve_overlaps(after_hook)
         capped = self._enforce_coverage_limit(ordered)
         final = self._enforce_minimum_durations(capped)
-        
-        # Hard snap to remove micro-gaps (< 0.1s)
-        return self._snap_segments(final)
-
-    def _snap_segments(self, segments: List[VisualSegment]) -> List[VisualSegment]:
-        if not segments: return []
-        snapped: List[VisualSegment] = []
-        for i, seg in enumerate(segments):
-            item = dict(seg)
-            if snapped:
-                prev = snapped[-1]
-                gap = item["slot_start"] - prev["slot_end"]
-                # If gap is tiny (less than 0.1s), close it 100%
-                if 0 < gap < 0.1:
-                    item["slot_start"] = prev["slot_end"]
-                # If they overlap slightly after other processing, fix it
-                elif gap < 0:
-                    item["slot_start"] = prev["slot_end"]
-            
-            # Ensure slot_end doesn't go backwards
-            if item["slot_end"] <= item["slot_start"]:
-                item["slot_end"] = round(item["slot_start"] + 0.1, 2)
-                
-            snapped.append(item)
-        return snapped
+        return final
 
     def _enforce_avatar_only_hook(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         if not segments:
