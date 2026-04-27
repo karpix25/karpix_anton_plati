@@ -83,6 +83,11 @@ RUSSIAN_EARLY_HOOK_STOP_WORDS = {
     "по", "из", "за", "до", "для", "у", "о", "об", "это", "этот", "эта", "эти",
     "то", "та", "те", "я", "ты", "мы", "вы", "он", "она", "они", "же", "ли",
 }
+EARLY_THEME_MIN_TOKEN_LEN = 3
+EARLY_GEO_CONTEXT_MARKERS = {
+    "остров", "острове", "город", "городе", "страна", "стране", "район", "районе",
+    "курорт", "курорте", "регион", "регионе", "провинция", "провинции",
+}
 
 RUSSIAN_STEM_SUFFIXES = (
     "иями", "ями", "ами", "ого", "ему", "ому", "ыми", "ими", "его", "ее",
@@ -217,7 +222,24 @@ def _score_phrase_words(words: List[Word]) -> float:
     return score
 
 
-def _select_early_anchor_phrase(words: List[Word]) -> Optional[Dict[str, Any]]:
+def _build_theme_token_frequency(words: List[Word], context_text: str = "") -> Dict[str, int]:
+    freq: Dict[str, int] = {}
+    for word in words:
+        token = _clean_single_token(str(word.get("word") or ""))
+        if not token or len(token) < EARLY_THEME_MIN_TOKEN_LEN or token in RUSSIAN_EARLY_HOOK_STOP_WORDS:
+            continue
+        freq[token] = freq.get(token, 0) + 1
+
+    for token in _tokenize(context_text):
+        if len(token) < EARLY_THEME_MIN_TOKEN_LEN or token in RUSSIAN_EARLY_HOOK_STOP_WORDS:
+            continue
+        # Context text should influence, but weaker than spoken transcript.
+        freq[token] = freq.get(token, 0) + 1
+
+    return freq
+
+
+def _select_early_anchor_phrase(words: List[Word], context_text: str = "") -> Optional[Dict[str, Any]]:
     early_words = [
         word for word in words
         if _safe_float(word.get("start"), 0.0) <= FIRST_BROLL_PHRASE_SOURCE_MAX_SECONDS
@@ -277,13 +299,27 @@ def _select_early_anchor_phrase(words: List[Word]) -> Optional[Dict[str, Any]]:
     if not phrase:
         return None
 
+    theme_freq = _build_theme_token_frequency(words, context_text=context_text)
     keyword_word = best_window[0]
     keyword_score = -10.0
-    for word in best_window:
+    for idx, word in enumerate(best_window):
         token = _clean_single_token(str(word.get("word") or ""))
         if not token:
             continue
-        score = len(token) - (4 if token in RUSSIAN_EARLY_HOOK_STOP_WORDS else 0)
+        score = float(len(token)) * 0.45
+        score += float(theme_freq.get(token, 0)) * 2.0
+        if token in RUSSIAN_EARLY_HOOK_STOP_WORDS:
+            score -= 3.0
+
+        punctuated = str(word.get("punctuated_word") or word.get("word") or "").strip()
+        if punctuated and punctuated[0].isupper() and token not in RUSSIAN_EARLY_HOOK_STOP_WORDS:
+            score += 0.8
+
+        if idx > 0:
+            prev_token = _clean_single_token(str(best_window[idx - 1].get("word") or ""))
+            if prev_token in EARLY_GEO_CONTEXT_MARKERS:
+                score += 2.6
+
         if score > keyword_score:
             keyword_score = score
             keyword_word = word
@@ -1032,6 +1068,7 @@ def _ensure_early_first_broll(
     words: List[Word],
     total_dur: float,
     allow_short_slot: bool = False,
+    context_text: str = "",
 ) -> List[VisualSegment]:
     if total_dur <= AVATAR_ONLY_HOOK_SECONDS + MIN_BROLL_SEGMENT_SECONDS:
         return segments
@@ -1068,7 +1105,7 @@ def _ensure_early_first_broll(
     if not window_words:
         return segments
 
-    anchor = _select_early_anchor_phrase(words)
+    anchor = _select_early_anchor_phrase(words, context_text=context_text)
     if anchor:
         phrase = str(anchor.get("phrase") or "").strip()
         keyword = str(anchor.get("keyword") or "").strip()
@@ -1158,7 +1195,12 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
 
         if not segments:
             segments = _fallback_segments(norm_words, slots)
-        segments = _ensure_early_first_broll(segments, norm_words, total_dur)
+        segments = _ensure_early_first_broll(
+            segments,
+            norm_words,
+            total_dur,
+            context_text=f"{scenario_text} {tts_text}",
+        )
             
         # 2. Handle product assets
         asset_mgr = ProductAssetManager(config)
@@ -1174,6 +1216,7 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
             norm_words,
             total_dur,
             allow_short_slot=True,
+            context_text=f"{scenario_text} {tts_text}",
         )
         
         return {"segments": final_segments, "updated_at": datetime.now(timezone.utc).isoformat()}
