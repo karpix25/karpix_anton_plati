@@ -108,7 +108,7 @@ C4Container
 | **ElevenLabs** | TTS (Клонирование голоса) | `ELEVENLABS_API_KEY` |
 | **Deepgram** | Тайминги слов (STT) | `DEEPGRAM_API_KEY` |
 | **RapidAPI** | Парсинг Instagram Reels | `RAPIDAPI_KEY` |
-| **Yandex Disk** | Хранилище готовых видео | `YANDEX_TOKEN` |
+| **Yandex Disk** | Хранилище готовых видео | `YANDEX_DISK_OAUTH_TOKEN` (fallback: `YANDEX_DISK_TOKEN`, `YANDEX_TOKEN`) |
 
 ---
 
@@ -135,6 +135,7 @@ C4Container
 # AI & Core
 OPENROUTER_API_KEY=sk-or-...
 SCENARIO_MODEL=google/gemini-2.5-flash
+VISUAL_SEGMENTS_TEMPERATURE=0.1
 
 # Video & Audio
 KIE_API_KEY=...
@@ -149,12 +150,20 @@ DEEPGRAM_API_KEY=...
 # false -> откат на selector v1
 BROLL_USE_SEMANTIC_KEYWORD_SELECTOR_V2=true
 
+# Telegram notifications
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_CHAT_ID=...
+TELEGRAM_SUPER_ADMIN_IDS=123,456
+
 # Database
 DB_HOST=localhost
 DB_NAME=postgres
 DB_USER=...
 DB_PASS=...
 ```
+
+Полный и актуальный список всех переменных (включая `TTS_*`, `FINAL_VIDEO_*`, `KIE_*`, `INTERNAL_API_BASE_URL`, legacy fallback-переменные Telegram) находится в [`.env.example`](/Users/nadaraya/Desktop/Плати_по_миру/.env.example).  
+`README` описывает основные переменные, а `.env.example` является source of truth.
 
 ---
 
