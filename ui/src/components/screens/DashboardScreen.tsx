@@ -1,9 +1,13 @@
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
 import { Network, ArrowRight } from "lucide-react";
-import { Client, MonthlyFinalVideoStat, Screen, TopicCard } from "@/types";
+import { Client, DashboardMonthlyStats, Screen, TopicCard } from "@/types";
 import { formatUsd } from "@/lib/generation-costs";
 
 interface DashboardScreenProps {
   selectedClient?: Client;
+  selectedClientId?: string;
   totalReferences: number;
   totalScenarios: number;
   topicCards: TopicCard[];
@@ -12,22 +16,87 @@ interface DashboardScreenProps {
     totalHeygenDuration: number;
     totalCostUsd: number;
   };
-  finalVideosMonthly: MonthlyFinalVideoStat[];
   setScreen: (screen: Screen) => void;
 }
 
+const toMonthKey = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+};
+
+const buildLastMonths = (count: number): string[] => {
+  const now = new Date();
+  const result: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    result.push(toMonthKey(d));
+  }
+  return result;
+};
+
 export function DashboardScreen({
   selectedClient,
+  selectedClientId,
   totalReferences,
   totalScenarios,
   topicCards,
   costStats,
-  finalVideosMonthly,
-  setScreen
+  setScreen,
 }: DashboardScreenProps) {
-  const totalCostUsd = costStats.totalCostUsd;
-  const heygenDurationSeconds = costStats.totalHeygenDuration;
-  const monthLabelFormatter = new Intl.DateTimeFormat("ru-RU", { month: "short", year: "numeric" });
+  const [selectedMonth, setSelectedMonth] = useState<string>(toMonthKey(new Date()));
+  const monthOptions = useMemo(() => buildLastMonths(12), []);
+  const monthLabelFormatter = useMemo(
+    () => new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }),
+    []
+  );
+
+  const monthlyStatsQuery = useQuery<DashboardMonthlyStats>({
+    queryKey: ["reports-dashboard-monthly", selectedClientId, selectedMonth],
+    queryFn: async () => {
+      if (!selectedClientId) {
+        return {
+          month: selectedMonth,
+          referenceCount: 0,
+          scenarioCount: 0,
+          topicCount: 0,
+          finalVideoCount: 0,
+          totalPrompts: 0,
+          totalHeygenDuration: 0,
+          totalCostUsd: 0,
+        };
+      }
+      const { data } = await axios.get("/api/reports/dashboard-monthly", {
+        params: { clientId: selectedClientId, month: selectedMonth },
+      });
+      return {
+        month: String(data?.month || selectedMonth),
+        referenceCount: Number(data?.referenceCount || 0),
+        scenarioCount: Number(data?.scenarioCount || 0),
+        topicCount: Number(data?.topicCount || 0),
+        finalVideoCount: Number(data?.finalVideoCount || 0),
+        totalPrompts: Number(data?.totalPrompts || 0),
+        totalHeygenDuration: Number(data?.totalHeygenDuration || 0),
+        totalCostUsd: Number(data?.totalCostUsd || 0),
+      };
+    },
+    enabled: Boolean(selectedClientId),
+    staleTime: 60_000,
+  });
+
+  const monthlyStats = monthlyStatsQuery.data;
+  const selectedMonthDate = new Date(`${selectedMonth}-01T00:00:00`);
+  const selectedMonthLabel = Number.isNaN(selectedMonthDate.getTime())
+    ? selectedMonth
+    : monthLabelFormatter.format(selectedMonthDate);
+
+  const referencesValue = monthlyStats?.referenceCount ?? totalReferences;
+  const scenariosValue = monthlyStats?.scenarioCount ?? totalScenarios;
+  const topicsValue = monthlyStats?.topicCount ?? topicCards.length;
+  const finalVideosValue = monthlyStats?.finalVideoCount ?? Number(selectedClient?.total_final_video_count || 0);
+  const totalPromptsValue = monthlyStats?.totalPrompts ?? costStats.totalPrompts;
+  const heygenDurationSeconds = monthlyStats?.totalHeygenDuration ?? costStats.totalHeygenDuration;
+  const totalCostUsd = monthlyStats?.totalCostUsd ?? costStats.totalCostUsd;
 
   return (
     <div className="max-w-7xl space-y-10">
@@ -43,19 +112,43 @@ export function DashboardScreen({
             Управляй референсами, извлеченными паттернами и генерацией сценариев в одном рабочем контуре.
           </p>
         </div>
+        <div className="w-full max-w-xs">
+          <label className="mb-2 block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            Месяц панели
+          </label>
+          <select
+            className="w-full rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm text-foreground"
+            value={selectedMonth}
+            onChange={(event) => setSelectedMonth(event.target.value)}
+          >
+            {monthOptions.map((month) => {
+              const d = new Date(`${month}-01T00:00:00`);
+              const label = Number.isNaN(d.getTime()) ? month : monthLabelFormatter.format(d);
+              return (
+                <option key={month} value={month}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Показатели за {selectedMonthLabel}
+            {monthlyStatsQuery.isFetching ? " • обновляется..." : ""}
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-5">
         {[
-          { label: "Референсы", value: totalReferences, helper: "Исходные материалы" },
-          { label: "Сценарии", value: totalScenarios, helper: "Готовые тексты" },
+          { label: "Референсы", value: referencesValue, helper: "Добавлено за месяц" },
+          { label: "Сценарии", value: scenariosValue, helper: "Сгенерировано за месяц" },
+          { label: "Финальные ролики", value: finalVideosValue, helper: "Смонтировано за месяц" },
+          { label: "Темы", value: topicsValue, helper: "Создано карточек за месяц" },
           {
-            label: "Финальные ролики",
-            value: Number(selectedClient?.total_final_video_count || 0),
-            helper: "Смонтировано (всего)",
+            label: "Общий расход",
+            value: formatUsd(totalCostUsd),
+            helper: `${totalPromptsValue} prompts • ${heygenDurationSeconds.toFixed(1)}s HeyGen`,
           },
-          { label: "Темы", value: topicCards.length, helper: "Карточки тем" },
-          { label: "Общий расход", value: formatUsd(totalCostUsd), helper: `${costStats.totalPrompts} prompts • ${heygenDurationSeconds.toFixed(1)}s HeyGen` },
         ].map((item) => (
           <div key={item.label} className="rounded-xl bg-white p-6 shadow-sm">
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{item.label}</p>
@@ -63,33 +156,6 @@ export function DashboardScreen({
             <p className="mt-2 text-sm text-muted-foreground">{item.helper}</p>
           </div>
         ))}
-      </div>
-
-      <div className="rounded-xl bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            Финальные ролики по месяцам
-          </p>
-          <p className="text-xs text-muted-foreground">Последние 12 месяцев</p>
-        </div>
-        {finalVideosMonthly.length ? (
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {finalVideosMonthly.map((item) => {
-              const date = new Date(`${item.monthStart}T00:00:00`);
-              const monthLabel = Number.isNaN(date.getTime())
-                ? item.month
-                : monthLabelFormatter.format(date);
-              return (
-                <div key={item.month} className="rounded-lg border border-[#f0f4f7] bg-[#fafbfc] px-3 py-2">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{monthLabel}</div>
-                  <div className="mt-1 text-2xl font-bold tracking-tight text-foreground">{item.completed}</div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="mt-4 text-sm text-muted-foreground">Нет данных по финальным роликам за период.</div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
@@ -145,3 +211,4 @@ export function DashboardScreen({
     </div>
   );
 }
+

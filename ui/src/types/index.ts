@@ -3,10 +3,15 @@ export interface PaginatedResponse<T> {
   totalCount: number;
 }
 
-export interface MonthlyFinalVideoStat {
+export interface DashboardMonthlyStats {
   month: string;
-  monthStart: string;
-  completed: number;
+  referenceCount: number;
+  scenarioCount: number;
+  topicCount: number;
+  finalVideoCount: number;
+  totalPrompts: number;
+  totalHeygenDuration: number;
+  totalCostUsd: number;
 }
 
 export interface Client {

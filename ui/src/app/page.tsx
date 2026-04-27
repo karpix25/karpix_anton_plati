@@ -159,7 +159,6 @@ export default function CuratorDashboard() {
     totalScenarios,
     totalReferences,
     costStats,
-    finalVideosMonthly,
     heygenAvatars,
     heygenCatalog,
     minimaxVoices,
@@ -531,11 +530,11 @@ export default function CuratorDashboard() {
           {screen === "dashboard" && (
             <DashboardScreen
               selectedClient={selectedClient}
+              selectedClientId={activeClientId}
               totalReferences={totalReferences}
               totalScenarios={totalScenarios}
               topicCards={topicCards}
               costStats={costStats}
-              finalVideosMonthly={finalVideosMonthly}
               setScreen={setScreen}
             />
           )}
