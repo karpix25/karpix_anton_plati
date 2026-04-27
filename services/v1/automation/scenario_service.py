@@ -250,6 +250,50 @@ def _gender_social_guardrail(gender: str) -> str:
     """
 
 
+def _sanitize_reference_text_for_gender(text: str, gender: str) -> str:
+    if not text:
+        return text
+
+    normalized_gender = normalize_narrator_gender(gender)
+    if normalized_gender == "male":
+        # Male avatar -> references should not mention "boyfriend/husband" as a partner
+        replacements = [
+            (r"\bмой\s+молодой\s+человек\b", "моя девушка"),
+            (r"\bмоего\s+молодого\s+человека\b", "моей девушки"),
+            (r"\bмоему\s+молодому\s+человеку\b", "моей девушке"),
+            (r"\bмоим\s+молодым\s+человеком\b", "моей девушкой"),
+            (r"\bмоем\s+молодом\s+человеке\b", "моей девушке"),
+            (r"\bмой\s+парень\b", "моя девушка"),
+            (r"\bмоего\s+парня\b", "моей девушки"),
+            (r"\bмоему\s+парню\b", "моей девушке"),
+            (r"\bмоим\s+парнем\b", "моей девушкой"),
+            (r"\bмоем\s+парне\b", "моей девушке"),
+            (r"\bмой\s+муж\b", "моя жена"),
+            (r"\bмоего\s+мужа\b", "моей жены"),
+            (r"\bмоему\s+мужу\b", "моей жене"),
+            (r"\bмоим\s+мужем\b", "моей женой"),
+            (r"\bмоем\s+муже\b", "моей жене"),
+        ]
+    else:
+        # Female avatar -> references should not mention "girlfriend/wife" as a partner
+        replacements = [
+            (r"\bмоя\s+девушка\b", "мой парень"),
+            (r"\bмоей\s+девушки\b", "моего парня"),
+            (r"\bмоей\s+девушке\b", "моему парню"),
+            (r"\bмоей\s+девушкой\b", "моим парнем"),
+            (r"\bмоя\s+жена\b", "мой муж"),
+            (r"\bмоей\s+жены\b", "моего мужа"),
+            (r"\bмоей\s+жене\b", "моему мужу"),
+            (r"\bмоей\s+женой\b", "моим мужем"),
+        ]
+
+    result = text
+    for pattern, replacement in replacements:
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+
+    return result
+
+
 def count_spoken_characters(text: str | None) -> int:
     return len(re.sub(r"\s+", "", text or ""))
 
@@ -443,7 +487,8 @@ def _normalize_hook_text(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "").strip()).lower().replace("ё", "е")
 
 
-def _hook_context_from_transcript(transcript: str):
+def _hook_context_from_transcript(transcript: str, gender: str = "female"):
+    transcript = _sanitize_reference_text_for_gender(transcript, gender)
     sentences = _split_sentences(transcript)
     first_sentence = sentences[0] if len(sentences) > 0 else ""
     second_sentence = sentences[1] if len(sentences) > 1 else ""
@@ -492,7 +537,7 @@ def _hook_blueprint(text: str) -> dict:
     }
 
 
-def _hook_context_from_source_cards(topic_card=None, structure_card=None):
+def _hook_context_from_source_cards(topic_card=None, structure_card=None, gender: str = "female"):
     source_content_id = (
         structure_card.get("source_content_id")
         or topic_card.get("source_content_id")
@@ -507,10 +552,10 @@ def _hook_context_from_source_cards(topic_card=None, structure_card=None):
 
         source_content = get_entity_by_id("processed_content", int(source_content_id))
         transcript = (source_content or {}).get("transcript") or ""
-        return _hook_context_from_transcript(transcript)
+        return _hook_context_from_transcript(transcript, gender)
     except Exception as error:
         logger.error(f"Failed to load source hook context from cards: {error}")
-        return _hook_context_from_transcript("")
+        return _hook_context_from_transcript("", gender)
 
 
 def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, niche="General", target_product_info=None, brand_voice=None, target_audience=None, variation_index=1, total_variations=1, destination_hint=None, target_duration_seconds=None, target_duration_min_seconds=None, target_duration_max_seconds=None, learned_rules_scenario=None, gender="female", voice_chars_per_minute=None):
@@ -556,7 +601,8 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
         f"    - Active voice calibrated speed: {voice_speed_label}\n"
         "    - Character range is a priority length constraint for this voice.\n"
     ) if min_char_target and max_char_target else ""
-    hook_context = _hook_context_from_transcript(transcript)
+    sanitized_transcript = _sanitize_reference_text_for_gender(transcript, gender)
+    hook_context = _hook_context_from_transcript(sanitized_transcript, gender)
     hook_blueprint = _hook_blueprint(hook_context["opening"] or transcript)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
@@ -814,8 +860,9 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     desired_duration_label = duration_targets["duration_range_label"]
     preferred_center_duration_label = f"{duration_targets['center_seconds']:.0f} сек"
     source_hook = atoms.get("verbal_hook") or ""
-    normalized_source_hook = source_hook.lower().replace("ё", "е")
-    hook_blueprint = _hook_blueprint(source_hook)
+    sanitized_source_hook = _sanitize_reference_text_for_gender(source_hook, gender)
+    normalized_source_hook = sanitized_source_hook.lower().replace("ё", "е")
+    hook_blueprint = _hook_blueprint(sanitized_source_hook)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in normalized_source_hook]
 
     prompt = f"""
@@ -829,7 +876,7 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
     АНАЛИЗ РЕФЕРЕНСА (Viral DNA):
     - Стадия осознанности (Лестница Ханта): {hunt.get('stage')} (Причина: {hunt.get('reason')})
     - Главный секрет успеха: {viral_dna}
-    - Хук: {atoms.get('verbal_hook')} (Механика: {atoms.get('psychological_trigger')})
+    - Хук: {sanitized_source_hook} (Механика: {atoms.get('psychological_trigger')})
     - Hook blueprint: {json.dumps(hook_blueprint, ensure_ascii=False)}
     - Скелет (Смысловые блоки): {json.dumps(atoms.get('narrative_skeleton'), ensure_ascii=False)}
     - Точки напряжения (Враг/Миф): {json.dumps(atoms.get('tension_points'), ensure_ascii=False)}
@@ -958,7 +1005,8 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
         if item.get("hook")
     ]
     reference_hook_text = " ".join(item.get("hook") or "" for item in normalized_references[:3] if item.get("hook"))
-    hook_context = _hook_context_from_transcript(reference_hook_text)
+    sanitized_reference_hook_text = _sanitize_reference_text_for_gender(reference_hook_text, gender)
+    hook_context = _hook_context_from_transcript(sanitized_reference_hook_text, gender)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
     target_topic = topic or normalized_references[0].get("topic_cluster") or niche
@@ -1063,7 +1111,7 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
         f"- Requested character-count range: {min_char_target}-{max_char_target} (non-space, voice speed {voice_speed_label})"
     ) if min_char_target and max_char_target else ""
     preferred_center_duration_label = f"{duration_targets['center_seconds']:.0f} сек"
-    hook_context = _hook_context_from_source_cards(topic_card=topic_card, structure_card=structure_card)
+    hook_context = _hook_context_from_source_cards(topic_card=topic_card, structure_card=structure_card, gender=gender)
     banned_hook_phrases = [phrase for phrase in HOOK_BAN_PHRASES if phrase not in hook_context["allowed_ban_phrases"]]
 
     topic_meta = topic_card.get("metadata_json", {})
