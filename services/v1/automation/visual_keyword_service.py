@@ -60,7 +60,7 @@ STRONG_BOUNDARY_RE = re.compile(r"[.!?;:]$")
 SOFT_BOUNDARY_RE = re.compile(r"[,)]$")
 PRODUCT_KEYWORD_SPLIT_RE = re.compile(r"[,\n;]+")
 NON_ALNUM_RE = re.compile(r"[^0-9a-zA-Zа-яА-ЯёЁ]+")
-AVATAR_ONLY_HOOK_SECONDS = 0.0
+AVATAR_ONLY_HOOK_SECONDS = 2.8
 MIN_BROLL_SEGMENT_SECONDS = 2.0
 MIN_PRODUCT_SEGMENT_SECONDS = 3.0
 FIRST_ATTENTION_CUT_MIN_SECONDS = AVATAR_ONLY_HOOK_SECONDS
@@ -1012,24 +1012,21 @@ class VisualSegmentProcessor:
     def _snap_segments(self, segments: List[VisualSegment]) -> List[VisualSegment]:
         if not segments: return []
         snapped: List[VisualSegment] = []
-        min_avatar_len = 2.5
         for i, seg in enumerate(segments):
             item = dict(seg)
             if snapped:
                 prev = snapped[-1]
                 gap = item["slot_start"] - prev["slot_end"]
                 # If gap is too small for avatar (less than 2.5s), close it 100%
-                # We also handle micro-overlaps or zero gaps by snapping perfectly.
-                if gap < min_avatar_len:
+                if 0 < gap < 2.5:
                     item["slot_start"] = prev["slot_end"]
-            else:
-                # First segment: if it starts near the beginning, snap to 0.0
-                if item["slot_start"] < min_avatar_len:
-                    item["slot_start"] = 0.0
+                # If they overlap slightly after other processing, fix it
+                elif gap < 0:
+                    item["slot_start"] = prev["slot_end"]
             
             # Ensure slot_end doesn't go backwards
             if item["slot_end"] <= item["slot_start"]:
-                item["slot_end"] = round(item["slot_start"] + self.profile["slot_min"], 2)
+                item["slot_end"] = round(item["slot_start"] + 0.1, 2)
                 
             snapped.append(item)
         return snapped
@@ -1414,24 +1411,31 @@ def extract_visual_keyword_segments(scenario_text: str, tts_text: str, transcrip
 
         if not segments:
             segments = _fallback_segments(norm_words, slots)
+        segments = _ensure_early_first_broll(
+            segments,
+            norm_words,
+            total_dur,
+            context_text=f"{scenario_text} {tts_text}",
+            use_semantic_selector_v2=use_semantic_selector_v2,
+        )
             
         # 2. Handle product assets
         asset_mgr = ProductAssetManager(config)
         segments = asset_mgr.apply_assets(segments, norm_words, slots)
         
         # 3. Final Guardrails
-        # Ensure we have an early start before final processing
-        segments = _ensure_early_first_broll(
-            segments,
+        processor = VisualSegmentProcessor(config, total_dur)
+        final_segments = processor.process(segments)
+        # Hard final guard: UI segment list and montage prompts should always
+        # have the first B-roll no later than FIRST_BROLL_LATEST_START_SECONDS.
+        final_segments = _ensure_early_first_broll(
+            final_segments,
             norm_words,
             total_dur,
             allow_short_slot=True,
             context_text=f"{scenario_text} {tts_text}",
             use_semantic_selector_v2=use_semantic_selector_v2,
         )
-
-        processor = VisualSegmentProcessor(config, total_dur)
-        final_segments = processor.process(segments)
         
         return {"segments": final_segments, "updated_at": datetime.now(timezone.utc).isoformat()}
     except Exception as e:
@@ -1498,17 +1502,15 @@ def _fix_llm_hallucinated_timings(segments: List[VisualSegment], words: List[Wor
         
         llm_start = float(seg.get("word_start", seg.get("slot_start", 0.0)))
         
-        # Drift protection: only match words near where the LLM intended.
-        # This prevents accidental matching of common words (like 'the', 'and') 
-        # in completely different parts of the video.
-        MAX_DRIFT = 7.5 # 7.5 seconds is a generous window for LLM error vs reality
+        best_idx = -1
+        min_dist = float('inf')
         
         # 1. Try to match the exact phrase stems contiguous sequence
         if window > 0 and window <= len(word_stems):
             for i in range(len(word_stems) - window + 1):
                 if word_stems[i:i+window] == target_stems:
                     dist = abs(words[i]["start"] - llm_start)
-                    if dist < min_dist and dist <= MAX_DRIFT:
+                    if dist < min_dist:
                         min_dist = dist
                         best_idx = i
                     
@@ -1524,19 +1526,17 @@ def _fix_llm_hallucinated_timings(segments: List[VisualSegment], words: List[Wor
                     for i in range(len(word_stems) - kw_window + 1):
                         if word_stems[i:i+kw_window] == kw_stems:
                             dist = abs(words[i]["start"] - llm_start)
-                            # Only accept keyword sync if it's within DRIFT range
-                            if dist < min_dist and dist <= MAX_DRIFT:
+                            # Be more lenient for the keyword, if it's the only match we'll take it
+                            if dist < min_dist:
                                 min_dist = dist
                                 best_idx = i
                                 match_len = kw_window
 
         if best_idx != -1:
             try:
-                seg["word_start"] = round(words[best_idx]["start"], 3)
+                seg["word_start"] = words[best_idx]["start"]
                 # Safeguard against index out of bounds
                 end_idx = min(best_idx + match_len - 1, len(words) - 1)
-                seg["word_end"] = round(words[end_idx]["end"], 3)
-                if min_dist > 2.0:
-                    logger.info(f"Synced '{seg.get('keyword')}' with drift {min_dist:.2f}s")
+                seg["word_end"] = words[end_idx]["end"]
             except Exception as e:
                 logger.warning(f"Failed to apply fixed timing: {e}")
