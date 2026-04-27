@@ -54,6 +54,47 @@ const WORD_SUBTITLE_MAX_DURATION_SECONDS = 1.0;
 const WORD_SUBTITLE_MIN_GAP_SECONDS = 0.01;
 const WORD_SUBTITLE_MAX_BURST_WORDS = 3;
 const WORD_SUBTITLE_BURST_JOIN_GAP_SECONDS = 0.18;
+const TYPOGRAPHY_HOOK_LIMIT_SECONDS = 1.5;
+const TYPOGRAPHY_HOOK_BASE_WORDS = 4;
+const TYPOGRAPHY_HOOK_MAX_WORDS = 6;
+const TYPOGRAPHY_HOOK_MAX_CHARS = 34;
+const TYPOGRAPHY_HOOK_GAP_BREAK_SECONDS = 0.45;
+
+function pickTypographyHookWords(words: ReturnType<typeof normalizeWord>[]) {
+  if (!words.length) return [];
+
+  const contiguous: ReturnType<typeof normalizeWord>[] = [];
+  let previousEnd: number | null = null;
+  for (const word of words) {
+    if (previousEnd !== null && word.start - previousEnd > TYPOGRAPHY_HOOK_GAP_BREAK_SECONDS) {
+      break;
+    }
+    contiguous.push(word);
+    previousEnd = word.end;
+    if (/[.!?;:]$/.test(word.text)) {
+      break;
+    }
+  }
+
+  const source = contiguous.length ? contiguous : words;
+  const selected: ReturnType<typeof normalizeWord>[] = [];
+  let chars = 0;
+  for (const word of source) {
+    if (selected.length >= TYPOGRAPHY_HOOK_MAX_WORDS) break;
+    const nextChars = chars + (selected.length ? 1 : 0) + word.text.length;
+    const mustKeep = selected.length < Math.min(3, TYPOGRAPHY_HOOK_BASE_WORDS);
+    if (!mustKeep && nextChars > TYPOGRAPHY_HOOK_MAX_CHARS && selected.length >= TYPOGRAPHY_HOOK_BASE_WORDS) {
+      break;
+    }
+    selected.push(word);
+    chars = nextChars;
+  }
+
+  if (selected.length > TYPOGRAPHY_HOOK_BASE_WORDS && chars > TYPOGRAPHY_HOOK_MAX_CHARS) {
+    return selected.slice(0, TYPOGRAPHY_HOOK_BASE_WORDS);
+  }
+  return selected;
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -246,8 +287,8 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
     return regularEvents;
   }
 
-  // Typography Hook Logic: 0-3 seconds
-  const HOOK_LIMIT = 3.0;
+  // Typography Hook Logic: 0-1.5 seconds
+  const HOOK_LIMIT = TYPOGRAPHY_HOOK_LIMIT_SECONDS;
   const hookWords = words
     .map(normalizeWord)
     .filter((w) => w.start < HOOK_LIMIT && w.text);
@@ -255,22 +296,10 @@ function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSet
   if (hookWords.length === 0) {
     return regularEvents;
   }
-
-  // Russian stop words to ignore in high-impact typography hooks
-  const RUSSIAN_HOOK_STOP_WORDS = new Set([
-    "и", "в", "во", "не", "на", "с", "со", "как", "а", "то", "все", "она", "так", "его", "но", "да", "ты", "от", "же", "вы", "за", "бы", "по", "только", "ее", "её", "мне", "было", "вот", "от", "меня", "еще", "ещё", "о", "из", "ему", "теперь", "когда", "даже", "вдруг", "ли", "если", "уже", "или", "ни", "быть", "был", "него", "до", "вас", "нибудь", "опять", "у", "вам", "ведь", "там", "потом", "себя", "ничего", "ей", "они", "тут", "где", "есть", "надо", "ней", "для", "мы", "тебя", "их", "чем", "была", "сам", "чтоб", "без", "будто", "чего", "раз", "тоже", "себе", "под", "будет", "ж", "тогда", "кто", "этот", "того", "потому", "этого", "какой", "совсем", "ним", "здесь", "этом", "один", "почти", "про", "через", "над", "об", "мой", "моя", "мое", "мои", "моим", "моей", "моих", "твой", "твоя", "твое", "твои", "свой", "своя", "свое", "свои"
-  ]);
-
-  const valuableHookWords = hookWords.filter(w => {
-    const clean = w.text.toLowerCase().replace(/[^а-яёa-z0-9]/g, "");
-    return clean && !RUSSIAN_HOOK_STOP_WORDS.has(clean);
-  });
-
-  // Limit hook to first 4 valuable words for maximum impact
-  const maxHookWords = 4;
-  const activeHookWords = valuableHookWords.length > 0 
-    ? valuableHookWords.slice(0, maxHookWords)
-    : hookWords.slice(0, maxHookWords);
+  const activeHookWords = pickTypographyHookWords(hookWords);
+  if (!activeHookWords.length) {
+    return regularEvents;
+  }
 
   const hookEvents: SubtitleEvent[] = [];
   const accumulatedWords: string[] = [];
