@@ -1,5 +1,5 @@
 import { Network, ArrowRight } from "lucide-react";
-import { Client, Screen, TopicCard } from "@/types";
+import { Client, MonthlyFinalVideoStat, Screen, TopicCard } from "@/types";
 import { formatUsd } from "@/lib/generation-costs";
 
 interface DashboardScreenProps {
@@ -12,6 +12,7 @@ interface DashboardScreenProps {
     totalHeygenDuration: number;
     totalCostUsd: number;
   };
+  finalVideosMonthly: MonthlyFinalVideoStat[];
   setScreen: (screen: Screen) => void;
 }
 
@@ -21,10 +22,12 @@ export function DashboardScreen({
   totalScenarios,
   topicCards,
   costStats,
+  finalVideosMonthly,
   setScreen
 }: DashboardScreenProps) {
   const totalCostUsd = costStats.totalCostUsd;
   const heygenDurationSeconds = costStats.totalHeygenDuration;
+  const monthLabelFormatter = new Intl.DateTimeFormat("ru-RU", { month: "short", year: "numeric" });
 
   return (
     <div className="max-w-7xl space-y-10">
@@ -60,6 +63,33 @@ export function DashboardScreen({
             <p className="mt-2 text-sm text-muted-foreground">{item.helper}</p>
           </div>
         ))}
+      </div>
+
+      <div className="rounded-xl bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            Финальные ролики по месяцам
+          </p>
+          <p className="text-xs text-muted-foreground">Последние 12 месяцев</p>
+        </div>
+        {finalVideosMonthly.length ? (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {finalVideosMonthly.map((item) => {
+              const date = new Date(`${item.monthStart}T00:00:00`);
+              const monthLabel = Number.isNaN(date.getTime())
+                ? item.month
+                : monthLabelFormatter.format(date);
+              return (
+                <div key={item.month} className="rounded-lg border border-[#f0f4f7] bg-[#fafbfc] px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{monthLabel}</div>
+                  <div className="mt-1 text-2xl font-bold tracking-tight text-foreground">{item.completed}</div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-4 text-sm text-muted-foreground">Нет данных по финальным роликам за период.</div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">

@@ -159,6 +159,7 @@ export default function CuratorDashboard() {
     totalScenarios,
     totalReferences,
     costStats,
+    finalVideosMonthly,
     heygenAvatars,
     heygenCatalog,
     minimaxVoices,
@@ -534,6 +535,7 @@ export default function CuratorDashboard() {
               totalScenarios={totalScenarios}
               topicCards={topicCards}
               costStats={costStats}
+              finalVideosMonthly={finalVideosMonthly}
               setScreen={setScreen}
             />
           )}

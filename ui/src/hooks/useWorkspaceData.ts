@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
-import { Client, ElevenLabsVoiceOption, Reference, Scenario, TopicCard, StructureCard, Settings, HeygenAvatarConfig, MinimaxVoiceOption, PaginatedResponse } from "@/types";
+import { Client, ElevenLabsVoiceOption, Reference, Scenario, TopicCard, StructureCard, Settings, HeygenAvatarConfig, MinimaxVoiceOption, PaginatedResponse, MonthlyFinalVideoStat } from "@/types";
 
 const API_BASE = "/api";
 const SCENARIO_POLL_WINDOW_MS = 90_000;
@@ -11,6 +11,7 @@ const EMPTY_COST_STATS = {
   totalHeygenDuration: 0,
   totalCostUsd: 0,
 };
+const EMPTY_MONTHLY_FINAL_VIDEOS: MonthlyFinalVideoStat[] = [];
 
 const normalizeProductMediaAssets = (value: unknown) => {
   if (!Array.isArray(value)) {
@@ -203,6 +204,24 @@ export function useWorkspaceData(selectedClientId: string) {
     staleTime: 60_000,
   });
 
+  const finalVideosMonthlyQuery = useQuery<MonthlyFinalVideoStat[]>({
+    queryKey: ["reports-final-videos-monthly", selectedClientId],
+    queryFn: async () => {
+      if (!selectedClientId) return EMPTY_MONTHLY_FINAL_VIDEOS;
+      const { data } = await axios.get(`${API_BASE}/reports/final-videos-monthly`, {
+        params: { clientId: selectedClientId },
+      });
+      if (!Array.isArray(data)) return EMPTY_MONTHLY_FINAL_VIDEOS;
+      return data.map((item) => ({
+        month: String(item?.month || ""),
+        monthStart: String(item?.monthStart || ""),
+        completed: Number(item?.completed || 0),
+      }));
+    },
+    enabled: !!selectedClientId,
+    staleTime: 60_000,
+  });
+
   const saveSettingsMutation = useMutation({
     mutationFn: async (settings: Settings) => {
       await axios.put(`${API_BASE}/clients`, {
@@ -383,6 +402,8 @@ export function useWorkspaceData(selectedClientId: string) {
     },
     // Stats
     costStats: costStatsQuery.data || EMPTY_COST_STATS,
+    finalVideosMonthly: finalVideosMonthlyQuery.data || EMPTY_MONTHLY_FINAL_VIDEOS,
     isLoadingStats: costStatsQuery.isLoading,
+    isLoadingFinalVideosMonthly: finalVideosMonthlyQuery.isLoading,
   };
 }
