@@ -261,6 +261,18 @@ def submit_veo_video_task(prompt_json: Dict[str, Any], model: str | None = None)
 
     if not response.ok:
         error_detail = _extract_error_message(response_payload) or response.text[:500]
+        
+        # --- FALLBACK LOGIC ---
+        # If Veo returns 500, automatically switch to Seedance 1.5 Pro
+        if response.status_code == 500:
+            logger.warning(
+                "KIE VEO returned 500. Automatically falling back to Seedance 1.5 Pro. "
+                "model=%s error=%s", resolved_model, error_detail
+            )
+            # Recursively call submit_kie_video_task with the fallback model.
+            # This works because SEEDANCE_15_PRO_MODEL is not in VEO3_MODELS.
+            return submit_kie_video_task(prompt_json, model=SEEDANCE_15_PRO_MODEL)
+
         logger.error(
             "KIE VEO submission failed. status=%s model=%s error=%s payload_sent=%s response=%s",
             response.status_code,
