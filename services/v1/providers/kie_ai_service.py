@@ -123,6 +123,12 @@ def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
     if not isinstance(prompt_json, dict):
         return json.dumps(prompt_json, ensure_ascii=False)
 
+    # 0. Check for explicit "full_prompt" or "prompt" field which might already be flat
+    for key in ("full_prompt", "prompt", "text"):
+        val = prompt_json.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+
     parts: list[str] = []
 
     # 1. Scene description — this is the CORE of the prompt
@@ -166,7 +172,9 @@ def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
 
     result = " ".join(parts).strip()
     if not result:
-        logger.warning("_flatten_prompt_json_to_text: could not extract text, falling back to json.dumps")
+        # Fallback to json.dumps but without logging a warning if it's just a tiny object
+        if len(prompt_json) > 1:
+            logger.warning("_flatten_prompt_json_to_text: could not extract text, falling back to json.dumps for keys: %s", list(prompt_json.keys()))
         result = json.dumps(prompt_json, ensure_ascii=False)
 
     return result
@@ -699,15 +707,27 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
             and _is_retryable_internal_error(error_code, fail_msg)
         ):
             next_attempt = retry_attempts + 1
+            
+            # AUTOMATIC FALLBACK: If Veo 3.1 fails with 500, switch to Seedance for the retry
+            retry_model = model
+            if _is_veo3_model(model) and (error_code == 500 or "internal error" in str(fail_msg).lower()):
+                retry_model = SEEDANCE_15_PRO_MODEL
+                logger.info(
+                    "KIE FALLBACK TRIGGERED: Switching task_id=%s from Veo to Seedance due to error 500",
+                    item.get("task_id")
+                )
+
             logger.warning(
-                "KIE task failed with retryable internal error. task_id=%s model=%s error_code=%s "
-                "attempt=%s/%s fail=%s",
-                item.get("task_id"), model, error_code, next_attempt, max_retry_attempts, fail_msg,
+                "KIE task failed with retryable internal error. task_id=%s model=%s -> retry_model=%s "
+                "error_code=%s attempt=%s/%s fail=%s",
+                item.get("task_id"), model, retry_model, error_code, next_attempt, max_retry_attempts, fail_msg,
             )
+            
             retry_delay = _get_internal_retry_delay_seconds()
             if retry_delay > 0:
                 time.sleep(retry_delay)
-            submission = submit_kie_video_task(item["prompt_json"], model=model)
+            
+            submission = submit_kie_video_task(item["prompt_json"], model=retry_model)
             retry_error = submission.get("error")
             if retry_error:
                 logger.warning(
@@ -716,8 +736,8 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
                 )
             else:
                 logger.info(
-                    "KIE retry submission accepted. previous_task_id=%s new_task_id=%s attempt=%s/%s",
-                    item.get("task_id"), submission.get("task_id"), next_attempt, max_retry_attempts,
+                    "KIE retry submission accepted. previous_task_id=%s new_task_id=%s model=%s attempt=%s/%s",
+                    item.get("task_id"), submission.get("task_id"), retry_model, next_attempt, max_retry_attempts,
                 )
             return {
                 **item,

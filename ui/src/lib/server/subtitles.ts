@@ -244,30 +244,8 @@ function buildPhraseBlockEvents(words: WordTimestamp[], totalDuration: number, p
 }
 
 function applyMagicCharacterAnimation(text: string, baseDelayMs: number = 25) {
-  // We use ASS tags to animate each character:
-  // \alpha&HFF& - start invisible
-  // \blur6 - start blurry
-  // \fscy80 - start slightly squashed (simulates coming from below)
-  // \t(delay, delay+duration, ...) - animate to clear and full size
-  const chars = Array.from(text);
-  let result = "";
-  let currentDelay = 0;
-
-  chars.forEach((char) => {
-    if (char === " ") {
-      result += " ";
-      // Spaces don't need animation tags, but we keep a small delay for rhythm
-      currentDelay += baseDelayMs;
-      return;
-    }
-    
-    const duration = 220;
-    const tags = `{\\alpha&HFF&\\blur6\\fscy80\\t(${currentDelay},${currentDelay + duration},\\alpha&H00&\\blur0\\fscy100)}`;
-    result += `${tags}${char}`;
-    currentDelay += baseDelayMs;
-  });
-
-  return result;
+  // Disabling animation as requested: showing solid text immediately.
+  return text;
 }
 
 function buildSubtitleEvents(words: WordTimestamp[], settings: SubtitleRenderSettings, totalDuration: number) {
