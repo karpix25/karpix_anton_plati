@@ -191,7 +191,7 @@ def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = N
                 "prompt": prompt_text,
                 "aspect_ratio": "9:16",
                 "resolution": "720p",
-                "duration": 8,
+                "duration": "8",
                 "fixed_lens": False,
                 "generate_audio": False,
                 "nsfw_checker": False,

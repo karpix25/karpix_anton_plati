@@ -402,10 +402,10 @@ function buildFontFallbackUrls(
   
   if (fontFamilyKey === "montserrat") {
     fallbacks.push(
-      `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-${weight}.ttf`,
-      `https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/static/Montserrat-${weight}.ttf`,
-      `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat-${weight}.ttf`,
-      `https://github.com/google/fonts/raw/main/ofl/montserrat/Montserrat-${weight}.ttf`
+      `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Regular.ttf`,
+      `https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/static/Montserrat-Bold.ttf`,
+      `https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/static/Montserrat-Regular.ttf`,
+      `https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/montserrat/static/Montserrat-Bold.ttf`
     );
   } else if (fontFamilyKey === "pt_sans") {
     fallbacks.push(
