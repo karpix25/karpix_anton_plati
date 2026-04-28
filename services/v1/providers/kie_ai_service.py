@@ -31,6 +31,7 @@ SUPPORTED_KIE_MODELS = {
 
 VIDEO_URL_HINTS = (".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8")
 IMAGE_URL_HINTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".svg")
+WATERMARK_HINTS = ("watermark", "wm", "marked", "_wm")
 VEO3_MODELS = {VEO3_QUALITY, VEO3_FAST, VEO3_LITE}
 
 
@@ -626,12 +627,22 @@ def _pick_preferred_video_url(urls: List[str]) -> str | None:
         lower = url.lower()
         return any(hint in lower for hint in hints)
 
+    def _is_watermarked(url: str) -> bool:
+        return _looks_like_by_hints(url, WATERMARK_HINTS)
+
+    # 1. Try to find a CLEAN video (no watermark hints)
+    for url in normalized:
+        if _looks_like_by_hints(url, VIDEO_URL_HINTS) and not _is_watermarked(url):
+            return url
+
+    # 2. Try to find ANY video (even if watermarked)
     for url in normalized:
         if _looks_like_by_hints(url, VIDEO_URL_HINTS):
             return url
 
+    # 3. Try to find a CLEAN asset (non-image, non-video hint, non-watermark)
     for url in normalized:
-        if not _looks_like_by_hints(url, IMAGE_URL_HINTS):
+        if not _looks_like_by_hints(url, IMAGE_URL_HINTS) and not _is_watermarked(url):
             return url
 
     return normalized[0]
@@ -658,12 +669,15 @@ def _parse_veo3_task_state(data: Dict[str, Any]) -> tuple[str, List[str], str | 
     result_urls: List[str] = []
     response_obj = data.get("response")
     if isinstance(response_obj, dict):
-        for key in ("resultUrls", "fullResultUrls", "originUrls"):
+        # Collect ALL available URLs across different fields
+        for key in ("originUrls", "fullResultUrls", "resultUrls"):
             urls = response_obj.get(key)
             if isinstance(urls, list):
                 result_urls.extend(str(u) for u in urls if u)
-            if result_urls:
-                break  # Use first non-empty list
+
+    # De-duplicate while preserving order
+    seen = set()
+    result_urls = [x for x in result_urls if not (x in seen or seen.add(x))]
 
     fail_msg = data.get("errorMessage") or None
     if not fail_msg and success_flag in {2, 3}:
