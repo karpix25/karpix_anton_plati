@@ -104,7 +104,8 @@ def _to_int(value: Any) -> int | None:
 def _is_retryable_internal_error(error_code: int | None, error_message: str | None) -> bool:
     if error_code in KIE_RETRYABLE_ERROR_CODES:
         return True
-    return "internal error" in str(error_message or "").lower()
+    msg = str(error_message or "").lower()
+    return "internal error" in msg or "unable to generate audio" in msg
 
 
 def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
@@ -118,6 +119,10 @@ def _flatten_prompt_json_to_text(prompt_json: Any) -> str:
 
     If prompt_json is already a plain string, it is returned as-is.
     """
+    # 0. Handle if the caller passed the entire slot object instead of the inner prompt_json
+    if isinstance(prompt_json, dict) and "prompt_json" in prompt_json:
+        prompt_json = prompt_json.get("prompt_json")
+
     if isinstance(prompt_json, str):
         return prompt_json.strip()
 
@@ -722,13 +727,18 @@ def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
         ):
             next_attempt = retry_attempts + 1
             
-            # AUTOMATIC FALLBACK: If Veo 3.1 fails with 500, switch to Seedance for the retry
+            # AUTOMATIC FALLBACK: If Veo 3.1 fails with 500 or audio generation error, switch to Seedance for the retry
             retry_model = model
-            if _is_veo3_model(model) and (error_code == 500 or "internal error" in str(fail_msg).lower()):
+            fail_msg_lower = str(fail_msg).lower()
+            if _is_veo3_model(model) and (
+                error_code == 500 
+                or "internal error" in fail_msg_lower
+                or "unable to generate audio" in fail_msg_lower
+            ):
                 retry_model = SEEDANCE_15_PRO_MODEL
                 logger.info(
-                    "KIE FALLBACK TRIGGERED: Switching task_id=%s from Veo to Seedance due to error 500",
-                    item.get("task_id")
+                    "KIE FALLBACK TRIGGERED: Switching task_id=%s from Veo to Seedance due to error: %s",
+                    item.get("task_id"), fail_msg
                 )
 
             logger.warning(
