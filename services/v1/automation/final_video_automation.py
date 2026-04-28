@@ -462,6 +462,23 @@ def handle_job_exception(job: Dict[str, Any], error: Exception) -> None:
     except Exception as notify_error:
         logger.warning("Payment alert notification failed for final_video_job=%s: %s", job.get("id"), notify_error)
 
+    # Idempotency guard: if montage already completed in generated_scenarios,
+    # finish the queue job instead of re-running assemble and creating duplicates.
+    if stage == "montage":
+        scenario_id = fresh_job.get("scenario_id") or job.get("scenario_id")
+        if scenario_id:
+            scenario = get_generated_scenario_by_id(int(scenario_id))
+            montage_status = str((scenario or {}).get("montage_status") or "").strip().lower()
+            yandex_status = str((scenario or {}).get("montage_yandex_status") or "").strip().lower()
+            if montage_status == "completed" and yandex_status in {"completed", "skipped"}:
+                logger.warning(
+                    "Montage stage failed after completion marker (job id=%s scenario_id=%s); marking job completed.",
+                    job.get("id"),
+                    scenario_id,
+                )
+                complete_final_video_job(int(job["id"]))
+                return
+
     if _is_non_retryable_error(message):
         update_final_video_job(
             int(job["id"]),

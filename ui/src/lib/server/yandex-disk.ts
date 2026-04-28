@@ -211,6 +211,27 @@ export async function getRandomBackgroundAudioTrack(tag: "disturbing" | "inspiri
   };
 }
 
+export async function getBackgroundAudioTrackByDiskPath(diskPath: string) {
+  const normalizedPath = String(diskPath || "").trim();
+  if (!normalizedPath) {
+    throw new Error("Background audio disk path is empty");
+  }
+
+  const meta = await getResourceMeta(normalizedPath);
+  const resolvedPath = String(meta.path || normalizedPath).trim();
+  const resolvedName =
+    String(meta.name || "").trim() ||
+    resolvedPath.split("/").filter(Boolean).pop() ||
+    "background_audio.mp3";
+  const downloadHref = await getDownloadHref(resolvedPath);
+
+  return {
+    name: resolvedName,
+    diskPath: resolvedPath,
+    downloadHref,
+  };
+}
+
 export async function uploadFinalVideoToYandexDisk(params: {
   localFilePath: string;
   avatarFolderName: string;

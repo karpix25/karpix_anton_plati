@@ -5,6 +5,7 @@ import path from "path";
 import { spawn } from "child_process";
 import pool from "@/lib/db";
 import {
+  getBackgroundAudioTrackByDiskPath,
   getRandomBackgroundAudioTrack,
   isYandexDiskConfigured,
   uploadFinalVideoToYandexDisk,
@@ -46,6 +47,15 @@ type ScenarioRow = {
   subtitle_margin_v: number | null;
   subtitle_margin_percent: number | null;
   typography_hook_enabled: boolean | null;
+  montage_video_path: string | null;
+  montage_status: string | null;
+  montage_error: string | null;
+  montage_background_audio_name: string | null;
+  montage_background_audio_path: string | null;
+  montage_yandex_disk_path: string | null;
+  montage_yandex_public_url: string | null;
+  montage_yandex_status: string | null;
+  montage_yandex_error: string | null;
   video_generation_prompts:
     | {
         prompts?: Array<{
@@ -109,6 +119,7 @@ const FRAME_EPSILON_SECONDS = 1 / OUTPUT_FPS;
 const FIRST_AVATAR_INTRO_MIN_SECONDS = 2.8;
 const FIRST_BROLL_LATEST_START_SECONDS = 3.5;
 const MIN_AVATAR_GAP_SECONDS = 2.5;
+const ASSEMBLE_SCENARIO_LOCK_KEY = 84244031;
 
 const VIDEO_URL_HINTS = [".mp4", ".mov", ".webm", ".m4v", ".mkv", ".avi", ".ts", ".m3u8"];
 const IMAGE_URL_HINTS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".svg"];
@@ -244,7 +255,16 @@ async function getScenario(scenarioId: number) {
         c.subtitle_outline_width,
         c.subtitle_margin_v,
         c.subtitle_margin_percent,
-        c.typography_hook_enabled
+        c.typography_hook_enabled,
+        gs.montage_video_path,
+        gs.montage_status,
+        gs.montage_error,
+        gs.montage_background_audio_name,
+        gs.montage_background_audio_path,
+        gs.montage_yandex_disk_path,
+        gs.montage_yandex_public_url,
+        gs.montage_yandex_status,
+        gs.montage_yandex_error
      FROM generated_scenarios gs
      LEFT JOIN clients c ON c.id = gs.client_id
      LEFT JOIN client_heygen_avatars a
@@ -255,6 +275,30 @@ async function getScenario(scenarioId: number) {
   );
 
   return rows[0] || null;
+}
+
+function isMontageAlreadyFinal(scenario: ScenarioRow) {
+  const montageStatus = String(scenario.montage_status || "").toLowerCase();
+  const yandexStatus = String(scenario.montage_yandex_status || "").toLowerCase();
+  return montageStatus === "completed" && (yandexStatus === "completed" || yandexStatus === "skipped");
+}
+
+async function tryLockScenarioAssemble(scenarioId: number) {
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query<{ locked: boolean }>(
+      "SELECT pg_try_advisory_lock($1, $2) AS locked",
+      [ASSEMBLE_SCENARIO_LOCK_KEY, scenarioId]
+    );
+    if (!rows[0]?.locked) {
+      client.release();
+      return null;
+    }
+    return client;
+  } catch (error) {
+    client.release();
+    throw error;
+  }
 }
 
 function getTotalDurationSeconds(scenario: ScenarioRow) {
@@ -1171,8 +1215,30 @@ async function buildMontage(scenarioId: number) {
   // 4. Prepare background audio
   const backgroundAudioTag = (scenario.background_audio_tag ||
     "neutral") as BackgroundAudioTag;
-  const backgroundAudioTrack =
-    await getRandomBackgroundAudioTrack(backgroundAudioTag);
+  let backgroundAudioTrack:
+    | { name: string; diskPath: string; downloadHref: string }
+    | null = null;
+  if (scenario.montage_background_audio_path) {
+    try {
+      backgroundAudioTrack = await getBackgroundAudioTrackByDiskPath(
+        scenario.montage_background_audio_path
+      );
+      console.log(
+        `[montage] Reusing background audio: ${backgroundAudioTrack.name} (${backgroundAudioTrack.diskPath})`
+      );
+    } catch (error) {
+      console.warn(
+        `[montage] Failed to reuse saved background audio path=${scenario.montage_background_audio_path}, selecting random fallback:`,
+        error
+      );
+    }
+  }
+  if (!backgroundAudioTrack) {
+    backgroundAudioTrack = await getRandomBackgroundAudioTrack(backgroundAudioTag);
+    console.log(
+      `[montage] Selected random background audio: ${backgroundAudioTrack.name} (${backgroundAudioTag})`
+    );
+  }
   const backgroundAudioExt =
     path.extname(backgroundAudioTrack.name || "") || ".mp3";
   const backgroundAudioPath = path.join(
@@ -1302,6 +1368,12 @@ async function buildMontage(scenarioId: number) {
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const resolvedScenarioId = Number.parseInt(String(body?.scenarioId), 10);
+  let lockClient:
+    | {
+        query: (text: string, values?: unknown[]) => Promise<unknown>;
+        release: () => void;
+      }
+    | null = null;
 
   try {
     if (!Number.isFinite(resolvedScenarioId)) {
@@ -1309,6 +1381,34 @@ export async function POST(request: Request) {
     }
 
     await ensureMontageColumns();
+    lockClient = await tryLockScenarioAssemble(resolvedScenarioId);
+    if (!lockClient) {
+      return NextResponse.json(
+        { error: "Montage assembly is already in progress for this scenario" },
+        { status: 409 }
+      );
+    }
+
+    const existingScenario = await getScenario(resolvedScenarioId);
+    if (!existingScenario) {
+      return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
+    }
+
+    if (isMontageAlreadyFinal(existingScenario)) {
+      return NextResponse.json({
+        ok: true,
+        scenarioId: resolvedScenarioId,
+        reused: true,
+        montage_video_path: existingScenario.montage_video_path,
+        montage_background_audio_name: existingScenario.montage_background_audio_name,
+        montage_background_audio_path: existingScenario.montage_background_audio_path,
+        montage_yandex_disk_path: existingScenario.montage_yandex_disk_path,
+        montage_yandex_public_url: existingScenario.montage_yandex_public_url,
+        montage_yandex_status: existingScenario.montage_yandex_status,
+        montage_yandex_error: existingScenario.montage_yandex_error,
+      });
+    }
+
     await pool.query(
       `UPDATE generated_scenarios
        SET montage_status = 'processing',
@@ -1338,12 +1438,11 @@ export async function POST(request: Request) {
       );
 
       try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
         const upload = await uploadFinalVideoToYandexDisk({
           localFilePath: outputPath,
           avatarFolderName: avatarName,
           projectName: clientName || "Unknown Project",
-          fileName: `scenario_${resolvedScenarioId}_${timestamp}.mp4`,
+          fileName: `scenario_${resolvedScenarioId}.mp4`,
         });
         yandexDiskPath = upload.filePath;
         yandexPublicUrl = upload.publicUrl;
@@ -1398,5 +1497,18 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    if (lockClient) {
+      try {
+        await lockClient.query("SELECT pg_advisory_unlock($1, $2)", [
+          ASSEMBLE_SCENARIO_LOCK_KEY,
+          resolvedScenarioId,
+        ]);
+      } catch (unlockError) {
+        console.error("Failed to release scenario assemble lock:", unlockError);
+      } finally {
+        lockClient.release();
+      }
+    }
   }
 }
