@@ -52,7 +52,6 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   const subtitleOutlineColor = (draftSettings.subtitle_outline_color || "#000000").toUpperCase();
   const subtitleOutlineWidth = toSafeNumber(draftSettings.subtitle_outline_width, 4);
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
-  const [fontSearch, setFontSearch] = React.useState("");
   const [fontCatalog, setFontCatalog] = React.useState<string[]>(() => buildGoogleFontFamilyList());
   const [isFontCatalogLoading, setIsFontCatalogLoading] = React.useState(false);
   const assToPreviewScale = Number.isFinite(subtitlePreviewScale) && subtitlePreviewScale > 0
@@ -101,16 +100,11 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
       };
 
   const visibleFontOptions = React.useMemo(() => {
-    const normalizedQuery = normalizeSubtitleFontFamilyValue(fontSearch).toLowerCase();
-    const base = normalizedQuery
-      ? fontCatalog.filter((item) => item.toLowerCase().includes(normalizedQuery))
-      : fontCatalog;
-    const withSelected = base.includes(subtitleFontDisplayFamily)
-      ? base
-      : [subtitleFontDisplayFamily, ...base];
-    const maxCount = normalizedQuery ? 500 : 250;
-    return withSelected.slice(0, maxCount);
-  }, [fontCatalog, fontSearch, subtitleFontDisplayFamily]);
+    if (fontCatalog.includes(subtitleFontDisplayFamily)) {
+      return fontCatalog;
+    }
+    return [subtitleFontDisplayFamily, ...fontCatalog];
+  }, [fontCatalog, subtitleFontDisplayFamily]);
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -239,43 +233,41 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
 
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Поиск шрифта
-            </label>
-            <input
-              value={fontSearch}
-              onChange={(event) => setFontSearch(event.target.value)}
-              placeholder="Например: Inter, Playfair, Bebas"
-              className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-            />
-            <label className="pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               Шрифт (Google Fonts)
             </label>
-            <Select
-              value={subtitleFontDisplayFamily}
-              onValueChange={(value) => {
-                const normalizedFamily = normalizeSubtitleFontFamilyValue(value);
-                const presetKey = presetKeyByFamily.get(normalizedFamily.toLowerCase());
-                setDraftSettings((prev) => ({
-                  ...prev,
-                  subtitle_font_family: presetKey || normalizedFamily,
-                }));
-              }}
-            >
-              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium focus:ring-2 focus:ring-primary/10">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="max-h-96">
-                {visibleFontOptions.map((fontFamily) => (
-                  <SelectItem key={fontFamily} value={fontFamily}>
-                    {fontFamily}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="max-h-72 overflow-y-auto rounded-xl bg-[#f0f4f7] p-2">
+              <div className="space-y-1">
+                {visibleFontOptions.map((fontFamily) => {
+                  const isActive = subtitleFontDisplayFamily === fontFamily;
+                  return (
+                    <button
+                      key={fontFamily}
+                      type="button"
+                      onClick={() => {
+                        const normalizedFamily = normalizeSubtitleFontFamilyValue(fontFamily);
+                        const presetKey = presetKeyByFamily.get(normalizedFamily.toLowerCase());
+                        setDraftSettings((prev) => ({
+                          ...prev,
+                          subtitle_font_family: presetKey || normalizedFamily,
+                        }));
+                      }}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
+                        isActive
+                          ? "bg-white font-semibold text-primary shadow-sm"
+                          : "bg-transparent text-foreground hover:bg-white/80"
+                      }`}
+                      style={{ fontFamily }}
+                    >
+                      {fontFamily}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <p className="text-[10px] text-slate-500">
               {isFontCatalogLoading
                 ? "Загружаю каталог Google Fonts..."
-                : `Показано ${visibleFontOptions.length} шрифтов. Чтобы найти любой шрифт, введите его название в поиск.`}
+                : `Показано ${visibleFontOptions.length} шрифтов. Нажимайте по шрифтам и сразу смотрите превью.`}
             </p>
             <p className="text-[10px] text-slate-500">
               Активный шрифт: {fontPreview.title}
