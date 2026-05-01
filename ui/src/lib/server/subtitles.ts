@@ -1,8 +1,13 @@
 import { existsSync } from "fs";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
-import { Settings, WordTimestamp, SubtitleFontFamily } from "@/types";
+import { Settings, WordTimestamp } from "@/types";
 import {
+  buildGoogleFontsStylesheetUrl,
+  DEFAULT_SUBTITLE_FONT_FAMILY,
+  isSubtitlePresetFontKey,
+  normalizeSubtitleFontFamilyValue,
+  resolveSubtitleFontFamilyName,
   SUBTITLE_FONT_OPTIONS,
   SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT,
   SUBTITLE_PRESET_DEFAULT_MARGIN_V,
@@ -38,7 +43,7 @@ const DEFAULT_SUBTITLE_SETTINGS: SubtitleRenderSettings = {
   subtitles_enabled: false,
   subtitle_mode: "word_by_word",
   subtitle_style_preset: "classic",
-  subtitle_font_family: "pt_sans",
+  subtitle_font_family: DEFAULT_SUBTITLE_FONT_FAMILY,
   subtitle_font_color: "#FFFFFF",
   subtitle_font_weight: 700,
   subtitle_outline_color: "#111111",
@@ -376,7 +381,7 @@ ${events
 
 function buildFontFallbackUrls(
   url: string,
-  fontFamilyKey: SubtitleFontFamily
+  fontFamilyKey: string
 ) {
   const fallbacks: string[] = [];
 
@@ -456,29 +461,158 @@ async function downloadFileIfMissing(urls: string[], targetPath: string) {
   throw lastError || new Error("Failed to download subtitle font: no valid URLs");
 }
 
+function resolveWeightDescriptor(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "normal") return [400];
+  if (normalized === "bold") return [700];
+  const numericWeights = normalized
+    .split(/\s+/)
+    .map((item) => Number.parseInt(item, 10))
+    .filter((item) => Number.isFinite(item));
+  if (!numericWeights.length) return [];
+  return numericWeights;
+}
+
+function weightMatches(targetWeight: 400 | 700, descriptor: string) {
+  const weights = resolveWeightDescriptor(descriptor);
+  if (!weights.length) return true;
+  if (weights.length === 1) return weights[0] === targetWeight;
+  const minWeight = Math.min(...weights);
+  const maxWeight = Math.max(...weights);
+  return targetWeight >= minWeight && targetWeight <= maxWeight;
+}
+
+function parseGoogleStylesheetSources(css: string, targetWeight: 400 | 700) {
+  const urls = new Set<string>();
+  const fontFaceBlocks = css.match(/@font-face\s*{[^}]*}/g) || [];
+
+  for (const block of fontFaceBlocks) {
+    const styleMatch = block.match(/font-style:\s*([^;]+);/i);
+    if (styleMatch && styleMatch[1].trim().toLowerCase() !== "normal") {
+      continue;
+    }
+
+    const weightMatch = block.match(/font-weight:\s*([^;]+);/i);
+    if (weightMatch && !weightMatches(targetWeight, weightMatch[1])) {
+      continue;
+    }
+
+    const urlMatches = block.matchAll(/url\(([^)]+)\)/gi);
+    for (const match of urlMatches) {
+      const raw = match[1]?.trim();
+      if (!raw) continue;
+      const normalizedUrl = raw.replace(/^['"]|['"]$/g, "");
+      if (normalizedUrl.startsWith("https://")) {
+        urls.add(normalizedUrl);
+      }
+    }
+  }
+
+  return [...urls];
+}
+
+async function fetchGoogleStylesheet(fontFamily: string) {
+  const candidates = [
+    buildGoogleFontsStylesheetUrl(fontFamily, [400, 700]),
+    buildGoogleFontsStylesheetUrl(fontFamily, [400]),
+    buildGoogleFontsStylesheetUrl(fontFamily),
+  ];
+
+  let lastError: Error | null = null;
+  for (const url of candidates) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12_000);
+      const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        throw new Error(`Failed to load Google Fonts stylesheet: ${url} (status ${response.status})`);
+      }
+      const css = await response.text();
+      if (css.includes("@font-face")) {
+        return css;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+
+  throw lastError || new Error(`Failed to load Google Fonts stylesheet for "${fontFamily}"`);
+}
+
+function buildFontCacheKey(fontFamilyValue: string) {
+  const normalized = fontFamilyValue
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || "custom_font";
+}
+
+function getFontFileExtension(fontUrl: string) {
+  try {
+    const pathname = new URL(fontUrl).pathname;
+    const extension = path.extname(pathname).toLowerCase();
+    if (extension && extension.length <= 8) {
+      return extension;
+    }
+  } catch {
+    // ignore malformed URL, we'll use fallback extension
+  }
+  return ".woff2";
+}
+
+async function ensureCustomGoogleFontAssets(fontFamily: string, fontsDir: string) {
+  const css = await fetchGoogleStylesheet(fontFamily);
+  const regularSources = parseGoogleStylesheetSources(css, 400);
+  const boldSources = parseGoogleStylesheetSources(css, 700);
+  const resolvedBoldSources = boldSources.length ? boldSources : regularSources;
+
+  if (!regularSources.length) {
+    throw new Error(`No downloadable sources found for Google Font "${fontFamily}"`);
+  }
+
+  const saveSourceSet = async (sources: string[], prefix: string) => {
+    for (let index = 0; index < sources.length; index += 1) {
+      const sourceUrl = sources[index];
+      const extension = getFontFileExtension(sourceUrl);
+      const targetPath = path.join(fontsDir, `${prefix}-${String(index + 1).padStart(3, "0")}${extension}`);
+      await downloadFileIfMissing([sourceUrl], targetPath);
+    }
+  };
+
+  await saveSourceSet(regularSources, "Regular");
+  await saveSourceSet(resolvedBoldSources, "Bold");
+}
+
 async function ensureSubtitleFontAssets(fontFamilyKey: SubtitleRenderSettings["subtitle_font_family"]) {
-  const fontDefinition = SUBTITLE_FONT_OPTIONS[fontFamilyKey] || SUBTITLE_FONT_OPTIONS.pt_sans;
-  const fontsDir = path.join("/tmp", "platipo-miru-fonts", fontFamilyKey || "pt_sans");
+  const normalizedFontValue = normalizeSubtitleFontFamilyValue(fontFamilyKey || DEFAULT_SUBTITLE_FONT_FAMILY);
+  const fontsDir = path.join("/tmp", "platipo-miru-fonts", buildFontCacheKey(normalizedFontValue));
   await mkdir(fontsDir, { recursive: true });
 
   try {
-    await downloadFileIfMissing(
-      [
-        fontDefinition.regularUrl,
-        ...buildFontFallbackUrls(fontDefinition.regularUrl, fontFamilyKey),
-      ],
-      path.join(fontsDir, "Regular.ttf")
-    );
-    await downloadFileIfMissing(
-      [
-        fontDefinition.boldUrl,
-        ...buildFontFallbackUrls(fontDefinition.boldUrl, fontFamilyKey),
-      ],
-      path.join(fontsDir, "Bold.ttf")
-    );
+    if (isSubtitlePresetFontKey(normalizedFontValue)) {
+      const fontDefinition = SUBTITLE_FONT_OPTIONS[normalizedFontValue];
+      await downloadFileIfMissing(
+        [
+          fontDefinition.regularUrl,
+          ...buildFontFallbackUrls(fontDefinition.regularUrl, normalizedFontValue),
+        ],
+        path.join(fontsDir, "Regular.ttf")
+      );
+      await downloadFileIfMissing(
+        [
+          fontDefinition.boldUrl,
+          ...buildFontFallbackUrls(fontDefinition.boldUrl, normalizedFontValue),
+        ],
+        path.join(fontsDir, "Bold.ttf")
+      );
+    } else {
+      await ensureCustomGoogleFontAssets(resolveSubtitleFontFamilyName(normalizedFontValue), fontsDir);
+    }
+
     return {
       fontsDir,
-      fontFamily: fontDefinition.family,
+      fontFamily: resolveSubtitleFontFamilyName(normalizedFontValue),
     };
   } catch (error) {
     console.warn("Subtitle font download failed, fallback to system font:", error);
@@ -498,6 +632,9 @@ export async function materializeSubtitleTrack(options: {
   const settings: SubtitleRenderSettings = {
     ...DEFAULT_SUBTITLE_SETTINGS,
     ...(options.settings || {}),
+    subtitle_font_family: normalizeSubtitleFontFamilyValue(
+      options.settings?.subtitle_font_family || DEFAULT_SUBTITLE_SETTINGS.subtitle_font_family
+    ),
     subtitle_font_color: normalizeHexColor(options.settings?.subtitle_font_color, DEFAULT_SUBTITLE_SETTINGS.subtitle_font_color),
     subtitle_outline_color: normalizeHexColor(options.settings?.subtitle_outline_color, DEFAULT_SUBTITLE_SETTINGS.subtitle_outline_color),
     subtitle_font_weight: Number(options.settings?.subtitle_font_weight) === 400 ? 400 : 700,

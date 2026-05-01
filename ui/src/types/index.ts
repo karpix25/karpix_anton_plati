@@ -49,7 +49,7 @@ export interface Client {
   subtitles_enabled?: boolean;
   subtitle_mode?: "word_by_word" | "phrase_block";
   subtitle_style_preset?: "classic" | "impact" | "soft_box";
-  subtitle_font_family?: "pt_sans" | "rubik" | "montserrat" | "oswald" | "noto_sans";
+  subtitle_font_family?: string;
   subtitle_font_color?: string;
   subtitle_font_weight?: 400 | 700;
   subtitle_outline_color?: string;
@@ -71,7 +71,7 @@ export interface Client {
 
 export type SubtitleMode = "word_by_word" | "phrase_block";
 export type SubtitleStylePreset = "classic" | "impact" | "soft_box";
-export type SubtitleFontFamily = "pt_sans" | "rubik" | "montserrat" | "oswald" | "noto_sans";
+export type SubtitleFontFamily = string;
 export type BackgroundAudioTag = "disturbing" | "inspiring" | "neutral" | "relax";
 
 export interface TtsPronunciationOverride {

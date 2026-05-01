@@ -1,4 +1,4 @@
-import { SubtitleFontFamily, SubtitleMode, SubtitleStylePreset } from "@/types";
+import { SubtitleMode, SubtitleStylePreset } from "@/types";
 
 export const SUBTITLE_MODE_OPTIONS: Record<
   SubtitleMode,
@@ -44,8 +44,18 @@ export const SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT: Record<SubtitleStylePreset,
   soft_box: 12,
 };
 
+export const DEFAULT_SUBTITLE_FONT_FAMILY = "pt_sans";
+export const CUSTOM_SUBTITLE_FONT_SELECT_VALUE = "__custom_google_font__";
+
+export type SubtitlePresetFontKey =
+  | "pt_sans"
+  | "rubik"
+  | "montserrat"
+  | "oswald"
+  | "noto_sans";
+
 export const SUBTITLE_FONT_OPTIONS: Record<
-  SubtitleFontFamily,
+  SubtitlePresetFontKey,
   {
     title: string;
     family: string;
@@ -98,3 +108,43 @@ export const SUBTITLE_FONT_OPTIONS: Record<
 };
 
 export const SYSTEM_SUBTITLE_FALLBACK_FAMILY = "DejaVu Sans";
+
+export function isSubtitlePresetFontKey(value: string | null | undefined): value is SubtitlePresetFontKey {
+  if (!value) return false;
+  return Object.prototype.hasOwnProperty.call(SUBTITLE_FONT_OPTIONS, value);
+}
+
+export function normalizeSubtitleFontFamilyValue(value: string | null | undefined) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (!normalized) {
+    return DEFAULT_SUBTITLE_FONT_FAMILY;
+  }
+
+  return normalized.slice(0, 96);
+}
+
+export function resolveSubtitleFontFamilyName(value: string | null | undefined) {
+  const normalized = normalizeSubtitleFontFamilyValue(value);
+  if (isSubtitlePresetFontKey(normalized)) {
+    return SUBTITLE_FONT_OPTIONS[normalized].family;
+  }
+  return normalized;
+}
+
+export function buildGoogleFontsStylesheetUrl(fontFamily: string, weights: number[] = [400, 700]) {
+  const normalizedFamily = normalizeSubtitleFontFamilyValue(fontFamily);
+  const familyQuery = encodeURIComponent(normalizedFamily).replace(/%20/g, "+");
+  const normalizedWeights = Array.from(new Set(weights))
+    .map((weight) => Math.round(Number(weight)))
+    .filter((weight) => Number.isFinite(weight) && weight >= 100 && weight <= 900)
+    .sort((a, b) => a - b);
+
+  if (normalizedWeights.length) {
+    return `https://fonts.googleapis.com/css2?family=${familyQuery}:wght@${normalizedWeights.join(";")}&display=swap`;
+  }
+
+  return `https://fonts.googleapis.com/css2?family=${familyQuery}&display=swap`;
+}

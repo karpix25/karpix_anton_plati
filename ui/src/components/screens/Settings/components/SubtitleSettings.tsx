@@ -8,9 +8,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  buildGoogleFontsStylesheetUrl,
+  CUSTOM_SUBTITLE_FONT_SELECT_VALUE,
+  DEFAULT_SUBTITLE_FONT_FAMILY,
+  isSubtitlePresetFontKey,
+  normalizeSubtitleFontFamilyValue,
+  resolveSubtitleFontFamilyName,
   SUBTITLE_FONT_OPTIONS,
   SUBTITLE_MODE_OPTIONS,
-  SUBTITLE_STYLE_PRESET_OPTIONS,
+  SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT,
+  SUBTITLE_PRESET_DEFAULT_MARGIN_V,
 } from "@/lib/subtitles";
 
 interface SubtitleSettingsProps {
@@ -26,6 +33,13 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   subtitlePreviewRef,
   subtitlePreviewScale,
 }) => {
+  const ASS_PLAY_RES_Y = 1920;
+  const PREVIEW_PLAY_RES_X = 720;
+  const PREVIEW_PLAY_RES_Y = 1280;
+  const PREVIEW_SCALE_RATIO = PREVIEW_PLAY_RES_Y / ASS_PLAY_RES_Y;
+
+  const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
   const toSafeNumber = (value: unknown, fallback: number) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -34,17 +48,60 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   const subtitlesEnabled = draftSettings.subtitles_enabled ?? true;
   const subtitleMode = draftSettings.subtitle_mode || "word_by_word";
   const subtitleStylePreset = draftSettings.subtitle_style_preset || "classic";
-  const subtitleFontFamily = draftSettings.subtitle_font_family || "impact";
+  const subtitleFontFamily = normalizeSubtitleFontFamilyValue(
+    draftSettings.subtitle_font_family || DEFAULT_SUBTITLE_FONT_FAMILY
+  );
   const subtitleFontColor = (draftSettings.subtitle_font_color || "#FFFFFF").toUpperCase();
   const subtitleOutlineColor = (draftSettings.subtitle_outline_color || "#000000").toUpperCase();
   const subtitleOutlineWidth = toSafeNumber(draftSettings.subtitle_outline_width, 4);
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
-  const subtitleMarginPercent = toSafeNumber(draftSettings.subtitle_margin_percent, 12);
-  const subtitleMarginV = toSafeNumber(draftSettings.subtitle_margin_v, 154);
+  const presetMarginV = SUBTITLE_PRESET_DEFAULT_MARGIN_V[subtitleStylePreset] || 140;
+  const presetMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
+  const explicitMarginPercent = Number(draftSettings.subtitle_margin_percent);
+  const derivedMarginPercent = (toSafeNumber(draftSettings.subtitle_margin_v, presetMarginV) / ASS_PLAY_RES_Y) * 100;
+  const subtitleMarginPercent = clamp(
+    Number.isFinite(explicitMarginPercent)
+      ? explicitMarginPercent
+      : Number.isFinite(derivedMarginPercent)
+        ? derivedMarginPercent
+        : presetMarginPercent,
+    0,
+    100
+  );
+  const subtitleMarginV = Math.round((subtitleMarginPercent / 100) * PREVIEW_PLAY_RES_Y);
+  const subtitleFontSizeAss =
+    subtitleStylePreset === "impact" ? 42 : subtitleStylePreset === "soft_box" ? 36 : 38;
+  const subtitleFontSizePreview = Math.round(subtitleFontSizeAss * PREVIEW_SCALE_RATIO);
+  const subtitleOutlineWidthAss =
+    subtitleStylePreset === "impact"
+      ? clamp(Number(subtitleOutlineWidth || 3) + 1, 0, 8)
+      : clamp(Number(subtitleOutlineWidth || 3), 0, 8);
+  const subtitleOutlineWidthPreview = Math.max(0, subtitleOutlineWidthAss * PREVIEW_SCALE_RATIO);
+  const subtitleSideMargin = Math.round((63 / 1080) * PREVIEW_PLAY_RES_X);
 
   const modePreview = SUBTITLE_MODE_OPTIONS[subtitleMode];
-  const stylePreview = SUBTITLE_STYLE_PRESET_OPTIONS[subtitleStylePreset];
-  const fontPreview = SUBTITLE_FONT_OPTIONS[subtitleFontFamily];
+  const isPresetFont = isSubtitlePresetFontKey(subtitleFontFamily);
+  const subtitleFontDisplayFamily = resolveSubtitleFontFamilyName(subtitleFontFamily);
+  const fontPreview = isPresetFont
+    ? SUBTITLE_FONT_OPTIONS[subtitleFontFamily]
+    : {
+        title: subtitleFontDisplayFamily,
+        description: "Произвольный Google Font.",
+      };
+  const selectFontValue = isPresetFont ? subtitleFontFamily : CUSTOM_SUBTITLE_FONT_SELECT_VALUE;
+  const customFontInputValue = isPresetFont ? "" : subtitleFontFamily;
+
+  React.useEffect(() => {
+    if (!subtitleFontDisplayFamily) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = buildGoogleFontsStylesheetUrl(subtitleFontDisplayFamily);
+    link.dataset.subtitlePreviewFont = subtitleFontDisplayFamily;
+    document.head.appendChild(link);
+    return () => {
+      link.remove();
+    };
+  }, [subtitleFontDisplayFamily]);
 
   return (
     <div className="space-y-6 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-6 shadow-sm">
@@ -54,7 +111,7 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
             Субтитры
           </div>
           <p className="text-sm text-muted-foreground">
-            Вшиваются в финальный монтаж. Выберите режим, стиль и кириллический шрифт.
+            Вшиваются в финальный монтаж. Можно выбрать пресет или задать любое семейство из Google Fonts.
           </p>
         </div>
         <div className="flex items-center gap-6">
@@ -133,10 +190,19 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
               Шрифт (Google Fonts)
             </label>
             <Select
-              value={subtitleFontFamily}
-              onValueChange={(value: Settings["subtitle_font_family"]) =>
-                setDraftSettings((prev) => ({ ...prev, subtitle_font_family: value }))
-              }
+              value={selectFontValue}
+              onValueChange={(value) => {
+                if (value === CUSTOM_SUBTITLE_FONT_SELECT_VALUE) {
+                  setDraftSettings((prev) => ({
+                    ...prev,
+                    subtitle_font_family: normalizeSubtitleFontFamilyValue(
+                      isPresetFont ? "Inter" : subtitleFontFamily
+                    ),
+                  }));
+                  return;
+                }
+                setDraftSettings((prev) => ({ ...prev, subtitle_font_family: value }));
+              }}
             >
               <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium focus:ring-2 focus:ring-primary/10">
                 <SelectValue />
@@ -147,8 +213,26 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
                     {font.title}
                   </SelectItem>
                 ))}
+                <SelectItem value={CUSTOM_SUBTITLE_FONT_SELECT_VALUE}>Custom Google Font</SelectItem>
               </SelectContent>
             </Select>
+            <input
+              value={customFontInputValue}
+              onChange={(event) =>
+                setDraftSettings((prev) => ({
+                  ...prev,
+                  subtitle_font_family: normalizeSubtitleFontFamilyValue(event.target.value),
+                }))
+              }
+              placeholder="Например: Inter, Bebas Neue, Playfair Display"
+              className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+            />
+            <p className="text-[10px] text-slate-500">
+              Введите точное название семейства, как на Google Fonts.
+            </p>
+            <p className="text-[10px] text-slate-500">
+              Активный шрифт: {fontPreview.title}
+            </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -266,7 +350,7 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
                 setDraftSettings((prev) => ({
                   ...prev,
                   subtitle_margin_percent: nextPercent,
-                  subtitle_margin_v: Math.round((nextPercent / 100) * 1280),
+                  subtitle_margin_v: Math.round((nextPercent / 100) * ASS_PLAY_RES_Y),
                 }));
               }}
               className="w-full accent-primary"
@@ -298,39 +382,41 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
                     </div>
 
                     <div
-                      className="absolute left-[42px] right-[42px]"
-                      style={{ bottom: subtitleMarginV }}
+                      className="absolute"
+                      style={{ left: subtitleSideMargin, right: subtitleSideMargin, bottom: subtitleMarginV }}
                     >
                       <div className="flex items-center gap-3 pb-4 text-[20px] font-bold uppercase tracking-[0.3em] text-white/40">
                         <span className="inline-block h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
                         PREVIEW
                       </div>
                       <div
-                        className={`mx-auto text-center uppercase leading-[1.05] tracking-tight ${
+                        className={`mx-auto text-center leading-[1.05] tracking-tight ${
                           subtitleStylePreset === "soft_box" ? "rounded-[32px] bg-black/50 px-12 py-10 backdrop-blur-sm" : ""
                         }`}
                         style={{
                           color: subtitleFontColor,
-                          fontFamily: fontPreview.title,
+                          fontFamily: subtitleFontDisplayFamily,
                           fontWeight: subtitleFontWeight,
+                          textTransform: subtitleStylePreset === "impact" ? "uppercase" : "none",
                           WebkitTextStroke:
-                            subtitleStylePreset === "soft_box" ? undefined : `${subtitleOutlineWidth}px ${subtitleOutlineColor}`,
+                            subtitleStylePreset === "soft_box"
+                              ? undefined
+                              : `${subtitleOutlineWidthPreview.toFixed(2)}px ${subtitleOutlineColor}`,
                           textShadow:
                             subtitleStylePreset === "soft_box"
                               ? "none"
-                              : `0 0 ${Math.max(1, subtitleOutlineWidth)}px ${subtitleOutlineColor}, 0 4px 12px rgba(0,0,0,0.5)`,
-                          fontSize:
-                            subtitleStylePreset === "impact" ? 32 : subtitleStylePreset === "soft_box" ? 26 : 28,
+                              : `0 0 ${Math.max(0.8, subtitleOutlineWidthPreview).toFixed(2)}px ${subtitleOutlineColor}, 0 4px 12px rgba(0,0,0,0.5)`,
+                          fontSize: subtitleFontSizePreview,
                         }}
                       >
                         {subtitleMode === "word_by_word" ? (
                           <div className="space-y-1">
-                            <div className="opacity-30">ПУТЕШЕСТВУЙ</div>
-                            <div className="scale-110 drop-shadow-lg">СВОБОДНО</div>
-                            <div className="opacity-30">ПО МИРУ</div>
+                            <div className="opacity-30">Путешествуй</div>
+                            <div className="scale-110 drop-shadow-lg">свободно</div>
+                            <div className="opacity-30">по миру</div>
                           </div>
                         ) : (
-                          <div>ПУТЕШЕСТВУЙ СВОБОДНО ПО МИРУ</div>
+                          <div>Путешествуй свободно по миру</div>
                         )}
                       </div>
                     </div>
