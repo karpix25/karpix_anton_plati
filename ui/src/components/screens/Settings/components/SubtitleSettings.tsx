@@ -9,8 +9,8 @@ import {
 } from "@/components/ui/select";
 import {
   buildGoogleFontsStylesheetUrl,
-  CUSTOM_SUBTITLE_FONT_SELECT_VALUE,
   DEFAULT_SUBTITLE_FONT_FAMILY,
+  buildGoogleFontFamilyList,
   isSubtitlePresetFontKey,
   normalizeSubtitleFontFamilyValue,
   resolveSubtitleFontFamilyName,
@@ -34,9 +34,6 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   subtitlePreviewScale,
 }) => {
   const ASS_PLAY_RES_Y = 1920;
-  const PREVIEW_PLAY_RES_X = 720;
-  const PREVIEW_PLAY_RES_Y = 1280;
-  const PREVIEW_SCALE_RATIO = PREVIEW_PLAY_RES_Y / ASS_PLAY_RES_Y;
 
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -55,6 +52,12 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   const subtitleOutlineColor = (draftSettings.subtitle_outline_color || "#000000").toUpperCase();
   const subtitleOutlineWidth = toSafeNumber(draftSettings.subtitle_outline_width, 4);
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
+  const [fontSearch, setFontSearch] = React.useState("");
+  const [fontCatalog, setFontCatalog] = React.useState<string[]>(() => buildGoogleFontFamilyList());
+  const [isFontCatalogLoading, setIsFontCatalogLoading] = React.useState(false);
+  const assToPreviewScale = Number.isFinite(subtitlePreviewScale) && subtitlePreviewScale > 0
+    ? subtitlePreviewScale
+    : 0.35;
   const presetMarginV = SUBTITLE_PRESET_DEFAULT_MARGIN_V[subtitleStylePreset] || 140;
   const presetMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[subtitleStylePreset] || 11;
   const explicitMarginPercent = Number(draftSettings.subtitle_margin_percent);
@@ -68,28 +71,77 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
     0,
     100
   );
-  const subtitleMarginV = Math.round((subtitleMarginPercent / 100) * PREVIEW_PLAY_RES_Y);
+  const subtitleMarginVAss = Math.round((subtitleMarginPercent / 100) * ASS_PLAY_RES_Y);
+  const subtitleMarginV = Math.round(subtitleMarginVAss * assToPreviewScale);
   const subtitleFontSizeAss =
     subtitleStylePreset === "impact" ? 42 : subtitleStylePreset === "soft_box" ? 36 : 38;
-  const subtitleFontSizePreview = Math.round(subtitleFontSizeAss * PREVIEW_SCALE_RATIO);
+  const subtitleFontSizePreview = subtitleFontSizeAss * assToPreviewScale;
   const subtitleOutlineWidthAss =
     subtitleStylePreset === "impact"
       ? clamp(Number(subtitleOutlineWidth || 3) + 1, 0, 8)
       : clamp(Number(subtitleOutlineWidth || 3), 0, 8);
-  const subtitleOutlineWidthPreview = Math.max(0, subtitleOutlineWidthAss * PREVIEW_SCALE_RATIO);
-  const subtitleSideMargin = Math.round((63 / 1080) * PREVIEW_PLAY_RES_X);
+  const subtitleOutlineWidthPreview = Math.max(0, subtitleOutlineWidthAss * assToPreviewScale);
+  const subtitleSideMargin = Math.round(63 * assToPreviewScale);
 
   const modePreview = SUBTITLE_MODE_OPTIONS[subtitleMode];
   const isPresetFont = isSubtitlePresetFontKey(subtitleFontFamily);
   const subtitleFontDisplayFamily = resolveSubtitleFontFamilyName(subtitleFontFamily);
+  const presetKeyByFamily = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [presetKey, font] of Object.entries(SUBTITLE_FONT_OPTIONS)) {
+      map.set(font.family.toLowerCase(), presetKey);
+    }
+    return map;
+  }, []);
   const fontPreview = isPresetFont
     ? SUBTITLE_FONT_OPTIONS[subtitleFontFamily]
     : {
         title: subtitleFontDisplayFamily,
         description: "Произвольный Google Font.",
       };
-  const selectFontValue = isPresetFont ? subtitleFontFamily : CUSTOM_SUBTITLE_FONT_SELECT_VALUE;
-  const customFontInputValue = isPresetFont ? "" : subtitleFontFamily;
+
+  const visibleFontOptions = React.useMemo(() => {
+    const normalizedQuery = normalizeSubtitleFontFamilyValue(fontSearch).toLowerCase();
+    const base = normalizedQuery
+      ? fontCatalog.filter((item) => item.toLowerCase().includes(normalizedQuery))
+      : fontCatalog;
+    const withSelected = base.includes(subtitleFontDisplayFamily)
+      ? base
+      : [subtitleFontDisplayFamily, ...base];
+    const maxCount = normalizedQuery ? 500 : 250;
+    return withSelected.slice(0, maxCount);
+  }, [fontCatalog, fontSearch, subtitleFontDisplayFamily]);
+
+  React.useEffect(() => {
+    let isCancelled = false;
+    const loadFontCatalog = async () => {
+      try {
+        setIsFontCatalogLoading(true);
+        const response = await fetch("/api/fonts/google", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`Font catalog request failed: ${response.status}`);
+        }
+        const payload = await response.json() as { fonts?: unknown };
+        const nextFonts = Array.isArray(payload.fonts)
+          ? payload.fonts.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+          : [];
+        if (!isCancelled && nextFonts.length) {
+          setFontCatalog(buildGoogleFontFamilyList(nextFonts));
+        }
+      } catch (error) {
+        console.warn("Failed to load Google font catalog in UI:", error);
+      } finally {
+        if (!isCancelled) {
+          setIsFontCatalogLoading(false);
+        }
+      }
+    };
+
+    void loadFontCatalog();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!subtitleFontDisplayFamily) return;
@@ -111,7 +163,7 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
             Субтитры
           </div>
           <p className="text-sm text-muted-foreground">
-            Вшиваются в финальный монтаж. Можно выбрать пресет или задать любое семейство из Google Fonts.
+            Вшиваются в финальный монтаж. Выбор шрифта идёт из каталога Google Fonts.
           </p>
         </div>
         <div className="flex items-center gap-6">
@@ -187,48 +239,43 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
 
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Поиск шрифта
+            </label>
+            <input
+              value={fontSearch}
+              onChange={(event) => setFontSearch(event.target.value)}
+              placeholder="Например: Inter, Playfair, Bebas"
+              className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/10"
+            />
+            <label className="pt-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               Шрифт (Google Fonts)
             </label>
             <Select
-              value={selectFontValue}
+              value={subtitleFontDisplayFamily}
               onValueChange={(value) => {
-                if (value === CUSTOM_SUBTITLE_FONT_SELECT_VALUE) {
-                  setDraftSettings((prev) => ({
-                    ...prev,
-                    subtitle_font_family: normalizeSubtitleFontFamilyValue(
-                      isPresetFont ? "Inter" : subtitleFontFamily
-                    ),
-                  }));
-                  return;
-                }
-                setDraftSettings((prev) => ({ ...prev, subtitle_font_family: value }));
+                const normalizedFamily = normalizeSubtitleFontFamilyValue(value);
+                const presetKey = presetKeyByFamily.get(normalizedFamily.toLowerCase());
+                setDraftSettings((prev) => ({
+                  ...prev,
+                  subtitle_font_family: presetKey || normalizedFamily,
+                }));
               }}
             >
               <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium focus:ring-2 focus:ring-primary/10">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
-                {Object.entries(SUBTITLE_FONT_OPTIONS).map(([fontKey, font]) => (
-                  <SelectItem key={fontKey} value={fontKey}>
-                    {font.title}
+              <SelectContent className="max-h-96">
+                {visibleFontOptions.map((fontFamily) => (
+                  <SelectItem key={fontFamily} value={fontFamily}>
+                    {fontFamily}
                   </SelectItem>
                 ))}
-                <SelectItem value={CUSTOM_SUBTITLE_FONT_SELECT_VALUE}>Custom Google Font</SelectItem>
               </SelectContent>
             </Select>
-            <input
-              value={customFontInputValue}
-              onChange={(event) =>
-                setDraftSettings((prev) => ({
-                  ...prev,
-                  subtitle_font_family: normalizeSubtitleFontFamilyValue(event.target.value),
-                }))
-              }
-              placeholder="Например: Inter, Bebas Neue, Playfair Display"
-              className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium text-foreground outline-none focus:ring-2 focus:ring-primary/10"
-            />
             <p className="text-[10px] text-slate-500">
-              Введите точное название семейства, как на Google Fonts.
+              {isFontCatalogLoading
+                ? "Загружаю каталог Google Fonts..."
+                : `Показано ${visibleFontOptions.length} шрифтов. Чтобы найти любой шрифт, введите его название в поиск.`}
             </p>
             <p className="text-[10px] text-slate-500">
               Активный шрифт: {fontPreview.title}
@@ -363,62 +410,52 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
            <div className="flex-1 flex flex-col rounded-2xl bg-[#0f172a] p-4 shadow-xl border border-slate-800">
               <div
                 ref={subtitlePreviewRef}
-                className="relative mx-auto aspect-[9/16] w-full max-w-[240px] overflow-hidden rounded-[2rem] border-4 border-slate-800/50 bg-[radial-gradient(circle_at_top,#2d3748_0%,#1a202c_48%,#0f172a_100%)] shadow-2xl"
+                className="relative mx-auto aspect-[9/16] w-full max-w-[420px] overflow-hidden rounded-[2rem] border-4 border-slate-800/50 bg-[radial-gradient(circle_at_top,#2d3748_0%,#1a202c_48%,#0f172a_100%)] shadow-2xl"
               >
-                <div
-                  className="absolute left-0 top-0"
-                  style={{
-                    width: 720,
-                    height: 1280,
-                    transform: `scale(${subtitlePreviewScale})`,
-                    transformOrigin: "top left",
-                  }}
-                >
-                  <div className="relative h-full w-full">
-                    {/* Placeholder for video content in preview */}
-                    <div className="absolute left-[96px] top-[96px] space-y-3">
-                      <div className="h-14 w-44 rounded-full bg-white/10" />
-                      <div className="h-8 w-64 rounded-full bg-white/10" />
-                    </div>
+                <div className="relative h-full w-full">
+                  {/* Placeholder for video content in preview */}
+                  <div className="absolute left-[13.3%] top-[7.5%] space-y-3">
+                    <div className="h-14 w-44 rounded-full bg-white/10" />
+                    <div className="h-8 w-64 rounded-full bg-white/10" />
+                  </div>
 
+                  <div
+                    className="absolute"
+                    style={{ left: subtitleSideMargin, right: subtitleSideMargin, bottom: subtitleMarginV }}
+                  >
+                    <div className="flex items-center gap-3 pb-4 text-[20px] font-bold uppercase tracking-[0.3em] text-white/40">
+                      <span className="inline-block h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+                      PREVIEW
+                    </div>
                     <div
-                      className="absolute"
-                      style={{ left: subtitleSideMargin, right: subtitleSideMargin, bottom: subtitleMarginV }}
+                      className={`mx-auto text-center leading-[1.05] tracking-tight ${
+                        subtitleStylePreset === "soft_box" ? "rounded-[32px] bg-black/50 px-12 py-10 backdrop-blur-sm" : ""
+                      }`}
+                      style={{
+                        color: subtitleFontColor,
+                        fontFamily: subtitleFontDisplayFamily,
+                        fontWeight: subtitleFontWeight,
+                        textTransform: subtitleStylePreset === "impact" ? "uppercase" : "none",
+                        WebkitTextStroke:
+                          subtitleStylePreset === "soft_box"
+                            ? undefined
+                            : `${subtitleOutlineWidthPreview.toFixed(2)}px ${subtitleOutlineColor}`,
+                        textShadow:
+                          subtitleStylePreset === "soft_box"
+                            ? "none"
+                            : `0 0 ${Math.max(0.8, subtitleOutlineWidthPreview).toFixed(2)}px ${subtitleOutlineColor}, 0 4px 12px rgba(0,0,0,0.5)`,
+                        fontSize: subtitleFontSizePreview,
+                      }}
                     >
-                      <div className="flex items-center gap-3 pb-4 text-[20px] font-bold uppercase tracking-[0.3em] text-white/40">
-                        <span className="inline-block h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                        PREVIEW
-                      </div>
-                      <div
-                        className={`mx-auto text-center leading-[1.05] tracking-tight ${
-                          subtitleStylePreset === "soft_box" ? "rounded-[32px] bg-black/50 px-12 py-10 backdrop-blur-sm" : ""
-                        }`}
-                        style={{
-                          color: subtitleFontColor,
-                          fontFamily: subtitleFontDisplayFamily,
-                          fontWeight: subtitleFontWeight,
-                          textTransform: subtitleStylePreset === "impact" ? "uppercase" : "none",
-                          WebkitTextStroke:
-                            subtitleStylePreset === "soft_box"
-                              ? undefined
-                              : `${subtitleOutlineWidthPreview.toFixed(2)}px ${subtitleOutlineColor}`,
-                          textShadow:
-                            subtitleStylePreset === "soft_box"
-                              ? "none"
-                              : `0 0 ${Math.max(0.8, subtitleOutlineWidthPreview).toFixed(2)}px ${subtitleOutlineColor}, 0 4px 12px rgba(0,0,0,0.5)`,
-                          fontSize: subtitleFontSizePreview,
-                        }}
-                      >
-                        {subtitleMode === "word_by_word" ? (
-                          <div className="space-y-1">
-                            <div className="opacity-30">Путешествуй</div>
-                            <div className="scale-110 drop-shadow-lg">свободно</div>
-                            <div className="opacity-30">по миру</div>
-                          </div>
-                        ) : (
-                          <div>Путешествуй свободно по миру</div>
-                        )}
-                      </div>
+                      {subtitleMode === "word_by_word" ? (
+                        <div className="space-y-1">
+                          <div className="opacity-30">Путешествуй</div>
+                          <div className="scale-110 drop-shadow-lg">свободно</div>
+                          <div className="opacity-30">по миру</div>
+                        </div>
+                      ) : (
+                        <div>Путешествуй свободно по миру</div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -434,7 +471,7 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
                  </p>
                  <div className="h-px bg-slate-800 w-1/4 mx-auto" />
                  <p className="text-[10px] text-slate-500 italic max-w-xs mx-auto">
-                    Превью показывает реальный масштаб для видео 1280px высотой
+                    Превью масштабируется от финального рендера 1080x1920, поэтому размер шрифта совпадает с монтажом
                  </p>
               </div>
            </div>

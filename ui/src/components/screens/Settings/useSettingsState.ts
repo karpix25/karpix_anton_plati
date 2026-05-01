@@ -111,7 +111,7 @@ export const useSettingsState = ({
   const [motionPromptRequestKey, setMotionPromptRequestKey] = useState<string | null>(null);
   const [optimizingCategory, setOptimizingCategory] = useState<"scenario" | "visual" | "video" | null>(null);
   const [isManualFinalRunPending, setIsManualFinalRunPending] = useState(false);
-  const [subtitlePreviewScale, setSubtitlePreviewScale] = useState(0.24);
+  const [subtitlePreviewScale, setSubtitlePreviewScale] = useState(0.35);
   const [lastSavedSettings, setLastSavedSettings] = useState<Settings | null>(null);
   const [lastSavedAvatars, setLastSavedAvatars] = useState<HeygenAvatarConfig[] | null>(null);
 
@@ -195,8 +195,8 @@ export const useSettingsState = ({
 
     const updateScale = () => {
       const height = node.clientHeight || 1;
-      const scale = height / 1280;
-      setSubtitlePreviewScale(Number.isFinite(scale) && scale > 0 ? scale : 0.24);
+      const scale = height / 1920;
+      setSubtitlePreviewScale(Number.isFinite(scale) && scale > 0 ? scale : 0.35);
     };
 
     updateScale();

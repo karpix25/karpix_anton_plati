@@ -45,7 +45,6 @@ export const SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT: Record<SubtitleStylePreset,
 };
 
 export const DEFAULT_SUBTITLE_FONT_FAMILY = "pt_sans";
-export const CUSTOM_SUBTITLE_FONT_SELECT_VALUE = "__custom_google_font__";
 
 export type SubtitlePresetFontKey =
   | "pt_sans"
@@ -108,6 +107,96 @@ export const SUBTITLE_FONT_OPTIONS: Record<
 };
 
 export const SYSTEM_SUBTITLE_FALLBACK_FAMILY = "DejaVu Sans";
+
+export const GOOGLE_FONT_FALLBACK_FAMILIES: string[] = [
+  "Inter",
+  "Roboto",
+  "Open Sans",
+  "Lato",
+  "Montserrat",
+  "Poppins",
+  "Oswald",
+  "Raleway",
+  "Nunito",
+  "Work Sans",
+  "Mukta",
+  "Rubik",
+  "PT Sans",
+  "Noto Sans",
+  "Noto Serif",
+  "Source Sans 3",
+  "Merriweather",
+  "Playfair Display",
+  "Bebas Neue",
+  "Manrope",
+  "Fira Sans",
+  "Ubuntu",
+  "M PLUS 1p",
+  "Barlow",
+  "Barlow Condensed",
+  "DM Sans",
+  "IBM Plex Sans",
+  "Exo 2",
+  "Titillium Web",
+  "Yanone Kaffeesatz",
+  "Arimo",
+  "Cabin",
+  "Heebo",
+  "Hind",
+  "Inconsolata",
+  "JetBrains Mono",
+  "Space Grotesk",
+  "Quicksand",
+  "Kanit",
+  "Prompt",
+  "Teko",
+  "Anton",
+  "Archivo",
+  "Asap",
+  "Asap Condensed",
+  "Bitter",
+  "Cairo",
+  "Comfortaa",
+  "Cormorant Garamond",
+  "Crimson Text",
+  "Dosis",
+  "EB Garamond",
+  "Figtree",
+  "Fraunces",
+  "Great Vibes",
+  "Josefin Sans",
+  "Karla",
+  "Libre Baskerville",
+  "Libre Franklin",
+  "Lora",
+  "Mulish",
+  "Nanum Gothic",
+  "Newsreader",
+  "Overpass",
+  "PT Serif",
+  "Plus Jakarta Sans",
+  "Public Sans",
+  "Righteous",
+  "Roboto Condensed",
+  "Roboto Slab",
+  "Sora",
+  "Tinos",
+  "Varela Round",
+  "Vollkorn",
+  "Zilla Slab",
+];
+
+export function buildGoogleFontFamilyList(extraFamilies: string[] = []) {
+  const presetFamilies = Object.values(SUBTITLE_FONT_OPTIONS).map((item) => item.family);
+  const unique = new Set<string>();
+
+  [...presetFamilies, ...GOOGLE_FONT_FALLBACK_FAMILIES, ...extraFamilies]
+    .map((item) => normalizeSubtitleFontFamilyValue(item))
+    .filter(Boolean)
+    .forEach((item) => unique.add(item));
+
+  return [...unique].sort((left, right) => left.localeCompare(right));
+}
 
 export function isSubtitlePresetFontKey(value: string | null | undefined): value is SubtitlePresetFontKey {
   if (!value) return false;
