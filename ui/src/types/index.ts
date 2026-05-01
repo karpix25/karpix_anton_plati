@@ -51,6 +51,7 @@ export interface Client {
   subtitle_style_preset?: "classic" | "impact" | "soft_box";
   subtitle_font_family?: string;
   subtitle_font_color?: string;
+  subtitle_font_size?: number;
   subtitle_font_weight?: 400 | 700;
   subtitle_outline_color?: string;
   subtitle_outline_width?: number;
@@ -196,6 +197,7 @@ export interface Settings {
   subtitle_style_preset: SubtitleStylePreset;
   subtitle_font_family: SubtitleFontFamily;
   subtitle_font_color: string;
+  subtitle_font_size: number;
   subtitle_font_weight: 400 | 700;
   subtitle_outline_color: string;
   subtitle_outline_width: number;

@@ -41,6 +41,7 @@ type ScenarioRow = {
   subtitle_style_preset: Settings["subtitle_style_preset"] | null;
   subtitle_font_family: Settings["subtitle_font_family"] | null;
   subtitle_font_color: string | null;
+  subtitle_font_size: number | null;
   subtitle_font_weight: Settings["subtitle_font_weight"] | null;
   subtitle_outline_color: string | null;
   subtitle_outline_width: number | null;
@@ -138,6 +139,7 @@ async function ensureMontageColumns() {
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_style_preset TEXT DEFAULT 'classic'",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_family TEXT DEFAULT 'pt_sans'",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_color TEXT DEFAULT '#FFFFFF'",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_size NUMERIC(5,1) DEFAULT 38.0",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_weight INTEGER DEFAULT 700",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_color TEXT DEFAULT '#111111'",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_width NUMERIC(4,1) DEFAULT 3.0",
@@ -250,6 +252,7 @@ async function getScenario(scenarioId: number) {
         c.subtitle_style_preset,
         c.subtitle_font_family,
         c.subtitle_font_color,
+        c.subtitle_font_size,
         c.subtitle_font_weight,
         c.subtitle_outline_color,
         c.subtitle_outline_width,
@@ -1195,6 +1198,7 @@ async function buildMontage(scenarioId: number) {
       subtitle_style_preset: scenario.subtitle_style_preset || "classic",
       subtitle_font_family: scenario.subtitle_font_family || "pt_sans",
       subtitle_font_color: scenario.subtitle_font_color || "#FFFFFF",
+      subtitle_font_size: Number(scenario.subtitle_font_size || 38),
       subtitle_font_weight: scenario.subtitle_font_weight || 700,
       subtitle_outline_color: scenario.subtitle_outline_color || "#111111",
       subtitle_outline_width: Number(scenario.subtitle_outline_width || 3),

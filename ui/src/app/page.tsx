@@ -232,6 +232,7 @@ export default function CuratorDashboard() {
       subtitle_style_preset: selectedClient?.subtitle_style_preset || "classic",
       subtitle_font_family: selectedClient?.subtitle_font_family || "pt_sans",
       subtitle_font_color: selectedClient?.subtitle_font_color || "#FFFFFF",
+      subtitle_font_size: Number(selectedClient?.subtitle_font_size ?? 38),
       subtitle_font_weight: selectedClient?.subtitle_font_weight || 700,
       subtitle_outline_color: selectedClient?.subtitle_outline_color || "#111111",
       subtitle_outline_width: selectedClient?.subtitle_outline_width || 3,

@@ -93,6 +93,7 @@ export const normalizeSettings = (settings: Settings): Settings => {
   const fallbackMarginPercent = SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT[fallbackPreset];
   const marginV = Number(settings.subtitle_margin_v);
   const marginPercent = Number(settings.subtitle_margin_percent);
+  const subtitleFontSize = Number(settings.subtitle_font_size);
   const silenceTrimMinSeconds = Number(settings.tts_silence_trim_min_duration_seconds);
   const silenceTrimThresholdDb = Number(settings.tts_silence_trim_threshold_db);
   const sentenceTrimMinGapSeconds = Number(settings.tts_sentence_trim_min_gap_seconds);
@@ -133,6 +134,8 @@ export const normalizeSettings = (settings: Settings): Settings => {
       Number.isFinite(marginV) && marginV > 0 ? marginV : fallbackMarginV,
     subtitle_margin_percent:
       Number.isFinite(marginPercent) && marginPercent >= 0 ? marginPercent : fallbackMarginPercent,
+    subtitle_font_size:
+      Number.isFinite(subtitleFontSize) ? Math.min(120, Math.max(18, subtitleFontSize)) : 38,
     tts_silence_trim_min_duration_seconds:
       Number.isFinite(silenceTrimMinSeconds) && silenceTrimMinSeconds >= 0 ? silenceTrimMinSeconds : 0.35,
     tts_silence_trim_threshold_db:

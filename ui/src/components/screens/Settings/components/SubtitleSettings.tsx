@@ -51,6 +51,7 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   const subtitleFontColor = (draftSettings.subtitle_font_color || "#FFFFFF").toUpperCase();
   const subtitleOutlineColor = (draftSettings.subtitle_outline_color || "#000000").toUpperCase();
   const subtitleOutlineWidth = toSafeNumber(draftSettings.subtitle_outline_width, 4);
+  const subtitleFontSizeAss = clamp(toSafeNumber(draftSettings.subtitle_font_size, 38), 18, 120);
   const subtitleFontWeight = draftSettings.subtitle_font_weight || 700;
   const [fontCatalog, setFontCatalog] = React.useState<string[]>(() => buildGoogleFontFamilyList());
   const [isFontCatalogLoading, setIsFontCatalogLoading] = React.useState(false);
@@ -72,8 +73,6 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
   );
   const subtitleMarginVAss = Math.round((subtitleMarginPercent / 100) * ASS_PLAY_RES_Y);
   const subtitleMarginV = Math.round(subtitleMarginVAss * assToPreviewScale);
-  const subtitleFontSizeAss =
-    subtitleStylePreset === "impact" ? 42 : subtitleStylePreset === "soft_box" ? 36 : 38;
   const subtitleFontSizePreview = subtitleFontSizeAss * assToPreviewScale;
   const subtitleOutlineWidthAss =
     subtitleStylePreset === "impact"
@@ -105,6 +104,15 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
     }
     return [subtitleFontDisplayFamily, ...fontCatalog];
   }, [fontCatalog, subtitleFontDisplayFamily]);
+
+  const applySelectedFontFamily = (fontFamily: string) => {
+    const normalizedFamily = normalizeSubtitleFontFamilyValue(fontFamily);
+    const presetKey = presetKeyByFamily.get(normalizedFamily.toLowerCase());
+    setDraftSettings((prev) => ({
+      ...prev,
+      subtitle_font_family: presetKey || normalizedFamily,
+    }));
+  };
 
   React.useEffect(() => {
     let isCancelled = false;
@@ -235,43 +243,35 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               Шрифт (Google Fonts)
             </label>
-            <div className="max-h-72 overflow-y-auto rounded-xl bg-[#f0f4f7] p-2">
-              <div className="space-y-1">
-                {visibleFontOptions.map((fontFamily) => {
-                  const isActive = subtitleFontDisplayFamily === fontFamily;
-                  return (
-                    <button
-                      key={fontFamily}
-                      type="button"
-                      onClick={() => {
-                        const normalizedFamily = normalizeSubtitleFontFamilyValue(fontFamily);
-                        const presetKey = presetKeyByFamily.get(normalizedFamily.toLowerCase());
-                        setDraftSettings((prev) => ({
-                          ...prev,
-                          subtitle_font_family: presetKey || normalizedFamily,
-                        }));
-                      }}
-                      className={`w-full rounded-lg px-3 py-2 text-left text-sm transition ${
-                        isActive
-                          ? "bg-white font-semibold text-primary shadow-sm"
-                          : "bg-transparent text-foreground hover:bg-white/80"
-                      }`}
-                      style={{ fontFamily }}
-                    >
-                      {fontFamily}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <Select
+              value={subtitleFontDisplayFamily}
+              onValueChange={applySelectedFontFamily}
+            >
+              <SelectTrigger className="h-11 w-full rounded-xl border-none bg-[#f0f4f7] px-4 text-sm font-medium focus:ring-2 focus:ring-primary/10">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-96">
+                {visibleFontOptions.map((fontFamily) => (
+                  <SelectItem key={fontFamily} value={fontFamily}>
+                    <span style={{ fontFamily }}>{fontFamily}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-[10px] text-slate-500">
               {isFontCatalogLoading
                 ? "Загружаю каталог Google Fonts..."
-                : `Показано ${visibleFontOptions.length} шрифтов. Нажимайте по шрифтам и сразу смотрите превью.`}
+                : `Доступно ${visibleFontOptions.length} шрифтов. Откройте список и выберите нужный.`}
             </p>
             <p className="text-[10px] text-slate-500">
               Активный шрифт: {fontPreview.title}
             </p>
+            <div
+              className="rounded-lg bg-[#f0f4f7] px-3 py-2 text-sm text-foreground"
+              style={{ fontFamily: subtitleFontDisplayFamily }}
+            >
+              Пример: Путешествуй свободно по миру
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -327,21 +327,21 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-             <div className="space-y-4">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Толщина</div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Размер шрифта</div>
                 <div className="text-[11px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full">
-                  {subtitleOutlineWidth.toFixed(1)} px
+                  {subtitleFontSizeAss.toFixed(0)} px
                 </div>
               </div>
               <input
                 type="range"
-                min={0}
-                max={8}
-                step={0.5}
-                value={subtitleOutlineWidth}
+                min={18}
+                max={120}
+                step={1}
+                value={subtitleFontSizeAss}
                 onChange={(event) =>
-                  setDraftSettings((prev) => ({ ...prev, subtitle_outline_width: Number(event.target.value) }))
+                  setDraftSettings((prev) => ({ ...prev, subtitle_font_size: Number(event.target.value) }))
                 }
                 className="w-full accent-primary"
               />
@@ -369,6 +369,29 @@ export const SubtitleSettings: React.FC<SubtitleSettingsProps> = ({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+             <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Толщина</div>
+                <div className="text-[11px] font-bold text-primary bg-primary/5 px-2 py-0.5 rounded-full">
+                  {subtitleOutlineWidth.toFixed(1)} px
+                </div>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={8}
+                step={0.5}
+                value={subtitleOutlineWidth}
+                onChange={(event) =>
+                  setDraftSettings((prev) => ({ ...prev, subtitle_outline_width: Number(event.target.value) }))
+                }
+                className="w-full accent-primary"
+              />
+            </div>
+            <div />
           </div>
 
           <div className="space-y-4">

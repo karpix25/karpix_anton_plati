@@ -115,6 +115,7 @@ async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_style_preset TEXT DEFAULT 'classic'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_family TEXT DEFAULT 'pt_sans'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_color TEXT DEFAULT '#FFFFFF'");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_size NUMERIC(5,1) DEFAULT 38.0");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_font_weight INTEGER DEFAULT 700");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_color TEXT DEFAULT '#111111'");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_width NUMERIC(4,1) DEFAULT 3.0");
@@ -311,6 +312,7 @@ export async function POST(request: Request) {
       subtitle_style_preset,
       subtitle_font_family,
       subtitle_font_color,
+      subtitle_font_size,
       subtitle_font_weight,
       subtitle_outline_color,
       subtitle_outline_width,
@@ -357,7 +359,7 @@ export async function POST(request: Request) {
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
     const { rows } = await pool.query(
-      'INSERT INTO clients (name, niche, product_info, brand_voice, target_audience, auto_generate, monthly_limit, target_duration_seconds, target_duration_min_seconds, target_duration_max_seconds, broll_interval_seconds, broll_timing_mode, broll_pacing_profile, broll_pause_threshold_seconds, broll_coverage_percent, broll_semantic_relevance_priority, broll_product_clip_policy, broll_generator_model, product_media_assets, product_keyword, product_video_url, tts_provider, tts_voice_id, elevenlabs_voice_id, tts_silence_trim_min_duration_seconds, tts_silence_trim_threshold_db, tts_silence_trim_enabled, tts_sentence_trim_enabled, tts_sentence_trim_min_gap_seconds, tts_sentence_trim_keep_gap_seconds, subtitles_enabled, subtitle_mode, subtitle_style_preset, subtitle_font_family, subtitle_font_color, subtitle_font_weight, subtitle_outline_color, subtitle_outline_width, subtitle_margin_v, subtitle_margin_percent, auto_generate_final_videos, daily_final_video_limit, monthly_final_video_limit, typography_hook_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44) RETURNING *',
+      'INSERT INTO clients (name, niche, product_info, brand_voice, target_audience, auto_generate, monthly_limit, target_duration_seconds, target_duration_min_seconds, target_duration_max_seconds, broll_interval_seconds, broll_timing_mode, broll_pacing_profile, broll_pause_threshold_seconds, broll_coverage_percent, broll_semantic_relevance_priority, broll_product_clip_policy, broll_generator_model, product_media_assets, product_keyword, product_video_url, tts_provider, tts_voice_id, elevenlabs_voice_id, tts_silence_trim_min_duration_seconds, tts_silence_trim_threshold_db, tts_silence_trim_enabled, tts_sentence_trim_enabled, tts_sentence_trim_min_gap_seconds, tts_sentence_trim_keep_gap_seconds, subtitles_enabled, subtitle_mode, subtitle_style_preset, subtitle_font_family, subtitle_font_color, subtitle_font_size, subtitle_font_weight, subtitle_outline_color, subtitle_outline_width, subtitle_margin_v, subtitle_margin_percent, auto_generate_final_videos, daily_final_video_limit, monthly_final_video_limit, typography_hook_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45) RETURNING *',
       [
         name,
         niche,
@@ -394,6 +396,7 @@ export async function POST(request: Request) {
         subtitle_style_preset || 'classic',
         subtitle_font_family || 'pt_sans',
         subtitle_font_color || '#FFFFFF',
+        Math.min(120, Math.max(18, Number(subtitle_font_size || 38))),
         Number(subtitle_font_weight) === 400 ? 400 : 700,
         subtitle_outline_color || '#111111',
         Math.max(0, Number(subtitle_outline_width || 3)),
@@ -473,6 +476,7 @@ export async function PUT(request: Request) {
       subtitle_style_preset,
       subtitle_font_family,
       subtitle_font_color,
+      subtitle_font_size,
       subtitle_font_weight,
       subtitle_outline_color,
       subtitle_outline_width,
@@ -519,7 +523,7 @@ export async function PUT(request: Request) {
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
     const { rows } = await pool.query(
-      'UPDATE clients SET brand_voice = $1, product_info = $2, target_audience = $3, auto_generate = $4, monthly_limit = $5, target_duration_seconds = $6, target_duration_min_seconds = $7, target_duration_max_seconds = $8, broll_interval_seconds = $9, broll_timing_mode = $10, broll_pacing_profile = $11, broll_pause_threshold_seconds = $12, broll_coverage_percent = $13, broll_semantic_relevance_priority = $14, broll_product_clip_policy = $15, broll_generator_model = $16, product_media_assets = $17::jsonb, product_keyword = $18, product_video_url = $19, tts_provider = $20, tts_voice_id = $21, elevenlabs_voice_id = $22, tts_silence_trim_min_duration_seconds = $23, tts_silence_trim_threshold_db = $24, tts_silence_trim_enabled = $25, tts_sentence_trim_enabled = $26, tts_sentence_trim_min_gap_seconds = $27, tts_sentence_trim_keep_gap_seconds = $28, subtitles_enabled = $29, subtitle_mode = $30, subtitle_style_preset = $31, subtitle_font_family = $32, subtitle_font_color = $33, subtitle_font_weight = $34, subtitle_outline_color = $35, subtitle_outline_width = $36, subtitle_margin_v = $37, subtitle_margin_percent = $38, auto_generate_final_videos = $39, daily_final_video_limit = $40, monthly_final_video_limit = $41, typography_hook_enabled = $42 WHERE id = $43 RETURNING *',
+      'UPDATE clients SET brand_voice = $1, product_info = $2, target_audience = $3, auto_generate = $4, monthly_limit = $5, target_duration_seconds = $6, target_duration_min_seconds = $7, target_duration_max_seconds = $8, broll_interval_seconds = $9, broll_timing_mode = $10, broll_pacing_profile = $11, broll_pause_threshold_seconds = $12, broll_coverage_percent = $13, broll_semantic_relevance_priority = $14, broll_product_clip_policy = $15, broll_generator_model = $16, product_media_assets = $17::jsonb, product_keyword = $18, product_video_url = $19, tts_provider = $20, tts_voice_id = $21, elevenlabs_voice_id = $22, tts_silence_trim_min_duration_seconds = $23, tts_silence_trim_threshold_db = $24, tts_silence_trim_enabled = $25, tts_sentence_trim_enabled = $26, tts_sentence_trim_min_gap_seconds = $27, tts_sentence_trim_keep_gap_seconds = $28, subtitles_enabled = $29, subtitle_mode = $30, subtitle_style_preset = $31, subtitle_font_family = $32, subtitle_font_color = $33, subtitle_font_size = $34, subtitle_font_weight = $35, subtitle_outline_color = $36, subtitle_outline_width = $37, subtitle_margin_v = $38, subtitle_margin_percent = $39, auto_generate_final_videos = $40, daily_final_video_limit = $41, monthly_final_video_limit = $42, typography_hook_enabled = $43 WHERE id = $44 RETURNING *',
       [
         brand_voice,
         product_info,
@@ -554,6 +558,7 @@ export async function PUT(request: Request) {
         subtitle_style_preset || 'classic',
         subtitle_font_family || 'pt_sans',
         subtitle_font_color || '#FFFFFF',
+        Math.min(120, Math.max(18, Number(subtitle_font_size || 38))),
         Number(subtitle_font_weight) === 400 ? 400 : 700,
         subtitle_outline_color || '#111111',
         Math.max(0, Number(subtitle_outline_width || 3)),

@@ -24,6 +24,7 @@ type SubtitleRenderSettings = Pick<
   | "subtitle_style_preset"
   | "subtitle_font_family"
   | "subtitle_font_color"
+  | "subtitle_font_size"
   | "subtitle_font_weight"
   | "subtitle_outline_color"
   | "subtitle_outline_width"
@@ -45,6 +46,7 @@ const DEFAULT_SUBTITLE_SETTINGS: SubtitleRenderSettings = {
   subtitle_style_preset: "classic",
   subtitle_font_family: DEFAULT_SUBTITLE_FONT_FAMILY,
   subtitle_font_color: "#FFFFFF",
+  subtitle_font_size: 38,
   subtitle_font_weight: 700,
   subtitle_outline_color: "#111111",
   subtitle_outline_width: 3,
@@ -332,7 +334,8 @@ function buildAssContent(events: SubtitleEvent[], fontFamily: string, settings: 
   const backColour =
     settings.subtitle_style_preset === "soft_box" ? hexToAssColor("#000000", "7A") : hexToAssColor("#000000", "FF");
   const borderStyle = settings.subtitle_style_preset === "soft_box" ? 3 : 1;
-  const fontSize = settings.subtitle_style_preset === "impact" ? 42 : settings.subtitle_style_preset === "soft_box" ? 36 : 38;
+  const presetFontSize = settings.subtitle_style_preset === "impact" ? 42 : settings.subtitle_style_preset === "soft_box" ? 36 : 38;
+  const fontSize = clamp(Number(settings.subtitle_font_size || presetFontSize), 18, 120);
   const outline = settings.subtitle_style_preset === "impact"
     ? clamp(Number(settings.subtitle_outline_width || 3) + 1, 0, 8)
     : clamp(Number(settings.subtitle_outline_width || 3), 0, 8);
@@ -636,6 +639,7 @@ export async function materializeSubtitleTrack(options: {
       options.settings?.subtitle_font_family || DEFAULT_SUBTITLE_SETTINGS.subtitle_font_family
     ),
     subtitle_font_color: normalizeHexColor(options.settings?.subtitle_font_color, DEFAULT_SUBTITLE_SETTINGS.subtitle_font_color),
+    subtitle_font_size: clamp(Number(options.settings?.subtitle_font_size || DEFAULT_SUBTITLE_SETTINGS.subtitle_font_size), 18, 120),
     subtitle_outline_color: normalizeHexColor(options.settings?.subtitle_outline_color, DEFAULT_SUBTITLE_SETTINGS.subtitle_outline_color),
     subtitle_font_weight: Number(options.settings?.subtitle_font_weight) === 400 ? 400 : 700,
     subtitle_outline_width: clamp(Number(options.settings?.subtitle_outline_width || DEFAULT_SUBTITLE_SETTINGS.subtitle_outline_width), 0, 8),
