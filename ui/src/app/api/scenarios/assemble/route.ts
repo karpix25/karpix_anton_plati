@@ -35,6 +35,7 @@ type ScenarioRow = {
   heygen_avatar_name: string | null;
   resolved_avatar_name: string | null;
   client_name: string | null;
+  yandex_disk_folder_path: string | null;
   background_audio_tag: BackgroundAudioTag | null;
   subtitles_enabled: boolean | null;
   subtitle_mode: Settings["subtitle_mode"] | null;
@@ -146,6 +147,7 @@ async function ensureMontageColumns() {
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_v INTEGER DEFAULT 140",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_percent INTEGER DEFAULT 11",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS typography_hook_enabled BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS yandex_disk_folder_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_video_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_status TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_error TEXT",
@@ -261,6 +263,7 @@ async function getScenario(scenarioId: number) {
         gs.heygen_avatar_name,
         a.avatar_name AS resolved_avatar_name,
         c.name as client_name,
+        c.yandex_disk_folder_path,
         gs.background_audio_tag,
         gs.video_generation_prompts,
         c.subtitles_enabled,
@@ -1380,6 +1383,7 @@ async function buildMontage(scenarioId: number) {
       scenario.heygen_avatar_id ||
       `avatar-${scenarioId}`,
     clientName: scenario.client_name,
+    yandexDiskFolderPath: scenario.yandex_disk_folder_path,
     backgroundAudioName: backgroundAudioTrack.name,
     backgroundAudioPath: backgroundAudioTrack.diskPath,
   };
@@ -1440,7 +1444,7 @@ export async function POST(request: Request) {
       [resolvedScenarioId]
     );
 
-    const { outputPath, avatarName, clientName, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
+    const { outputPath, avatarName, clientName, yandexDiskFolderPath, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
 
     let yandexDiskPath: string | null = null;
     let yandexPublicUrl: string | null = null;
@@ -1463,6 +1467,7 @@ export async function POST(request: Request) {
           avatarFolderName: avatarName,
           projectName: clientName || "Unknown Project",
           fileName: `scenario_${resolvedScenarioId}.mp4`,
+          projectFolderPath: yandexDiskFolderPath,
         });
         yandexDiskPath = upload.filePath;
         yandexPublicUrl = upload.publicUrl;

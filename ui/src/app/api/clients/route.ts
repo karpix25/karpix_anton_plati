@@ -127,6 +127,7 @@ async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_project_started_job_count INTEGER DEFAULT 0");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stopped_at TIMESTAMP");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stop_reason TEXT");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS yandex_disk_folder_path TEXT");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_min_seconds INTEGER DEFAULT 50");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_max_seconds INTEGER DEFAULT 50");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_timing_mode TEXT DEFAULT 'coverage_percent'");
@@ -384,6 +385,7 @@ export async function POST(request: Request) {
       auto_generate_final_videos,
       daily_final_video_limit,
       monthly_final_video_limit,
+      yandex_disk_folder_path,
       typography_hook_enabled,
     } = await request.json();
     const resolvedTargetDurationMinSeconds = Math.max(
@@ -421,8 +423,12 @@ export async function POST(request: Request) {
     );
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
+    const normalizedYandexDiskFolderPath =
+      typeof yandex_disk_folder_path === "string" && yandex_disk_folder_path.trim()
+        ? yandex_disk_folder_path.trim()
+        : null;
     const { rows } = await pool.query(
-      'INSERT INTO clients (name, niche, product_info, brand_voice, target_audience, auto_generate, monthly_limit, target_duration_seconds, target_duration_min_seconds, target_duration_max_seconds, broll_interval_seconds, broll_timing_mode, broll_pacing_profile, broll_pause_threshold_seconds, broll_coverage_percent, broll_semantic_relevance_priority, broll_product_clip_policy, broll_generator_model, product_media_assets, product_keyword, product_video_url, tts_provider, tts_voice_id, elevenlabs_voice_id, tts_silence_trim_min_duration_seconds, tts_silence_trim_threshold_db, tts_silence_trim_enabled, tts_sentence_trim_enabled, tts_sentence_trim_min_gap_seconds, tts_sentence_trim_keep_gap_seconds, subtitles_enabled, subtitle_mode, subtitle_style_preset, subtitle_font_family, subtitle_font_color, subtitle_font_size, subtitle_font_weight, subtitle_outline_color, subtitle_outline_width, subtitle_margin_v, subtitle_margin_percent, auto_generate_final_videos, daily_final_video_limit, monthly_final_video_limit, typography_hook_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45) RETURNING *',
+      'INSERT INTO clients (name, niche, product_info, brand_voice, target_audience, auto_generate, monthly_limit, target_duration_seconds, target_duration_min_seconds, target_duration_max_seconds, broll_interval_seconds, broll_timing_mode, broll_pacing_profile, broll_pause_threshold_seconds, broll_coverage_percent, broll_semantic_relevance_priority, broll_product_clip_policy, broll_generator_model, product_media_assets, product_keyword, product_video_url, tts_provider, tts_voice_id, elevenlabs_voice_id, tts_silence_trim_min_duration_seconds, tts_silence_trim_threshold_db, tts_silence_trim_enabled, tts_sentence_trim_enabled, tts_sentence_trim_min_gap_seconds, tts_sentence_trim_keep_gap_seconds, subtitles_enabled, subtitle_mode, subtitle_style_preset, subtitle_font_family, subtitle_font_color, subtitle_font_size, subtitle_font_weight, subtitle_outline_color, subtitle_outline_width, subtitle_margin_v, subtitle_margin_percent, auto_generate_final_videos, daily_final_video_limit, monthly_final_video_limit, yandex_disk_folder_path, typography_hook_enabled) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46) RETURNING *',
       [
         name,
         niche,
@@ -468,6 +474,7 @@ export async function POST(request: Request) {
         auto_generate_final_videos || false,
         resolvedDailyLimit,
         resolvedMonthlyLimit,
+        normalizedYandexDiskFolderPath,
         typography_hook_enabled || false,
       ]
     );
@@ -548,6 +555,7 @@ export async function PUT(request: Request) {
       auto_generate_final_videos,
       daily_final_video_limit,
       monthly_final_video_limit,
+      yandex_disk_folder_path,
       typography_hook_enabled,
     } = await request.json();
     const resolvedTargetDurationMinSeconds = Math.max(
@@ -586,8 +594,12 @@ export async function PUT(request: Request) {
     const previousAutomationState = await getFinalVideoAutomationState(Number(id));
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
+    const normalizedYandexDiskFolderPath =
+      typeof yandex_disk_folder_path === "string" && yandex_disk_folder_path.trim()
+        ? yandex_disk_folder_path.trim()
+        : null;
     const { rows } = await pool.query(
-      'UPDATE clients SET brand_voice = $1, product_info = $2, target_audience = $3, auto_generate = $4, monthly_limit = $5, target_duration_seconds = $6, target_duration_min_seconds = $7, target_duration_max_seconds = $8, broll_interval_seconds = $9, broll_timing_mode = $10, broll_pacing_profile = $11, broll_pause_threshold_seconds = $12, broll_coverage_percent = $13, broll_semantic_relevance_priority = $14, broll_product_clip_policy = $15, broll_generator_model = $16, product_media_assets = $17::jsonb, product_keyword = $18, product_video_url = $19, tts_provider = $20, tts_voice_id = $21, elevenlabs_voice_id = $22, tts_silence_trim_min_duration_seconds = $23, tts_silence_trim_threshold_db = $24, tts_silence_trim_enabled = $25, tts_sentence_trim_enabled = $26, tts_sentence_trim_min_gap_seconds = $27, tts_sentence_trim_keep_gap_seconds = $28, subtitles_enabled = $29, subtitle_mode = $30, subtitle_style_preset = $31, subtitle_font_family = $32, subtitle_font_color = $33, subtitle_font_size = $34, subtitle_font_weight = $35, subtitle_outline_color = $36, subtitle_outline_width = $37, subtitle_margin_v = $38, subtitle_margin_percent = $39, auto_generate_final_videos = $40, daily_final_video_limit = $41, monthly_final_video_limit = $42, typography_hook_enabled = $43 WHERE id = $44 RETURNING *',
+      'UPDATE clients SET brand_voice = $1, product_info = $2, target_audience = $3, auto_generate = $4, monthly_limit = $5, target_duration_seconds = $6, target_duration_min_seconds = $7, target_duration_max_seconds = $8, broll_interval_seconds = $9, broll_timing_mode = $10, broll_pacing_profile = $11, broll_pause_threshold_seconds = $12, broll_coverage_percent = $13, broll_semantic_relevance_priority = $14, broll_product_clip_policy = $15, broll_generator_model = $16, product_media_assets = $17::jsonb, product_keyword = $18, product_video_url = $19, tts_provider = $20, tts_voice_id = $21, elevenlabs_voice_id = $22, tts_silence_trim_min_duration_seconds = $23, tts_silence_trim_threshold_db = $24, tts_silence_trim_enabled = $25, tts_sentence_trim_enabled = $26, tts_sentence_trim_min_gap_seconds = $27, tts_sentence_trim_keep_gap_seconds = $28, subtitles_enabled = $29, subtitle_mode = $30, subtitle_style_preset = $31, subtitle_font_family = $32, subtitle_font_color = $33, subtitle_font_size = $34, subtitle_font_weight = $35, subtitle_outline_color = $36, subtitle_outline_width = $37, subtitle_margin_v = $38, subtitle_margin_percent = $39, auto_generate_final_videos = $40, daily_final_video_limit = $41, monthly_final_video_limit = $42, yandex_disk_folder_path = $43, typography_hook_enabled = $44 WHERE id = $45 RETURNING *',
       [
         brand_voice,
         product_info,
@@ -631,6 +643,7 @@ export async function PUT(request: Request) {
         auto_generate_final_videos || false,
         resolvedDailyLimit,
         resolvedMonthlyLimit,
+        normalizedYandexDiskFolderPath,
         typography_hook_enabled || false,
         id,
       ]

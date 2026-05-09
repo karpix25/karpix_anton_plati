@@ -49,6 +49,7 @@ export const defaultSettings: ClientSettings = {
   subtitle_margin_percent: 11,
   auto_generate_final_videos: false,
   daily_final_video_limit: 3,
+  yandex_disk_folder_path: "",
   daily_final_video_count: 0,
   monthly_final_video_limit: 30,
   monthly_final_video_count: 0,

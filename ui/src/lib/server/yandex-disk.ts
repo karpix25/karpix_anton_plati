@@ -26,6 +26,12 @@ type ResourceMetaPayload = {
   };
 };
 
+export type YandexDiskFolderNode = {
+  name: string;
+  path: string;
+  children: YandexDiskFolderNode[];
+};
+
 function getAccessToken() {
   const token =
     process.env.YANDEX_DISK_OAUTH_TOKEN ||
@@ -61,6 +67,25 @@ function toDiskPath(...segments: string[]) {
   return `disk:/${cleaned.join("/")}`;
 }
 
+function normalizeCustomFolderPath(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  const withoutPrefix = raw.replace(/^disk:\/*/i, "").replace(/^\/+/, "");
+  const cleaned = withoutPrefix
+    .split("/")
+    .map((segment) => sanitizeFolderName(segment))
+    .filter(Boolean);
+
+  return cleaned.length ? `disk:/${cleaned.join("/")}` : null;
+}
+
+function getDiskFolderAncestors(diskPath: string) {
+  const withoutPrefix = diskPath.replace(/^disk:\/*/i, "");
+  const segments = withoutPrefix.split("/").filter(Boolean);
+  return segments.map((_, index) => `disk:/${segments.slice(0, index + 1).join("/")}`);
+}
+
 async function yandexRequest(pathname: string, init: RequestInit = {}) {
   const token = getAccessToken();
   if (!token) {
@@ -90,6 +115,12 @@ async function ensureFolderExists(diskPath: string) {
 
   const message = await response.text();
   throw new Error(`Yandex Disk folder create failed for ${diskPath}: ${message}`);
+}
+
+async function ensureFolderTreeExists(diskPath: string) {
+  for (const folderPath of getDiskFolderAncestors(diskPath)) {
+    await ensureFolderExists(folderPath);
+  }
 }
 
 async function getUploadHref(diskPath: string) {
@@ -126,6 +157,59 @@ async function getDownloadHref(diskPath: string) {
   }
 
   return payload.href;
+}
+
+async function listFolderChildren(diskPath: string) {
+  const items: Array<{ name: string; path: string; type?: string }> = [];
+  const limit = 200;
+  let offset = 0;
+
+  while (true) {
+    const response = await yandexRequest(
+      `/resources?path=${encodeURIComponent(diskPath)}&limit=${limit}&offset=${offset}&fields=_embedded.items.name,_embedded.items.path,_embedded.items.type`
+    );
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Yandex Disk folder read failed for ${diskPath}: ${message}`);
+    }
+
+    const payload = (await response.json()) as ResourceMetaPayload;
+    const pageItems = payload._embedded?.items || [];
+    items.push(
+      ...pageItems
+        .filter((item) => item.type === "dir" && item.name && item.path)
+        .map((item) => ({ name: item.name!, path: item.path!, type: item.type }))
+    );
+
+    if (pageItems.length < limit) break;
+    offset += limit;
+  }
+
+  return items.sort((left, right) => left.name.localeCompare(right.name, "ru"));
+}
+
+async function readFolderTree(diskPath: string, depth: number, maxDepth: number): Promise<YandexDiskFolderNode[]> {
+  if (depth >= maxDepth) return [];
+
+  const folders = await listFolderChildren(diskPath);
+  return Promise.all(
+    folders.map(async (folder) => ({
+      name: folder.name,
+      path: folder.path,
+      children: await readFolderTree(folder.path, depth + 1, maxDepth),
+    }))
+  );
+}
+
+export async function getAutomationVideoFolderTree(maxDepth = 8): Promise<YandexDiskFolderNode> {
+  const rootPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER);
+  const meta = await getResourceMeta(rootPath);
+  return {
+    name: meta.name || ROOT_AUTOMATION_FOLDER,
+    path: meta.path || rootPath,
+    children: await readFolderTree(meta.path || rootPath, 0, maxDepth),
+  };
 }
 
 async function publishResource(diskPath: string) {
@@ -237,20 +321,24 @@ export async function uploadFinalVideoToYandexDisk(params: {
   avatarFolderName: string;
   projectName: string;
   fileName: string;
+  projectFolderPath?: string | null;
 }) {
   const avatarFolder = sanitizeFolderName(params.avatarFolderName) || "Unknown avatar";
   const projectFolder = sanitizeFolderName(params.projectName) || "Unknown project";
   const avatarProjectFolder = sanitizeFolderName(`${avatarFolder}_${projectFolder}`) || `${avatarFolder}_${projectFolder}`;
+  const customProjectPath = normalizeCustomFolderPath(params.projectFolderPath);
   
   const rootPath = toDiskPath(ROOT_VIDEO_FOLDER);
   const automationPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER);
-  const projectPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarProjectFolder);
-  const avatarGroupPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarProjectFolder, avatarFolder);
+  const projectPath = customProjectPath || toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarProjectFolder);
+  const avatarGroupPath = customProjectPath || `${projectPath}/${sanitizeFolderName(avatarFolder) || "Unknown avatar"}`;
   const filePath = `${avatarGroupPath}/${sanitizeFileName(params.fileName)}`;
 
-  await ensureFolderExists(rootPath);
-  await ensureFolderExists(automationPath);
-  await ensureFolderExists(projectPath);
+  if (!customProjectPath) {
+    await ensureFolderExists(rootPath);
+    await ensureFolderExists(automationPath);
+  }
+  await ensureFolderTreeExists(projectPath);
   await ensureFolderExists(avatarGroupPath);
 
   const uploadHref = await getUploadHref(filePath);
