@@ -130,6 +130,7 @@ export const normalizeSettings = (settings: Settings): Settings => {
   return {
     ...settings,
     product_media_assets: normalizeProductMediaAssets(settings.product_media_assets),
+    yandex_disk_folder_path: safeTrim(settings.yandex_disk_folder_path),
     subtitle_margin_v:
       Number.isFinite(marginV) && marginV > 0 ? marginV : fallbackMarginV,
     subtitle_margin_percent:

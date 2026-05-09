@@ -59,6 +59,7 @@ export interface Client {
   subtitle_margin_percent?: number;
   auto_generate_final_videos?: boolean;
   daily_final_video_limit?: number;
+  yandex_disk_folder_path?: string | null;
   daily_final_video_count?: number;
   monthly_final_video_limit?: number;
   monthly_final_video_count?: number;
@@ -205,6 +206,7 @@ export interface Settings {
   subtitle_margin_percent: number;
   auto_generate_final_videos: boolean;
   daily_final_video_limit: number;
+  yandex_disk_folder_path: string;
   daily_final_video_count: number;
   monthly_final_video_limit: number;
   monthly_final_video_count: number;

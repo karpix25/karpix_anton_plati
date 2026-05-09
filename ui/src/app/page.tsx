@@ -241,6 +241,7 @@ export default function CuratorDashboard() {
         ?? Math.round(((selectedClient?.subtitle_margin_v || 140) / 1920) * 100),
       auto_generate_final_videos: selectedClient?.auto_generate_final_videos || false,
       daily_final_video_limit: selectedClient?.daily_final_video_limit || 3,
+      yandex_disk_folder_path: selectedClient?.yandex_disk_folder_path || "",
       daily_final_video_count: selectedClient?.daily_final_video_count || 0,
       monthly_final_video_limit: selectedClient?.monthly_final_video_limit || 30,
       monthly_final_video_count: selectedClient?.monthly_final_video_count || 0,
