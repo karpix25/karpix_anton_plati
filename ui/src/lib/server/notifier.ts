@@ -3,12 +3,18 @@ import pool from "@/lib/db";
 const PAYMENT_ERROR_PATTERNS = [
   /payment_required/i,
   /paid_plan_required/i,
+  /billing/i,
+  /balance/i,
+  /credit/i,
+  /quota/i,
+  /resource[_\s-]*exhausted/i,
   /insufficient\s+(funds|balance|credits?)/i,
   /credits?\s+insufficient/i,
   /not\s+enough\s+(credit|balance|credits?)/i,
-  /quota\s+exceeded/i,
+  /(quota|limit)\s+exceeded/i,
   /out\s+of\s+credits?/i,
   /credits?\s+exhausted/i,
+  /(recharge|top[\s-]*up|prepaid)/i,
   /subscription|plan\s+required|upgrade/i,
   /authorization\s+failed/i,
   /unauthorized/i,
@@ -22,6 +28,26 @@ const lastAlerts = new Map<string, number>();
 
 function isPaymentIssue(message: string): boolean {
   return PAYMENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function stringifyError(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    const details = Object.fromEntries(
+      Object.entries(error as unknown as Record<string, unknown>).filter(([, value]) => value !== undefined)
+    );
+    const suffix = Object.keys(details).length > 0 ? ` ${JSON.stringify(details)}` : "";
+    return `${error.message}${suffix}`;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
 }
 
 function parseTelegramIds(rawValue: string): number[] {
@@ -64,7 +90,7 @@ async function sendTelegramMessage(chatId: string | number, text: string, thread
 }
 
 export async function notifyServicePaymentIssue(clientId: number | null, provider: string, error: unknown): Promise<boolean> {
-  const message = typeof error === "string" ? error : JSON.stringify(error);
+  const message = stringifyError(error);
   if (!isPaymentIssue(message)) {
     return false;
   }

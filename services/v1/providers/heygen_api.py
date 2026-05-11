@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 import time
 from typing import Any, Dict, Optional
 
@@ -28,6 +29,16 @@ Overall direction: natural presenter energy, realistic body life, gentle ambient
 """.strip()
 
 
+class HeyGenApiError(RuntimeError):
+    def __init__(self, method: str, url: str, status_code: int, payload: Optional[Dict[str, Any]], fallback: str):
+        self.method = method
+        self.url = url
+        self.status_code = status_code
+        self.payload = payload or {}
+        message = _build_heygen_error_message(method, url, status_code, self.payload, fallback)
+        super().__init__(message)
+
+
 def _get_api_key() -> str:
     api_key = os.getenv("HEYGEN_API_KEY")
     if not api_key or api_key.startswith("your_"):
@@ -45,6 +56,28 @@ def _extract_error(payload: Optional[Dict[str, Any]]) -> str:
     return payload.get("message") or "Unknown HeyGen API error"
 
 
+def _stringify_payload(payload: Optional[Dict[str, Any]]) -> str:
+    if not payload:
+        return ""
+    try:
+        return json.dumps(payload, ensure_ascii=False)
+    except Exception:
+        return str(payload)
+
+
+def _build_heygen_error_message(
+    method: str,
+    url: str,
+    status_code: int,
+    payload: Optional[Dict[str, Any]],
+    fallback: str,
+) -> str:
+    primary = _extract_error(payload) or fallback
+    payload_text = _stringify_payload(payload)
+    details = f" payload={payload_text}" if payload_text and payload_text != primary else ""
+    return f"HeyGen {method} {url} failed with status {status_code}: {primary}{details}"
+
+
 def _heygen_request(method: str, url: str, **kwargs: Any) -> Dict[str, Any]:
     headers = kwargs.pop("headers", {})
     headers["X-Api-Key"] = _get_api_key()
@@ -57,7 +90,7 @@ def _heygen_request(method: str, url: str, **kwargs: Any) -> Dict[str, Any]:
         payload = {"message": response.text}
 
     if not response.ok:
-        raise RuntimeError(_extract_error(payload))
+        raise HeyGenApiError(method, url, response.status_code, payload, f"HeyGen request failed with status {response.status_code}")
 
     return payload
 

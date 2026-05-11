@@ -51,6 +51,21 @@ type SelectedTalkingPhoto = {
 const AVATAR_RR_LOCK_BASE_KEY = 2026033100;
 const heygenStatusSignatureCache = new Map<number, string>();
 
+class HeygenApiError extends Error {
+  status: number;
+  pathname: string;
+  payload: unknown;
+
+  constructor(pathname: string, status: number, payload: unknown, fallback: string) {
+    const message = buildHeygenErrorMessage(pathname, status, payload, fallback);
+    super(message);
+    this.name = "HeygenApiError";
+    this.status = status;
+    this.pathname = pathname;
+    this.payload = payload;
+  }
+}
+
 function getHeygenApiKey() {
   const apiKey = process.env.HEYGEN_API_KEY;
   if (!apiKey || apiKey.includes("your_")) {
@@ -106,6 +121,29 @@ function extractErrorMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
+function stringifyHeygenPayload(payload: unknown) {
+  if (!payload) {
+    return "";
+  }
+
+  if (typeof payload === "string") {
+    return payload.trim();
+  }
+
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return String(payload);
+  }
+}
+
+function buildHeygenErrorMessage(pathname: string, status: number, payload: unknown, fallback: string) {
+  const primary = extractErrorMessage(payload, fallback);
+  const payloadText = stringifyHeygenPayload(payload);
+  const details = payloadText && payloadText !== primary ? ` payload=${payloadText}` : "";
+  return `HeyGen ${pathname} failed with status ${status}: ${primary}${details}`;
+}
+
 function extractFailedVideoError(payload: unknown, data: Record<string, unknown>) {
   const direct = [
     data.error,
@@ -153,7 +191,7 @@ async function heygenFetch(pathname: string, init: RequestInit = {}) {
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(extractErrorMessage(payload, `HeyGen request failed with status ${response.status}`));
+    throw new HeygenApiError(pathname, response.status, payload, `HeyGen request failed with status ${response.status}`);
   }
 
   return payload as Record<string, unknown>;
@@ -175,7 +213,7 @@ async function uploadAudioAsset(filePath: string) {
 
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(extractErrorMessage(payload, `HeyGen upload failed with status ${response.status}`));
+    throw new HeygenApiError("/v1/asset", response.status, payload, `HeyGen upload failed with status ${response.status}`);
   }
 
   const assetId = (payload as { data?: { id?: string } })?.data?.id;
@@ -523,11 +561,14 @@ async function refreshHeygenStatus(scenarioId: number, videoId: string) {
 }
 
 export async function POST(request: Request) {
+  let resolvedScenarioId: number | null = null;
+  let resolvedClientId: number | null = null;
+
   try {
     await ensureHeygenColumns();
 
     const { scenarioId } = await request.json();
-    const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
+    resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
     console.log(`[HEYGEN] POST start: scenarioId=${String(scenarioId ?? "NULL")}`);
 
     if (!Number.isFinite(resolvedScenarioId)) {
@@ -538,6 +579,7 @@ export async function POST(request: Request) {
     if (!scenario) {
       return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
     }
+    resolvedClientId = scenario.client_id;
 
     if (!scenario.tts_audio_path || !existsSync(scenario.tts_audio_path)) {
       return NextResponse.json(
@@ -625,15 +667,22 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Internal Server Error";
 
     try {
-      const body = await request.clone().json();
-      const scenarioId = Number.parseInt(String(body.scenarioId), 10);
-      if (Number.isFinite(scenarioId)) {
-        const { rows } = await pool.query("SELECT client_id FROM generated_scenarios WHERE id = $1", [scenarioId]);
-        const clientId = rows[0]?.client_id;
-        if (clientId) {
-          await notifyServicePaymentIssue(clientId, "HeyGen (Video)", message);
+      if (resolvedScenarioId && Number.isFinite(resolvedScenarioId)) {
+        await pool.query(
+          `UPDATE generated_scenarios
+           SET heygen_status = 'failed',
+               heygen_error = $2
+           WHERE id = $1`,
+          [resolvedScenarioId, message]
+        );
+
+        if (resolvedClientId === null) {
+          const { rows } = await pool.query("SELECT client_id FROM generated_scenarios WHERE id = $1", [resolvedScenarioId]);
+          resolvedClientId = rows[0]?.client_id ?? null;
         }
       }
+
+      await notifyServicePaymentIssue(resolvedClientId, "HeyGen (Video)", message);
     } catch (notifierErr) {
       console.error("Failed to trigger payment notification:", notifierErr);
     }
@@ -643,11 +692,14 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  let scenarioId: number | null = null;
+  let scenarioClientId: number | null = null;
+
   try {
     await ensureHeygenColumns();
 
     const { searchParams } = new URL(request.url);
-    const scenarioId = Number.parseInt(searchParams.get("scenarioId") || "", 10);
+    scenarioId = Number.parseInt(searchParams.get("scenarioId") || "", 10);
 
     if (!Number.isFinite(scenarioId)) {
       return NextResponse.json({ error: "scenarioId is required" }, { status: 400 });
@@ -657,6 +709,7 @@ export async function GET(request: Request) {
     if (!scenario) {
       return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
     }
+    scenarioClientId = scenario.client_id;
 
     if (!scenario.heygen_video_id) {
       return NextResponse.json({ error: "HeyGen video was not started for this scenario" }, { status: 400 });
@@ -690,6 +743,20 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("HeyGen avatar video GET error:", error);
     const message = error instanceof Error ? error.message : "Internal Server Error";
+    try {
+      if (scenarioId && Number.isFinite(scenarioId)) {
+        await pool.query(
+          `UPDATE generated_scenarios
+           SET heygen_status = 'failed',
+               heygen_error = $2
+           WHERE id = $1`,
+          [scenarioId, message]
+        );
+      }
+      await notifyServicePaymentIssue(scenarioClientId, "HeyGen (Video)", message);
+    } catch (notifierErr) {
+      console.error("Failed to trigger payment notification:", notifierErr);
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
