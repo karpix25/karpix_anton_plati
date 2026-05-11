@@ -409,6 +409,8 @@ export interface Scenario {
   montage_video_path?: string | null;
   montage_status?: string | null;
   montage_error?: string | null;
+  montage_title?: string | null;
+  montage_description?: string | null;
   montage_updated_at?: string | null;
   background_audio_tag?: BackgroundAudioTag | null;
   montage_background_audio_name?: string | null;

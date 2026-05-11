@@ -15,7 +15,19 @@ import { BackgroundAudioTag, Settings } from "@/types";
 
 type ScenarioRow = {
   id: number;
+  topic: string | null;
+  angle: string | null;
+  scenario_json:
+    | {
+        scene_name?: string;
+        script?: string;
+        topic_short?: string;
+        topic_cluster?: string;
+        topic_angle?: string;
+      }
+    | null;
   tts_audio_path: string | null;
+  tts_script: string | null;
   tts_word_timestamps:
     | {
         transcript?: string;
@@ -52,6 +64,8 @@ type ScenarioRow = {
   montage_video_path: string | null;
   montage_status: string | null;
   montage_error: string | null;
+  montage_title: string | null;
+  montage_description: string | null;
   montage_background_audio_name: string | null;
   montage_background_audio_path: string | null;
   montage_yandex_disk_path: string | null;
@@ -151,6 +165,8 @@ async function ensureMontageColumns() {
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_video_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_status TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_error TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_title TEXT",
+    "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_description TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_updated_at TIMESTAMP",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS background_audio_tag TEXT DEFAULT 'neutral'",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_background_audio_name TEXT",
@@ -240,7 +256,11 @@ async function getScenario(scenarioId: number) {
   const { rows } = await pool.query<ScenarioRow>(
     `SELECT
         gs.id,
+        gs.topic,
+        gs.angle,
+        gs.scenario_json,
         gs.tts_audio_path,
+        gs.tts_script,
         gs.tts_word_timestamps,
         gs.heygen_video_url,
         gs.heygen_avatar_id,
@@ -265,6 +285,8 @@ async function getScenario(scenarioId: number) {
         gs.montage_video_path,
         gs.montage_status,
         gs.montage_error,
+        gs.montage_title,
+        gs.montage_description,
         gs.montage_background_audio_name,
         gs.montage_background_audio_path,
         gs.montage_yandex_disk_path,
@@ -287,6 +309,53 @@ function isMontageAlreadyFinal(scenario: ScenarioRow) {
   const montageStatus = String(scenario.montage_status || "").toLowerCase();
   const yandexStatus = String(scenario.montage_yandex_status || "").toLowerCase();
   return montageStatus === "completed" && (yandexStatus === "completed" || yandexStatus === "skipped");
+}
+
+function normalizePublishText(value: unknown) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isPlaceholderTitle(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return !normalized || ["short title", "no title", "untitled", "без названия"].includes(normalized);
+}
+
+function truncateAtWordBoundary(value: string, maxLength: number) {
+  const normalized = normalizePublishText(value);
+  if (normalized.length <= maxLength) return normalized;
+
+  const truncated = normalized.slice(0, maxLength - 1);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return `${(lastSpace > 40 ? truncated.slice(0, lastSpace) : truncated).trim()}…`;
+}
+
+function firstSentence(value: string) {
+  const normalized = normalizePublishText(value);
+  const match = normalized.match(/^(.{20,160}?[.!?…])\s/);
+  return match?.[1]?.trim() || truncateAtWordBoundary(normalized, 90);
+}
+
+function buildPublishMetadata(scenario: ScenarioRow) {
+  const scenarioJson = scenario.scenario_json || {};
+  const script = normalizePublishText(scenarioJson.script || scenario.tts_script || "");
+  const titleCandidates = [
+    scenarioJson.scene_name,
+    scenario.topic,
+    scenarioJson.topic_short,
+    scenarioJson.topic_cluster,
+    scenario.angle,
+    scenarioJson.topic_angle,
+    firstSentence(script),
+  ]
+    .map(normalizePublishText)
+    .filter((value) => value && !isPlaceholderTitle(value));
+
+  const title = truncateAtWordBoundary(titleCandidates[0] || `Сценарий ${scenario.id}`, 90);
+  const description = truncateAtWordBoundary(script || title, 2200);
+
+  return { title, description };
 }
 
 async function tryLockScenarioAssemble(scenarioId: number) {
@@ -1073,6 +1142,7 @@ async function buildMontage(scenarioId: number) {
     throw new Error("Timeline data is missing");
   }
 
+  const publishMetadata = buildPublishMetadata(scenario);
   const timeline = buildTimeline(scenario, totalDuration);
   if (!timeline.length) {
     throw new Error("No video segments available for montage");
@@ -1352,6 +1422,12 @@ async function buildMontage(scenarioId: number) {
     "aac",
     "-b:a",
     "192k",
+    "-metadata",
+    `title=${publishMetadata.title}`,
+    "-metadata",
+    `description=${publishMetadata.description}`,
+    "-metadata",
+    `comment=${publishMetadata.description}`,
     "-movflags",
     "+faststart",
     outputPath,
@@ -1368,6 +1444,8 @@ async function buildMontage(scenarioId: number) {
       `avatar-${scenarioId}`,
     clientName: scenario.client_name,
     yandexDiskFolderPath: scenario.yandex_disk_folder_path,
+    publishTitle: publishMetadata.title,
+    publishDescription: publishMetadata.description,
     backgroundAudioName: backgroundAudioTrack.name,
     backgroundAudioPath: backgroundAudioTrack.diskPath,
   };
@@ -1414,6 +1492,8 @@ export async function POST(request: Request) {
         montage_yandex_public_url: existingScenario.montage_yandex_public_url,
         montage_yandex_status: existingScenario.montage_yandex_status,
         montage_yandex_error: existingScenario.montage_yandex_error,
+        montage_title: existingScenario.montage_title,
+        montage_description: existingScenario.montage_description,
       });
     }
 
@@ -1428,7 +1508,16 @@ export async function POST(request: Request) {
       [resolvedScenarioId]
     );
 
-    const { outputPath, avatarName, clientName, yandexDiskFolderPath, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
+    const {
+      outputPath,
+      avatarName,
+      clientName,
+      yandexDiskFolderPath,
+      publishTitle,
+      publishDescription,
+      backgroundAudioName,
+      backgroundAudioPath,
+    } = await buildMontage(resolvedScenarioId);
 
     let yandexDiskPath: string | null = null;
     let yandexPublicUrl: string | null = null;
@@ -1450,7 +1539,7 @@ export async function POST(request: Request) {
           localFilePath: outputPath,
           avatarFolderName: avatarName,
           projectName: clientName || "Unknown Project",
-          fileName: `scenario_${resolvedScenarioId}.mp4`,
+          fileName: `${publishTitle}_${resolvedScenarioId}.mp4`,
           projectFolderPath: yandexDiskFolderPath,
         });
         yandexDiskPath = upload.filePath;
@@ -1470,14 +1559,27 @@ export async function POST(request: Request) {
            montage_error = NULL,
            montage_background_audio_name = $2,
            montage_background_audio_path = $3,
-           montage_yandex_disk_path = $4,
-           montage_yandex_public_url = $5,
-           montage_yandex_status = $6,
-           montage_yandex_error = $7,
-           montage_yandex_uploaded_at = CASE WHEN $6 = 'completed' THEN CURRENT_TIMESTAMP ELSE montage_yandex_uploaded_at END,
+           montage_title = $4,
+           montage_description = $5,
+           montage_yandex_disk_path = $6,
+           montage_yandex_public_url = $7,
+           montage_yandex_status = $8,
+           montage_yandex_error = $9,
+           montage_yandex_uploaded_at = CASE WHEN $8 = 'completed' THEN CURRENT_TIMESTAMP ELSE montage_yandex_uploaded_at END,
            montage_updated_at = CURRENT_TIMESTAMP
-       WHERE id = $8`,
-      [outputPath, backgroundAudioName, backgroundAudioPath, yandexDiskPath, yandexPublicUrl, yandexStatus, yandexError, resolvedScenarioId]
+       WHERE id = $10`,
+      [
+        outputPath,
+        backgroundAudioName,
+        backgroundAudioPath,
+        publishTitle,
+        publishDescription,
+        yandexDiskPath,
+        yandexPublicUrl,
+        yandexStatus,
+        yandexError,
+        resolvedScenarioId,
+      ]
     );
 
     return NextResponse.json({
@@ -1486,6 +1588,8 @@ export async function POST(request: Request) {
       montage_video_path: outputPath,
       montage_background_audio_name: backgroundAudioName,
       montage_background_audio_path: backgroundAudioPath,
+      montage_title: publishTitle,
+      montage_description: publishDescription,
       montage_yandex_disk_path: yandexDiskPath,
       montage_yandex_public_url: yandexPublicUrl,
       montage_yandex_status: yandexStatus,
