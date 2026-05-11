@@ -954,6 +954,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                     keyword_segments=(video_keyword_segments or {}).get("segments", []),
                     generator_model=broll_generator_model,
                     learned_rules_video=learned_rules_video,
+                    product_info=target_product_info,
+                    product_keyword=product_keyword,
+                    niche=niche,
+                    brand_voice=brand_voice,
+                    target_audience=target_audience,
                 )
             except Exception as media_error:
                 logger.error(f"Failed to auto-generate media pipeline for single scenario {res_job_id}: {media_error}")

@@ -121,15 +121,60 @@ def _build_prompt_segment_inputs(keyword_segments: List[Dict[str, Any]]) -> List
     return prepared
 
 
+def _clean_context_value(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _build_product_context_block(
+    product_info: str | None,
+    product_keyword: str | None,
+    niche: str | None,
+    brand_voice: str | None,
+    target_audience: str | None,
+) -> str:
+    context_lines = [
+        ("Product / offer", product_info),
+        ("Product keywords", product_keyword),
+        ("Niche", niche),
+        ("Target audience", target_audience),
+        ("Brand voice", brand_voice),
+    ]
+    lines = [f"- {label}: {_clean_context_value(value)}" for label, value in context_lines if _clean_context_value(value)]
+    if not lines:
+        return "- Product context is not provided. Infer only from the scenario text and keyword segment; do not invent a different industry."
+    return "\n".join(lines)
+
+
+def _product_context_fallback_hint(product_info: str | None, product_keyword: str | None, niche: str | None) -> str:
+    context = " / ".join(
+        _clean_context_value(value)
+        for value in (product_info, product_keyword, niche)
+        if _clean_context_value(value)
+    )
+    if context:
+        return (
+            "Derive the real usage environment from this context: "
+            f"{context}. Keep shots anchored to the product/category, its proof details, and realistic customer interactions."
+        )
+    return "Derive the product/category only from the script and keyword segment; avoid unrelated lifestyle, tourism, or generic stock footage."
+
+
 def generate_seedance_prompts(
     scenario_text: str,
     tts_text: str,
     keyword_segments: List[Dict[str, Any]],
     generator_model: str | None = None,
     learned_rules_video: str | None = None,
+    product_info: str | None = None,
+    product_keyword: str | None = None,
+    niche: str | None = None,
+    brand_voice: str | None = None,
+    target_audience: str | None = None,
 ) -> Dict[str, Any]:
     profile = _resolve_broll_model_profile(generator_model)
     max_clip_duration = float(profile["clip_duration_seconds"])
+    product_context = _build_product_context_block(product_info, product_keyword, niche, brand_voice, target_audience)
+    product_context_fallback_hint = _product_context_fallback_hint(product_info, product_keyword, niche)
 
     if not keyword_segments:
         logger.warning("Empty segments provided to prompt generator. Creating global fallback prompt.")
@@ -140,14 +185,40 @@ def generate_seedance_prompts(
     prompt = f"""
 ROLE:
 You are a Senior Technical Cinematographer and Prompt Engineer specialized in Google Veo 3. 
-You create prompts for photorealistic UGC (User Generated Content) that produce footage indistinguishable from real high-end phone videos shot by a professional traveler.
+You create prompts for photorealistic UGC (User Generated Content) that produce footage indistinguishable from real high-end phone videos shot by a skilled creator in the product's real usage environment.
 
 YOUR CREATIVE MANDATE:
 Every clip must follow the Veo-3 Meta-Framework structure. You prioritize technical precision over vague adjectives. 
 The viewer should think: "A pro shot this with an iPhone 16 Pro, using perfect natural lighting and deliberate camera movement."
+The viewer must also immediately understand the product/category context. Product relevance is more important than aesthetic variety.
 
 TASK:
 For each keyword segment below, write a structured JSON prompt for a {max_clip_duration:.1f}-second vertical video clip (9:16).
+
+═══════════════════════════════════════════
+PRODUCT CONTEXT — HIGHEST PRIORITY:
+═══════════════════════════════════════════
+{product_context}
+
+PRODUCT VISUAL WORLD DERIVATION:
+Before writing prompts, infer the product's visual world from PRODUCT CONTEXT, SCENARIO, TTS TEXT, and KEYWORD SEGMENTS:
+- product_category: what is being sold or promoted
+- real_usage_environment: where the product is naturally used or evaluated
+- proof_visuals: concrete things that prove the offer visually
+- forbidden_unrelated_worlds: scenes that would look attractive but unrelated
+
+Use that inferred product visual world for every clip. Do not output this reasoning separately; reflect it inside each prompt_json.global_logic, location, action, and visual_anchor.
+
+Fallback hint if context is sparse:
+{product_context_fallback_hint}
+
+NON-NEGOTIABLE PRODUCT RELEVANCE RULES:
+1. Every generated b-roll clip must visually belong to the inferred product visual world, unless the transcript explicitly names a different location or object.
+2. Use the keyword segment as the spoken timing anchor, but translate abstract/generic words through the product context.
+3. Do not invent travel, hotels, airports, beaches, restaurants, luxury interiors, or any unrelated lifestyle world unless the product context or transcript explicitly requires it.
+4. At least one of these must appear in each generated prompt: product/package, product texture/material, usage on the relevant person/object/device, proof detail, real customer environment, or the exact product category.
+5. If keyword meaning is abstract, show concrete product proof: hands using the product, close-up texture/material, relevant surface, relevant device/screen, packaging, result, or a realistic user interaction.
+6. If the keyword seems to point away from the product, resolve the conflict conservatively: keep the visual product-led and use the keyword only as an emotional or timing cue.
 
 ═══════════════════════════════════════════
 VEO-3 META-FRAMEWORK RULES (CRITICAL):
@@ -169,7 +240,7 @@ VEO-3 META-FRAMEWORK RULES (CRITICAL):
    - Use "subsurface scattering" for human skin or translucent materials.
    - Describe "micro-jitter" or "natural hand drift" instead of "handheld".
    - Show hands, shoulders, or silhouettes to ground the POV.
-   - User European-looking people (light skin) as the target audience demographic.
+   - Match human details to the target audience if provided; otherwise keep demographic details neutral and natural.
 
 4. CAMERA BEHAVIOR EXAMPLES:
    - "Camera Dolly In slowly towards the subject, shallow depth of field, 35mm lens."
@@ -201,6 +272,11 @@ Return ONLY this JSON structure:
       "asset_url": null,
       "use_ready_asset": false,
       "prompt_json": {{
+        "product_visual_world": {{
+          "product_category": "<inferred product/category>",
+          "real_usage_environment": "<where this product is naturally used>",
+          "proof_visual": "<specific product proof shown in this clip>"
+        }},
         "global_logic": "<Technical cinematography approach using Veo-3 logic>",
         "scene_sequencing": [
           {{
@@ -226,18 +302,22 @@ Return ONLY this JSON structure:
 ═══════════════════════════════════════════
 EXAMPLES:
 ═══════════════════════════════════════════
+These examples show how to derive a product visual world from context. Do not copy their industries, props, or locations unless the current product context matches them.
 
-KEYWORD: "отели на Бали"
+PRODUCT CONTEXT: face cream / skincare
+KEYWORD: "кожа утром"
 ✅ GREAT: 
-"action": "Close-up Dolly In (35mm) towards a pair of light-skinned feet dangling over an infinity pool edge in Uluwatu. The turquoise water ripples as toes skim the surface. Subsurface scattering is visible on the skin under the harsh tropical sun. Late afternoon golden hour lighting creates long shadows on the wet stone. The Indian Ocean stretches to the horizon in the background with a soft volumetric haze."
+"action": "Close-up Dolly In (50mm macro feel) toward a fingertip lifting a small pearl of white face cream from an open jar on a bathroom vanity. The cream forms soft ridges and glossy peaks under diffused morning window light. A blurred face and shoulder remain in the mirror background while the hand moves steadily toward the cheek. Subsurface scattering is visible on natural skin texture, with faint pores and realistic redness near the nose. The palette is clean white ceramic, pale beige towel fibers, and soft daylight."
 
-KEYWORD: "еда в Таиланде"
+PRODUCT CONTEXT: payment card / fintech
+KEYWORD: "оплата без проблем"
 ✅ GREAT: 
-"action": "POV Slow Pan right (24mm) across a smoky night market stall in Bangkok Chinatown. A street vendor tosses a wok where orange flames leap up, casting flickering light on weathered wooden counters. Steam rises in thick volumetric clouds. The filmer’s hand is visible in the lower foreground holding a small bowl. Neon signs from the street reflect on the wet asphalt in the background."
+"action": "Over-shoulder Medium Shot (35mm) of a real hand holding a phone above a compact checkout terminal on a cafe counter. The thumb confirms payment on the screen while a small receipt curls out beside a ceramic cup. Soft window light reflects on the glass screen, and the terminal display glows green after the tap. Natural micro-jitter follows the user's wrist movement, with wallet leather grain and countertop scratches visible."
 
-KEYWORD: "перелёт"
+PRODUCT CONTEXT: online course / education
+KEYWORD: "понятный план"
 ✅ GREAT: 
-"action": "Over-shoulder Medium Shot (50mm lens) looking through an airplane window during golden hour descent. The passenger’s shoulder is in the soft-focus foreground. Outside, the wing cuts through a layer of pink-tinted clouds. Natural auto-exposure shifts as the plane banks gently, illuminating the cabin wall with warm amber light. Slight micro-jitter from engine vibration."
+"action": "POV Slow Tilt Down (35mm) from a laptop screen showing a clean lesson checklist to a notebook where a hand underlines the next step. The desk has pencil marks, a glass of water, and a phone timer beside the keyboard. Soft afternoon window light creates gentle shadows across paper fibers. The camera drifts naturally as the learner moves the pen, making the plan feel usable and real."
 
 ═══════════════════════════════════════════
 INPUT DATA:
@@ -317,15 +397,17 @@ KEYWORD SEGMENTS:
                 max_clip_duration,
             )
             must_show = segment.get("visual_intent") or segment.get("phrase") or segment.get("keyword")
+            product_scene_hint = _product_context_fallback_hint(product_info, product_keyword, niche)
             scene_sequencing = [
                     {
                         "shot_id": 1,
                         "timing": f"0.0s - {duration:.1f}s",
-                        "location": f"A recognizable real-world setting that immediately evokes: {must_show}",
+                        "location": f"A recognizable real-world setting that immediately evokes: {must_show}. Context: {product_scene_hint}",
                         "action": (
                             f"A candid, handheld-style shot capturing {must_show}. The camera is positioned at eye-level or slightly low, "
-                            f"capturing natural movement like a person walking, a hand interacting with an object, or a busy street scene. "
-                            f"The lighting is natural and atmospheric, with visible textures like reflections on glass, steam, or fabric. "
+                            f"but the environment must stay anchored to the product context: {product_scene_hint}. "
+                            f"Show concrete product proof, usage, texture, or relevant customer interaction instead of generic travel or lifestyle scenes. "
+                            f"The lighting is natural and atmospheric, with visible textures like reflections on glass, steam, fabric, packaging, or skin. "
                             f"The shot feels like a spontaneous moment captured on a phone, with subtle, organic camera drift."
                         ),
                         "visual_anchor": must_show,
@@ -343,11 +425,16 @@ KEYWORD SEGMENTS:
                 "asset_duration_seconds": segment.get("asset_duration_seconds"),
                 "use_ready_asset": use_ready_asset,
                 "prompt_json": None if use_ready_asset else {
-                    "global_logic": f"Personal phone footage from a real trip. Natural imperfections, shifting auto-exposure, intimate framing. Single continuous shot, {duration:.1f} seconds.",
+                    "product_visual_world": {
+                        "product_category": _clean_context_value(product_keyword or niche or "inferred from script"),
+                        "real_usage_environment": product_scene_hint,
+                        "proof_visual": must_show,
+                    },
+                    "global_logic": f"Personal phone footage in the product's real usage context. Natural imperfections, shifting auto-exposure, intimate framing. Single continuous shot, {duration:.1f} seconds.",
                     "scene_sequencing": scene_sequencing,
                     "technical_directives": {
                         "camera_movement": "camera drifts slowly as the filmer shifts their stance, slight natural unsteadiness",
-                        "style": "personal phone footage, natural imperfections, real-life moment",
+                        "style": "personal phone footage, natural imperfections, product-led real-life moment",
                         "continuity": "single-take continuous capture, no cuts",
                         "framing": "vertical close-up or over-shoulder, subject positioned off-center using rule of thirds",
                         "capture_device": "phone camera, shallow depth at close range, auto-exposure shifts",

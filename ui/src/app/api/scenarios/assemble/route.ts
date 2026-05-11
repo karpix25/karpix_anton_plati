@@ -163,6 +163,22 @@ async function ensureMontageColumns() {
   for (const statement of statements) {
     await pool.query(statement);
   }
+
+  await pool.query("CREATE TABLE IF NOT EXISTS app_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+  const typographyHookDefaultMigrationRes = await pool.query(
+    `INSERT INTO app_migrations(name)
+     VALUES ($1)
+     ON CONFLICT (name) DO NOTHING
+     RETURNING name`,
+    ["2026_05_11_disable_typography_hook_by_default"]
+  );
+  if (typographyHookDefaultMigrationRes.rowCount) {
+    await pool.query(
+      `UPDATE clients
+       SET typography_hook_enabled = FALSE
+       WHERE typography_hook_enabled IS DISTINCT FROM FALSE`
+    );
+  }
 }
 
 function runCommand(command: string, args: string[]) {

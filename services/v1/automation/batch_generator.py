@@ -1075,6 +1075,11 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                     keyword_segments=(video_keyword_segments or {}).get("segments", []),
                     generator_model=broll_generator_model,
                     learned_rules_video=learned_rules_video,
+                    product_info=target_product_info,
+                    product_keyword=product_keyword,
+                    niche=niche,
+                    brand_voice=brand_voice,
+                    target_audience=target_audience,
                 )
             except Exception as e:
                 logger.error(f"Failed to auto-generate TTS/timestamps/keywords for scenario {res_job_id}: {e}")

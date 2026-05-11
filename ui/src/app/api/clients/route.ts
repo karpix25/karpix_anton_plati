@@ -165,6 +165,20 @@ async function ensureClientVoiceColumn() {
 
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS typography_hook_enabled BOOLEAN DEFAULT FALSE");
+  const typographyHookDefaultMigrationRes = await pool.query(
+    `INSERT INTO app_migrations(name)
+     VALUES ($1)
+     ON CONFLICT (name) DO NOTHING
+     RETURNING name`,
+    ["2026_05_11_disable_typography_hook_by_default"]
+  );
+  if (typographyHookDefaultMigrationRes.rowCount) {
+    await pool.query(
+      `UPDATE clients
+       SET typography_hook_enabled = FALSE
+       WHERE typography_hook_enabled IS DISTINCT FROM FALSE`
+    );
+  }
 }
 
 async function ensureScenarioStatsColumns() {
