@@ -19,7 +19,9 @@ type ScenarioRow = {
   angle: string | null;
   scenario_json:
     | {
+        title?: string;
         scene_name?: string;
+        description?: string;
         script?: string;
         topic_short?: string;
         topic_cluster?: string;
@@ -341,6 +343,7 @@ function buildPublishMetadata(scenario: ScenarioRow) {
   const scenarioJson = scenario.scenario_json || {};
   const script = normalizePublishText(scenarioJson.script || scenario.tts_script || "");
   const titleCandidates = [
+    scenarioJson.title,
     scenarioJson.scene_name,
     scenario.topic,
     scenarioJson.topic_short,
@@ -353,7 +356,8 @@ function buildPublishMetadata(scenario: ScenarioRow) {
     .filter((value) => value && !isPlaceholderTitle(value));
 
   const title = truncateAtWordBoundary(titleCandidates[0] || `Сценарий ${scenario.id}`, 90);
-  const description = truncateAtWordBoundary(script || title, 2200);
+  const explicitDescription = normalizePublishText(scenarioJson.description || "");
+  const description = truncateAtWordBoundary(explicitDescription || script || title, 2200);
 
   return { title, description };
 }

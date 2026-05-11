@@ -787,7 +787,9 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
 
     RETURN JSON:
     {{
-        "scene_name": "Short title",
+        "title": "Human-readable Russian title for publication, never 'Short title' or 'No title'",
+        "scene_name": "Same value as title, kept for backward compatibility",
+        "description": "Russian publication caption: one or two short sentences based on the script, with useful context and no placeholder text",
         "script": "Close rewritten script in Russian",
         "rewrite_type": "close_rewrite",
         "pattern_type": "{pattern.get('pattern_type', 'other')}",
@@ -919,7 +921,9 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
 
     ВЕРНИТЕ JSON:
     {{
-        "scene_name": "Название сценария",
+        "title": "Название для публикации, не плейсхолдер",
+        "scene_name": "То же значение, что title, для обратной совместимости",
+        "description": "Описание для публикации: одна-две короткие фразы по смыслу сценария, без плейсхолдеров",
         "script": "Полный текст на русском для аватара",
         "word_count": 0,
         "hook_preservation_notes": "Как сохранен формат хука референса",
@@ -1062,7 +1066,9 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
 
     ВЕРНИТЕ JSON:
     {{
-        "scene_name": "Название сценария",
+        "title": "Название для публикации, не плейсхолдер",
+        "scene_name": "То же значение, что title, для обратной совместимости",
+        "description": "Описание для публикации: одна-две короткие фразы по смыслу сценария, без плейсхолдеров",
         "script": "Текст на русском",
         "topic_cluster": "{target_topic}",
         "topic_angle": "{target_angle}",
@@ -1194,7 +1200,9 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
 
     RETURN JSON:
     {{
-        "scene_name": "Short title",
+        "title": "Human-readable Russian title for publication, never 'Short title' or 'No title'",
+        "scene_name": "Same value as title, kept for backward compatibility",
+        "description": "Russian publication caption: one or two short sentences based on the script, with useful context and no placeholder text",
         "script": "Complete Russian script in the requested length range",
         "word_count": "integer count of words",
         "generation_mode": "topic_structure_mix",

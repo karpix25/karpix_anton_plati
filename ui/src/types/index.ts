@@ -381,6 +381,8 @@ export interface Scenario {
   topic?: string;
   angle?: string;
   scenario_json?: {
+    title?: string;
+    description?: string;
     script?: string;
     hook?: string;
     visual_hooks?: string[];
