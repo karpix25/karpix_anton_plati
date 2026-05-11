@@ -297,6 +297,88 @@ def _json_dumps(data: Any) -> Any:
     """Helper to dump JSON only if it's a dict or list."""
     return json.dumps(data, ensure_ascii=False) if isinstance(data, (dict, list)) else data
 
+def _normalize_publish_text(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+def _is_publish_placeholder(value: Any) -> bool:
+    normalized = _normalize_publish_text(value).lower().replace("ё", "е")
+    return normalized in {
+        "",
+        "short title",
+        "no title",
+        "untitled",
+        "название сценария",
+        "без названия",
+        "описание",
+        "description",
+    }
+
+def _truncate_at_word_boundary(value: Any, max_length: int) -> str:
+    text = _normalize_publish_text(value)
+    if len(text) <= max_length:
+        return text
+    truncated = text[: max_length - 1]
+    last_space = truncated.rfind(" ")
+    if last_space > 40:
+        truncated = truncated[:last_space]
+    return f"{truncated.strip()}…"
+
+def _first_sentence(value: Any) -> str:
+    text = _normalize_publish_text(value)
+    match = re.match(r"^(.{20,160}?[.!?…])\s", text)
+    if match:
+        return match.group(1).strip()
+    return _truncate_at_word_boundary(text, 90)
+
+def _parse_json_object(value: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(value, dict):
+        return dict(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return None
+    return None
+
+def normalize_scenario_publish_metadata(value: Any, scenario_id: Any = None) -> Any:
+    """Guarantee scenario_json has usable title/scene_name/description before DB save."""
+    scenario = _parse_json_object(value)
+    if scenario is None:
+        return value
+
+    script = _normalize_publish_text(scenario.get("script") or "")
+    title_candidates = [
+        scenario.get("title"),
+        scenario.get("scene_name"),
+        scenario.get("topic_short"),
+        scenario.get("topic_cluster"),
+        scenario.get("topic_angle"),
+        _first_sentence(script),
+    ]
+    title = next(
+        (
+            _truncate_at_word_boundary(candidate, 90)
+            for candidate in title_candidates
+            if not _is_publish_placeholder(candidate)
+        ),
+        "",
+    )
+    if _is_publish_placeholder(title):
+        suffix = _normalize_publish_text(scenario_id) or _normalize_publish_text(scenario.get("job_id")) or "новый"
+        title = f"Сценарий {suffix}"
+
+    description = scenario.get("description")
+    if _is_publish_placeholder(description):
+        description = script or title
+    description = _truncate_at_word_boundary(description, 2200)
+
+    scenario["title"] = title
+    scenario["scene_name"] = title
+    scenario["description"] = description
+    return scenario
+
 def get_db_connection():
     """Backward-compatible direct connection helper for legacy modules."""
     return psycopg2.connect(
@@ -734,6 +816,8 @@ def init_db() -> None:
         logger.error(f"Init DB failed: {e}")
 
 def save_generated_scenario(job_id: str, **kwargs: Any) -> None:
+    if "scenario_json" in kwargs:
+        kwargs["scenario_json"] = normalize_scenario_publish_metadata(kwargs["scenario_json"], job_id)
     for key in ["scenario_json", "tts_word_timestamps", "video_keyword_segments", "video_generation_prompts"]:
         if key in kwargs:
             kwargs[key] = _json_dumps(kwargs[key])
