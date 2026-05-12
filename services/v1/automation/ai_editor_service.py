@@ -23,6 +23,8 @@ def generate_broll_plan(scenario_json):
     prompt = f"""
     Analyze the following script and generate a visual B-roll plan.
     Each scene should have a keyword-rich prompt for an AI video generator (like Haiper or Luma).
+    If a scene includes people, faces, bodies, hands, silhouettes, customers, staff, or passersby,
+    the visual prompt MUST explicitly describe them as white Europeans / fair-skinned people of European appearance.
     
     Script:
     \"\"\"{script}\"\"\"

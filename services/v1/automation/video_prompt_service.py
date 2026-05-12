@@ -219,6 +219,7 @@ NON-NEGOTIABLE PRODUCT RELEVANCE RULES:
 4. At least one of these must appear in each generated prompt: product/package, product texture/material, usage on the relevant person/object/device, proof detail, real customer environment, or the exact product category.
 5. If keyword meaning is abstract, show concrete product proof: hands using the product, close-up texture/material, relevant surface, relevant device/screen, packaging, result, or a realistic user interaction.
 6. If the keyword seems to point away from the product, resolve the conflict conservatively: keep the visual product-led and use the keyword only as an emotional or timing cue.
+7. Whenever people, faces, bodies, hands, silhouettes, customers, staff, or passersby appear, they must be white Europeans / fair-skinned people of European appearance. State this explicitly in the action or subject description.
 
 ═══════════════════════════════════════════
 VEO-3 META-FRAMEWORK RULES (CRITICAL):
@@ -240,7 +241,7 @@ VEO-3 META-FRAMEWORK RULES (CRITICAL):
    - Use "subsurface scattering" for human skin or translucent materials.
    - Describe "micro-jitter" or "natural hand drift" instead of "handheld".
    - Show hands, shoulders, or silhouettes to ground the POV.
-   - Match human details to the target audience if provided; otherwise keep demographic details neutral and natural.
+   - Human presence must use white European / fair-skinned European-looking people. If hands or partial bodies are visible, describe fair skin and European appearance explicitly.
 
 4. CAMERA BEHAVIOR EXAMPLES:
    - "Camera Dolly In slowly towards the subject, shallow depth of field, 35mm lens."
@@ -406,6 +407,7 @@ KEYWORD SEGMENTS:
                         "action": (
                             f"A candid, handheld-style shot capturing {must_show}. The camera is positioned at eye-level or slightly low, "
                             f"but the environment must stay anchored to the product context: {product_scene_hint}. "
+                            f"If any person, face, body, hands, or silhouette appears, they are white European / fair-skinned European-looking people. "
                             f"Show concrete product proof, usage, texture, or relevant customer interaction instead of generic travel or lifestyle scenes. "
                             f"The lighting is natural and atmospheric, with visible textures like reflections on glass, steam, fabric, packaging, or skin. "
                             f"The shot feels like a spontaneous moment captured on a phone, with subtle, organic camera drift."
