@@ -273,8 +273,14 @@ export default function CuratorDashboard() {
   }, [clients, defaultClient, selectedClientId]);
 
   const checkTelegramSession = useCallback(async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+
     try {
-      const response = await fetch("/api/auth/telegram/session", { cache: "no-store" });
+      const response = await fetch("/api/auth/telegram/session", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       const payload = await response.json().catch(() => null);
       if (response.ok && payload?.ok && payload?.user) {
         setAuthUser(payload.user as TelegramSessionUser);
@@ -287,6 +293,8 @@ export default function CuratorDashboard() {
       console.error("Failed to check Telegram session:", error);
       setAuthUser(null);
       setAuthState("unauthenticated");
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   }, []);
 
