@@ -3,7 +3,7 @@ import pool from '@/lib/db';
 import { PoolClient } from 'pg';
 import { spawn } from 'child_process';
 import path from 'path';
-import { getStableHeygenPreviewUrl } from '@/lib/server/heygen-preview-cache';
+import { getHeygenPreviewSourceUrl, getStableHeygenPreviewUrl } from '@/lib/server/heygen-preview-cache';
 import { validateApiRequest } from '@/lib/server/telegram-auth';
 
 async function ensureHeygenLookMotionColumns() {
@@ -193,6 +193,7 @@ export async function PUT(request: Request) {
 
     for (let avatarIndex = 0; avatarIndex < (avatars || []).length; avatarIndex += 1) {
       const avatar = avatars[avatarIndex];
+      const avatarPreviewSourceUrl = await getHeygenPreviewSourceUrl(avatar.preview_image_url || null);
       const provider: "minimax" | "elevenlabs" = avatar.tts_provider === 'elevenlabs' ? 'elevenlabs' : 'minimax';
       const calibrationKey = buildAvatarVoiceKey(
         avatar.avatar_id,
@@ -220,7 +221,7 @@ export async function PUT(request: Request) {
           avatar.avatar_id,
           avatar.avatar_name,
           avatar.folder_name || null,
-          avatar.preview_image_url || null,
+          avatarPreviewSourceUrl || null,
           provider,
           avatar.tts_voice_id || null,
           avatar.elevenlabs_voice_id || null,
@@ -241,6 +242,7 @@ export async function PUT(request: Request) {
       }
       for (let lookIndex = 0; lookIndex < (avatar.looks || []).length; lookIndex += 1) {
         const look = avatar.looks[lookIndex];
+        const lookPreviewSourceUrl = await getHeygenPreviewSourceUrl(look.preview_image_url || null);
         await client.query(
           `INSERT INTO client_heygen_avatar_looks (
             client_avatar_id, look_id, look_name, preview_image_url, motion_look_id, motion_prompt, motion_type, motion_status, motion_error, motion_updated_at, is_active, usage_count, sort_order
@@ -249,7 +251,7 @@ export async function PUT(request: Request) {
             clientAvatarId,
             look.look_id,
             look.look_name,
-            look.preview_image_url || null,
+            lookPreviewSourceUrl || null,
             look.motion_look_id || null,
             look.motion_prompt || null,
             look.motion_type || null,

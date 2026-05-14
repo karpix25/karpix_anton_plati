@@ -19,10 +19,39 @@ type CachedPreviewBlob = {
   data: Buffer;
 };
 
+type HeygenAvatarGroup = {
+  id?: string;
+  preview_image?: unknown;
+  preview_image_url?: unknown;
+  [key: string]: unknown;
+};
+
+type HeygenAvatarLook = {
+  id?: unknown;
+  avatar_id?: unknown;
+  look_id?: unknown;
+  photo_avatar_id?: unknown;
+  preview_image?: unknown;
+  preview_image_url?: unknown;
+  image_url?: unknown;
+  [key: string]: unknown;
+};
+
 let isCacheTableReady = false;
 let cacheDisabledUntil = 0;
 
 const CACHE_ERROR_COOLDOWN_MS = 60_000;
+const IMAGE_KEYS = [
+  "preview_image_url",
+  "preview_image",
+  "image_url",
+  "image",
+  "thumbnail_url",
+  "thumbnail",
+  "cover_image_url",
+  "cover_image",
+  "url",
+] as const;
 
 function isPreviewCacheTemporarilyDisabled(): boolean {
   return Date.now() < cacheDisabledUntil;
@@ -76,6 +105,19 @@ function toVersionToken(contentHash: string, updatedAt: string): string {
 
 export function isHeygenPreviewProxyUrl(value: unknown): boolean {
   return typeof value === "string" && value.startsWith("/api/heygen/preview?");
+}
+
+function extractPreviewProxyKey(value: unknown): string {
+  if (!isHeygenPreviewProxyUrl(value)) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(value as string, "http://localhost");
+    return parsed.searchParams.get("key")?.trim() || "";
+  } catch {
+    return "";
+  }
 }
 
 export function buildHeygenPreviewProxyUrl(cacheKey: string, versionToken?: string): string {
@@ -206,8 +248,163 @@ async function downloadPreviewBinary(sourceUrl: string): Promise<{ mimeType: str
   return { mimeType, data };
 }
 
+function pickString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
+
+function readImageUrl(value: unknown): string {
+  if (typeof value === "string") {
+    return normalizeUrlCandidate(value);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "";
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = pickString(...IMAGE_KEYS.map((key) => record[key]));
+  if (direct) {
+    return normalizeUrlCandidate(direct);
+  }
+
+  const nested = [
+    record.preview,
+    record.image,
+    record.thumbnail,
+    record.cover,
+    record.avatar,
+  ];
+
+  for (const item of nested) {
+    const nestedUrl = readImageUrl(item);
+    if (nestedUrl) {
+      return nestedUrl;
+    }
+  }
+
+  return "";
+}
+
+async function heygenFetch(path: string) {
+  const apiKey = process.env.HEYGEN_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+
+  const response = await fetch(`https://api.heygen.com${path}`, {
+    headers: {
+      "X-Api-Key": apiKey,
+    },
+    cache: "no-store",
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = data?.error?.message || data?.message || `HeyGen request failed with status ${response.status}`;
+    console.warn(`HeyGen preview recovery failed for ${path}: ${message}`);
+    return null;
+  }
+
+  return data;
+}
+
+function resolveLookId(look: HeygenAvatarLook) {
+  return pickString(look.id, look.look_id, look.photo_avatar_id, look.avatar_id);
+}
+
+async function findHeygenPreviewSourceUrl(cacheKey: string): Promise<string> {
+  const [kind, ...idParts] = cacheKey.split(":");
+  const targetId = idParts.join(":").trim();
+  if (!targetId || (kind !== "avatar" && kind !== "look")) {
+    return "";
+  }
+
+  const groupsPayload = await heygenFetch("/v2/avatar_group.list");
+  const groups: HeygenAvatarGroup[] = groupsPayload?.data?.avatar_group_list || [];
+
+  for (const group of groups) {
+    if (kind === "avatar" && group.id === targetId) {
+      const groupImage = readImageUrl(group);
+      if (groupImage) {
+        return groupImage;
+      }
+    }
+
+    if (!group.id) {
+      continue;
+    }
+
+    const looksPayload = await heygenFetch(`/v2/avatar_group/${encodeURIComponent(group.id)}/avatars`);
+    const looks: HeygenAvatarLook[] = looksPayload?.data?.avatar_list || [];
+
+    if (kind === "avatar" && group.id === targetId) {
+      const firstLookImage = readImageUrl(looks[0]);
+      if (firstLookImage) {
+        return firstLookImage;
+      }
+    }
+
+    if (kind === "look") {
+      const matchedLook = looks.find((look) => resolveLookId(look) === targetId);
+      const lookImage = readImageUrl(matchedLook);
+      if (lookImage) {
+        return lookImage;
+      }
+    }
+  }
+
+  return "";
+}
+
+async function recoverHeygenPreviewCache(cacheKey: string): Promise<CachedPreviewBlob | null> {
+  const sourceUrl = await findHeygenPreviewSourceUrl(cacheKey);
+  if (!sourceUrl || !isHttpUrl(sourceUrl)) {
+    return null;
+  }
+
+  const downloaded = await downloadPreviewBinary(sourceUrl);
+  if (!downloaded) {
+    return null;
+  }
+
+  const saved = await savePreviewCache(cacheKey, sourceUrl, downloaded.mimeType, downloaded.data);
+  return {
+    mimeType: downloaded.mimeType,
+    contentHash: saved.contentHash,
+    updatedAt: saved.updatedAt,
+    data: downloaded.data,
+  };
+}
+
 function stableUrlFromMeta(meta: CachedPreviewMeta): string {
   return buildHeygenPreviewProxyUrl(meta.cacheKey, toVersionToken(meta.contentHash, meta.updatedAt));
+}
+
+export async function getHeygenPreviewSourceUrl(value: unknown): Promise<string> {
+  const normalized = normalizeUrlCandidate(value);
+  if (!normalized) {
+    return "";
+  }
+  if (!isHeygenPreviewProxyUrl(normalized)) {
+    return normalized;
+  }
+
+  const cacheKey = extractPreviewProxyKey(normalized);
+  if (!cacheKey || isPreviewCacheTemporarilyDisabled()) {
+    return normalized;
+  }
+
+  try {
+    const existing = await readCachedPreviewMeta(cacheKey);
+    return existing?.sourceUrl || normalized;
+  } catch (error) {
+    markPreviewCacheFailure(error);
+    return normalized;
+  }
 }
 
 export async function getStableHeygenPreviewUrl(params: {
@@ -224,7 +421,10 @@ export async function getStableHeygenPreviewUrl(params: {
   }
 
   if (isHeygenPreviewProxyUrl(sourceUrl)) {
-    return sourceUrl;
+    const proxyKey = extractPreviewProxyKey(sourceUrl);
+    if (!proxyKey || proxyKey === cacheKey) {
+      return sourceUrl;
+    }
   }
 
   let existing: CachedPreviewRow | null = null;
@@ -295,7 +495,12 @@ export async function getCachedHeygenPreviewBlob(cacheKeyInput: unknown): Promis
 
   const row = result.rows[0];
   if (!row) {
-    return null;
+    try {
+      return await recoverHeygenPreviewCache(cacheKey);
+    } catch (error) {
+      console.error("HeyGen preview cache recovery error:", error);
+      return null;
+    }
   }
 
   return {
