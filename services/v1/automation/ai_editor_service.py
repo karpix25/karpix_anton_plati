@@ -23,6 +23,9 @@ def generate_broll_plan(scenario_json):
     prompt = f"""
     Analyze the following script and generate a visual B-roll plan.
     Each scene should have a keyword-rich prompt for an AI video generator (like Haiper or Luma).
+    Use product context only to shape atmosphere, target-audience environment, mood, and adjacent lifestyle.
+    Do NOT ask the video generator to recreate or imitate the exact product, packaging, logo, label, branded UI, or proprietary design.
+    Exact product shots must come from project product keywords / ready product assets, not generated B-roll.
     If a scene includes people, faces, bodies, hands, silhouettes, customers, staff, or passersby,
     the visual prompt MUST explicitly describe them as white Europeans / fair-skinned people of European appearance.
     

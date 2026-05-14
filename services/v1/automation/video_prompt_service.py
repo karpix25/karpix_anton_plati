@@ -153,10 +153,10 @@ def _product_context_fallback_hint(product_info: str | None, product_keyword: st
     )
     if context:
         return (
-            "Derive the real usage environment from this context: "
-            f"{context}. Keep shots anchored to the product/category, its proof details, and realistic customer interactions."
+            "Derive the brand atmosphere and real audience environment from this context: "
+            f"{context}. Do not recreate the exact product, packaging, logo, label, app UI, or branded object in generated b-roll."
         )
-    return "Derive the product/category only from the script and keyword segment; avoid unrelated lifestyle, tourism, or generic stock footage."
+    return "Derive the atmosphere only from the script and keyword segment; avoid unrelated lifestyle, tourism, generic stock footage, and exact product imitation."
 
 
 def generate_seedance_prompts(
@@ -201,25 +201,27 @@ PRODUCT CONTEXT — HIGHEST PRIORITY:
 {product_context}
 
 PRODUCT VISUAL WORLD DERIVATION:
-Before writing prompts, infer the product's visual world from PRODUCT CONTEXT, SCENARIO, TTS TEXT, and KEYWORD SEGMENTS:
+Before writing prompts, infer the brand-safe atmospheric world from PRODUCT CONTEXT, SCENARIO, TTS TEXT, and KEYWORD SEGMENTS:
 - product_category: what is being sold or promoted
-- real_usage_environment: where the product is naturally used or evaluated
-- proof_visuals: concrete things that prove the offer visually
+- audience_environment: where the target audience naturally lives, works, rests, decides, researches, or feels the problem/aspiration
+- atmosphere_visuals: mood, setting, rituals, textures, objects, and situations adjacent to the product
 - forbidden_unrelated_worlds: scenes that would look attractive but unrelated
 
-Use that inferred product visual world for every clip. Do not output this reasoning separately; reflect it inside each prompt_json.global_logic, location, action, and visual_anchor.
+Use that inferred atmospheric world for every generated clip. Do not output this reasoning separately; reflect it inside each prompt_json.global_logic, location, action, and visual_anchor.
+Product context is a guardrail for tone, audience, and environment. It is NOT permission to synthesize or imitate the exact product.
 
 Fallback hint if context is sparse:
 {product_context_fallback_hint}
 
 NON-NEGOTIABLE PRODUCT RELEVANCE RULES:
-1. Every generated b-roll clip must visually belong to the inferred product visual world, unless the transcript explicitly names a different location or object.
+1. Every generated b-roll clip must visually belong to the inferred brand/audience atmosphere, unless the transcript explicitly names a different location or object.
 2. Use the keyword segment as the spoken timing anchor, but translate abstract/generic words through the product context.
 3. Do not invent travel, hotels, airports, beaches, restaurants, luxury interiors, or any unrelated lifestyle world unless the product context or transcript explicitly requires it.
-4. At least one of these must appear in each generated prompt: product/package, product texture/material, usage on the relevant person/object/device, proof detail, real customer environment, or the exact product category.
-5. If keyword meaning is abstract, show concrete product proof: hands using the product, close-up texture/material, relevant surface, relevant device/screen, packaging, result, or a realistic user interaction.
-6. If the keyword seems to point away from the product, resolve the conflict conservatively: keep the visual product-led and use the keyword only as an emotional or timing cue.
-7. Whenever people, faces, bodies, hands, silhouettes, customers, staff, or passersby appear, they must be white Europeans / fair-skinned people of European appearance. State this explicitly in the action or subject description.
+4. Generated b-roll must NOT imitate the exact product, package, logo, label, branded UI, proprietary shape, or unique visual design. Exact product appearances belong only to ready product assets selected by project keywords.
+5. For generated b-roll, show atmosphere around the product: target-audience lifestyle, problem context, aspiration, environment, rituals, category-adjacent props, hands interacting with neutral objects, screens without brand UI, or emotional context.
+6. If keyword meaning is abstract, show a brand-safe atmospheric cue rather than product proof: morning routine, decision moment, desk setup, mirror glance, checkout context, calm home detail, relevant street/workspace/device scene, or another audience-specific situation.
+7. If the keyword seems to point toward the exact product, resolve conservatively: do not synthesize the product; use neutral category-adjacent visuals unless the segment uses a ready product asset.
+8. Whenever people, faces, bodies, hands, silhouettes, customers, staff, or passersby appear, they must be white Europeans / fair-skinned people of European appearance. State this explicitly in the action or subject description.
 
 ═══════════════════════════════════════════
 VEO-3 META-FRAMEWORK RULES (CRITICAL):
@@ -273,10 +275,11 @@ Return ONLY this JSON structure:
       "asset_url": null,
       "use_ready_asset": false,
       "prompt_json": {{
-        "product_visual_world": {{
+        "brand_atmosphere_world": {{
           "product_category": "<inferred product/category>",
-          "real_usage_environment": "<where this product is naturally used>",
-          "proof_visual": "<specific product proof shown in this clip>"
+          "audience_environment": "<where the target audience naturally is>",
+          "atmosphere_visual": "<brand-safe atmospheric cue shown in this clip>",
+          "product_imitation_guardrail": "Do not show exact product, packaging, logo, label, branded UI, or proprietary design in generated b-roll"
         }},
         "global_logic": "<Technical cinematography approach using Veo-3 logic>",
         "scene_sequencing": [
@@ -308,12 +311,12 @@ These examples show how to derive a product visual world from context. Do not co
 PRODUCT CONTEXT: face cream / skincare
 KEYWORD: "кожа утром"
 ✅ GREAT: 
-"action": "Close-up Dolly In (50mm macro feel) toward a fingertip lifting a small pearl of white face cream from an open jar on a bathroom vanity. The cream forms soft ridges and glossy peaks under diffused morning window light. A blurred face and shoulder remain in the mirror background while the hand moves steadily toward the cheek. Subsurface scattering is visible on natural skin texture, with faint pores and realistic redness near the nose. The palette is clean white ceramic, pale beige towel fibers, and soft daylight."
+"action": "Close-up Dolly In (50mm macro feel) toward a fair-skinned European woman standing near a bathroom mirror in soft morning window light, gently touching her cheek while checking natural skin texture. No product jar, label, packaging, logo, or cream blob is visible. Pale towel fibers, ceramic sink reflections, and a clean glass shelf create a calm skincare atmosphere without imitating any brand. Subsurface scattering is visible on natural skin with faint pores and realistic redness near the nose."
 
 PRODUCT CONTEXT: payment card / fintech
 KEYWORD: "оплата без проблем"
 ✅ GREAT: 
-"action": "Over-shoulder Medium Shot (35mm) of a real hand holding a phone above a compact checkout terminal on a cafe counter. The thumb confirms payment on the screen while a small receipt curls out beside a ceramic cup. Soft window light reflects on the glass screen, and the terminal display glows green after the tap. Natural micro-jitter follows the user's wrist movement, with wallet leather grain and countertop scratches visible."
+"action": "Over-shoulder Medium Shot (35mm) of fair-skinned European hands placing a neutral unbranded phone beside a cafe receipt and a ceramic cup on a worn wooden counter. No payment app UI, bank logo, card design, or branded screen is visible. Soft window light reflects on the glass, and the hand movement suggests an easy purchase moment through context rather than showing the exact product."
 
 PRODUCT CONTEXT: online course / education
 KEYWORD: "понятный план"
@@ -406,10 +409,11 @@ KEYWORD SEGMENTS:
                         "location": f"A recognizable real-world setting that immediately evokes: {must_show}. Context: {product_scene_hint}",
                         "action": (
                             f"A candid, handheld-style shot capturing {must_show}. The camera is positioned at eye-level or slightly low, "
-                            f"but the environment must stay anchored to the product context: {product_scene_hint}. "
+                            f"but the environment must stay anchored to the brand/audience atmosphere: {product_scene_hint}. "
                             f"If any person, face, body, hands, or silhouette appears, they are white European / fair-skinned European-looking people. "
-                            f"Show concrete product proof, usage, texture, or relevant customer interaction instead of generic travel or lifestyle scenes. "
-                            f"The lighting is natural and atmospheric, with visible textures like reflections on glass, steam, fabric, packaging, or skin. "
+                            f"Do not imitate the exact product, packaging, logo, label, branded UI, or proprietary design. "
+                            f"Show category-adjacent atmosphere, audience lifestyle, problem context, aspiration, neutral props, or relevant customer environment instead of generic travel or literal product shots. "
+                            f"The lighting is natural and atmospheric, with visible textures like reflections on glass, steam, fabric, paper, wood, metal, or skin. "
                             f"The shot feels like a spontaneous moment captured on a phone, with subtle, organic camera drift."
                         ),
                         "visual_anchor": must_show,
@@ -427,16 +431,17 @@ KEYWORD SEGMENTS:
                 "asset_duration_seconds": segment.get("asset_duration_seconds"),
                 "use_ready_asset": use_ready_asset,
                 "prompt_json": None if use_ready_asset else {
-                    "product_visual_world": {
+                    "brand_atmosphere_world": {
                         "product_category": _clean_context_value(product_keyword or niche or "inferred from script"),
-                        "real_usage_environment": product_scene_hint,
-                        "proof_visual": must_show,
+                        "audience_environment": product_scene_hint,
+                        "atmosphere_visual": must_show,
+                        "product_imitation_guardrail": "Do not show exact product, packaging, logo, label, branded UI, or proprietary design in generated b-roll",
                     },
-                    "global_logic": f"Personal phone footage in the product's real usage context. Natural imperfections, shifting auto-exposure, intimate framing. Single continuous shot, {duration:.1f} seconds.",
+                    "global_logic": f"Personal phone footage in the brand's audience atmosphere, not a product imitation. Natural imperfections, shifting auto-exposure, intimate framing. Single continuous shot, {duration:.1f} seconds.",
                     "scene_sequencing": scene_sequencing,
                     "technical_directives": {
                         "camera_movement": "camera drifts slowly as the filmer shifts their stance, slight natural unsteadiness",
-                        "style": "personal phone footage, natural imperfections, product-led real-life moment",
+                        "style": "personal phone footage, natural imperfections, brand-safe atmospheric real-life moment",
                         "continuity": "single-take continuous capture, no cuts",
                         "framing": "vertical close-up or over-shoulder, subject positioned off-center using rule of thirds",
                         "capture_device": "phone camera, shallow depth at close range, auto-exposure shifts",
