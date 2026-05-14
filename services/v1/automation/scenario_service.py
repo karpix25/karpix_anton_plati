@@ -475,6 +475,18 @@ def _forbidden_tags_guardrail() -> str:
     """
 
 
+def _russian_output_guardrail() -> str:
+    return """
+    RUSSIAN OUTPUT RULE:
+    - Source references, transcripts, topics, and product notes may be in any language, including English.
+    - Use non-Russian source text only to understand meaning, hook mechanics, pacing, structure, proof, and CTA.
+    - Final user-facing output MUST be in natural spoken Russian.
+    - This applies to every JSON field shown to the user: title, scene_name, description, script, notes, quality checks, and any explanations.
+    - Do not leave English phrases, idioms, hooks, captions, or CTA lines in the final output unless they are unavoidable brand names, product names, or proper nouns.
+    - Translate and adapt meaning naturally for a Russian-speaking audience instead of copying source wording literally.
+    """
+
+
 def _split_sentences(text: str):
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
     if not cleaned:
@@ -646,6 +658,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     - Treat third-party promo fragments in the source as replaceable scaffolding, not as facts that must be preserved.
     - This is variation #{variation_index} out of {total_variations}. The wording can shift, but the script should still feel like the same winning reel.
     - Do NOT default to generic anti-pattern hooks or stock openers that were NOT present in the source.
+    {_russian_output_guardrail()}
     {_asset_visibility_guardrails()}
     {_spoken_numbers_guardrail()}
     {_forbidden_tags_guardrail()}
@@ -749,7 +762,7 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
     TASK:
     1. Internally extract the factual building blocks of the source script.
     2. Internally preserve the extracted PATTERN FRAMEWORK, not just the surface wording.
-    3. Rewrite the script in Russian as a close variation.
+    3. Rewrite the script in Russian as a close variation, even if the source transcript is English or multilingual.
     4. Preserve the original hook logic, sequence, emotional progression, factual density, and CTA placement.
     4a. The first 1-2 sentences must mirror the source opening architecture and should not collapse into a generic "Думаешь/А вот и нет/Забудь" opener unless the source truly did that.
     4b. The first sentence must preserve the same hook shape as the blueprint above and should feel recognizably derived from the source opening mechanism.
@@ -787,8 +800,10 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
 
     RETURN JSON:
     {{
-        "scene_name": "Short title",
-        "script": "Close rewritten script in Russian",
+        "title": "Человеческое название для публикации на русском, не 'Short title' и не 'No title'",
+        "scene_name": "То же значение, что title, для обратной совместимости",
+        "description": "Описание для публикации на русском: одна-две короткие фразы по смыслу сценария, без плейсхолдеров",
+        "script": "Близко переписанный сценарий на русском",
         "rewrite_type": "close_rewrite",
         "pattern_type": "{pattern.get('pattern_type', 'other')}",
         "source_duration_seconds": {source_duration_seconds or 0},
@@ -797,12 +812,12 @@ def rewrite_reference_script(transcript, audit_json=None, transcript_meta=None, 
         "target_duration_range_seconds": "{desired_duration_label}",
         "target_word_count_range": "{min_word_target}-{max_word_target}",
         "target_character_count_range": "{f'{min_char_target}-{max_char_target}' if min_char_target and max_char_target else 'not_set'}",
-        "preserved_fact_units": ["List 5-10 concrete fact units preserved or concretely adapted"],
-        "pattern_preservation_notes": "How the underlying pattern and slot structure were preserved",
-        "hook_preservation_notes": "How the source hook format and first 1-2 sentences were preserved structurally",
-        "rewrite_notes": "What details were changed and what structure was preserved",
-        "similarity_notes": "Why this still feels very close to the source",
-        "product_integration_notes": "How the product was woven in naturally"
+        "preserved_fact_units": ["Список пяти-десяти конкретных фактов, которые сохранены или адаптированы"],
+        "pattern_preservation_notes": "Как сохранены паттерн и структура слотов",
+        "hook_preservation_notes": "Как структурно сохранены формат хука и первые одно-два предложения",
+        "rewrite_notes": "Какие детали изменены и какая структура сохранена",
+        "similarity_notes": "Почему сценарий остается близким к источнику",
+        "product_integration_notes": "Как продукт встроен естественно"
     }}
     """
 
@@ -917,9 +932,13 @@ def generate_scenario(audit_json, niche="General", target_product_info=None, bra
        - В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
     10. Все числа, даты, диапазоны, проценты, суммы и годы в итоговом сценарии пишите только словами, без арабских цифр.
 
+    {_russian_output_guardrail()}
+
     ВЕРНИТЕ JSON:
     {{
-        "scene_name": "Название сценария",
+        "title": "Название для публикации на русском, не плейсхолдер",
+        "scene_name": "То же значение, что title, для обратной совместимости",
+        "description": "Описание для публикации на русском: одна-две короткие фразы по смыслу сценария, без плейсхолдеров",
         "script": "Полный текст на русском для аватара",
         "word_count": 0,
         "hook_preservation_notes": "Как сохранен формат хука референса",
@@ -1056,13 +1075,16 @@ def generate_clustered_scenario(reference_audits, niche="General", target_produc
         {_gender_social_guardrail(gender)}
         - В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
 
+    {_russian_output_guardrail()}
 
     OPENING REFERENCES TO FOLLOW STRUCTURALLY:
     {json.dumps(reference_openings, ensure_ascii=False, indent=2)}
 
     ВЕРНИТЕ JSON:
     {{
-        "scene_name": "Название сценария",
+        "title": "Название для публикации на русском, не плейсхолдер",
+        "scene_name": "То же значение, что title, для обратной совместимости",
+        "description": "Описание для публикации на русском: одна-две короткие фразы по смыслу сценария, без плейсхолдеров",
         "script": "Текст на русском",
         "topic_cluster": "{target_topic}",
         "topic_angle": "{target_angle}",
@@ -1154,6 +1176,8 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
        {_gender_social_guardrail(gender)}
        - В русском языке обязательно используй соответствующие формы (например, {"я сделал" if gender == "male" else "я сделала"}).
     10. All numbers in the final Russian script must be written as words, never as digits.
+    11. Even if the topic card, structure card, or source hook contains English, adapt it into Russian for the final output.
+    {_russian_output_guardrail()}
 
     TOPIC CARD (The "What"):
     {json.dumps(topic_meta or topic_card, ensure_ascii=False, indent=2)}
@@ -1194,20 +1218,22 @@ def generate_from_topic_and_structure(topic_card, structure_card, niche="General
 
     RETURN JSON:
     {{
-        "scene_name": "Short title",
-        "script": "Complete Russian script in the requested length range",
-        "word_count": "integer count of words",
+        "title": "Человеческое название для публикации на русском, не 'Short title' и не 'No title'",
+        "scene_name": "То же значение, что title, для обратной совместимости",
+        "description": "Описание для публикации на русском: одна-две короткие фразы по смыслу сценария, без плейсхолдеров",
+        "script": "Полный сценарий на русском в нужном диапазоне длины",
+        "word_count": "Целое число слов",
         "generation_mode": "topic_structure_mix",
         "pattern_type": "{structure_card.get('pattern_type', 'other')}",
         "topic_family": "{topic_card.get('topic_family', topic_card.get('canonical_topic_family', 'general_travel_topic'))}",
         "topic_cluster": "{topic_card.get('topic_short', topic_card.get('topic_cluster', 'Без темы'))}",
         "topic_short": "{topic_card.get('topic_short', topic_card.get('topic_cluster', 'Без темы'))}",
         "topic_angle": "{topic_card.get('topic_angle', 'Без угла')}",
-        "hook_preservation_notes": "How the real source hook format was preserved",
+        "hook_preservation_notes": "Как сохранен реальный формат хука источника",
         "quality_check": {{
-            "no_hello_check": "Boolean: did you avoid 'Привет'?",
-            "word_count_check": "Boolean: is it inside the requested word-count range?",
-            "hook_type": "Brief description of the hook logic"
+            "no_hello_check": "Да/нет: удалось ли избежать приветствия",
+            "word_count_check": "Да/нет: попал ли сценарий в нужный диапазон слов",
+            "hook_type": "Краткое описание логики хука"
         }}
     }}
 
@@ -1256,22 +1282,23 @@ def fit_script_to_character_budget(
 
     HARD RULES:
     - Return strict JSON only.
-    - Keep the same language (Russian).
+    - Keep the same language (Russian). If any source fragment is English or another language, translate/adapt it into natural Russian.
     - Preserve core facts and CTA intent.
     - Do not add visual directions.
     - Keep grammar agreement for narrator gender: {gender}.
     - Character count metric is NON-WHITESPACE characters.
     - The rewritten script MUST be between {min_chars} and {max_chars} non-whitespace characters.
     - This is duration-fit attempt {attempt_index} of {total_attempts}.
+    {_russian_output_guardrail()}
 
     SOURCE SCRIPT (non-whitespace chars: {source_char_count}):
     \"\"\"{source_script}\"\"\"
 
     RETURN JSON:
     {{
-      "script": "Rewritten script",
+      "script": "Переписанный сценарий на русском",
       "non_whitespace_char_count": 0,
-      "fit_notes": "How length was adjusted while preserving meaning"
+      "fit_notes": "Как длина адаптирована с сохранением смысла"
     }}
     """
 
