@@ -20,6 +20,18 @@ type CachedPreviewBlob = {
 };
 
 let isCacheTableReady = false;
+let cacheDisabledUntil = 0;
+
+const CACHE_ERROR_COOLDOWN_MS = 60_000;
+
+function isPreviewCacheTemporarilyDisabled(): boolean {
+  return Date.now() < cacheDisabledUntil;
+}
+
+function markPreviewCacheFailure(error: unknown): void {
+  cacheDisabledUntil = Date.now() + CACHE_ERROR_COOLDOWN_MS;
+  console.error("HeyGen preview cache disabled temporarily:", error);
+}
 
 function normalizeUrlCandidate(value: unknown): string {
   if (typeof value !== "string") {
@@ -78,6 +90,9 @@ async function ensurePreviewCacheTable(): Promise<void> {
   if (isCacheTableReady) {
     return;
   }
+  if (isPreviewCacheTemporarilyDisabled()) {
+    throw new Error("HeyGen preview cache temporarily disabled");
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS heygen_preview_cache (
@@ -96,6 +111,10 @@ async function ensurePreviewCacheTable(): Promise<void> {
 }
 
 async function readCachedPreviewMeta(cacheKey: string): Promise<CachedPreviewRow | null> {
+  if (isPreviewCacheTemporarilyDisabled()) {
+    return null;
+  }
+
   await ensurePreviewCacheTable();
 
   const result = await pool.query<{
@@ -129,6 +148,10 @@ async function readCachedPreviewMeta(cacheKey: string): Promise<CachedPreviewRow
 }
 
 async function savePreviewCache(cacheKey: string, sourceUrl: string, mimeType: string, data: Buffer): Promise<CachedPreviewMeta> {
+  if (isPreviewCacheTemporarilyDisabled()) {
+    throw new Error("HeyGen preview cache temporarily disabled");
+  }
+
   await ensurePreviewCacheTable();
 
   const contentHash = createHash("sha1").update(data).digest("hex");
@@ -209,7 +232,7 @@ export async function getStableHeygenPreviewUrl(params: {
   try {
     existing = await readCachedPreviewMeta(cacheKey);
   } catch (error) {
-    console.error("HeyGen preview cache read error:", error);
+    markPreviewCacheFailure(error);
     return sourceUrl;
   }
 
@@ -228,7 +251,7 @@ export async function getStableHeygenPreviewUrl(params: {
         return stableUrlFromMeta(saved);
       }
     } catch (error) {
-      console.error("HeyGen preview cache write error:", error);
+      markPreviewCacheFailure(error);
     }
   }
 
@@ -244,22 +267,31 @@ export async function getCachedHeygenPreviewBlob(cacheKeyInput: unknown): Promis
   if (!cacheKey) {
     return null;
   }
+  if (isPreviewCacheTemporarilyDisabled()) {
+    return null;
+  }
 
-  await ensurePreviewCacheTable();
-  const result = await pool.query<{
-    mime_type: string;
-    content_hash: string;
-    updated_at: Date | string;
-    image_data: Buffer;
-  }>(
-    `
-      SELECT mime_type, content_hash, updated_at, image_data
-      FROM heygen_preview_cache
-      WHERE cache_key = $1
-      LIMIT 1
-    `,
-    [cacheKey]
-  );
+  let result;
+  try {
+    await ensurePreviewCacheTable();
+    result = await pool.query<{
+      mime_type: string;
+      content_hash: string;
+      updated_at: Date | string;
+      image_data: Buffer;
+    }>(
+      `
+        SELECT mime_type, content_hash, updated_at, image_data
+        FROM heygen_preview_cache
+        WHERE cache_key = $1
+        LIMIT 1
+      `,
+      [cacheKey]
+    );
+  } catch (error) {
+    markPreviewCacheFailure(error);
+    return null;
+  }
 
   const row = result.rows[0];
   if (!row) {
