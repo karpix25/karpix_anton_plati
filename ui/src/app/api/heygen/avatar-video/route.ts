@@ -137,11 +137,66 @@ function stringifyHeygenPayload(payload: unknown) {
   }
 }
 
+function truncateText(value: string, maxLength = 1200) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
 function buildHeygenErrorMessage(pathname: string, status: number, payload: unknown, fallback: string) {
   const primary = extractErrorMessage(payload, fallback);
   const payloadText = stringifyHeygenPayload(payload);
   const details = payloadText && payloadText !== primary ? ` payload=${payloadText}` : "";
   return `HeyGen ${pathname} failed with status ${status}: ${primary}${details}`;
+}
+
+function collectFailureDetails(value: unknown, depth = 0): string[] {
+  if (!value || depth > 4) {
+    return [];
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed || ["success", "failed", "failure", "error"].includes(trimmed.toLowerCase())) {
+      return [];
+    }
+    return [trimmed];
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectFailureDetails(item, depth + 1));
+  }
+
+  if (typeof value !== "object") {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const details: string[] = [];
+  for (const [key, child] of Object.entries(record)) {
+    const normalizedKey = key.toLowerCase();
+    const isFailureKey =
+      normalizedKey.includes("error") ||
+      normalizedKey.includes("fail") ||
+      normalizedKey.includes("reason") ||
+      normalizedKey.includes("message") ||
+      normalizedKey.includes("msg") ||
+      normalizedKey.includes("detail") ||
+      normalizedKey.includes("code");
+
+    if (isFailureKey) {
+      details.push(...collectFailureDetails(child, depth + 1));
+      continue;
+    }
+
+    if (child && typeof child === "object") {
+      details.push(...collectFailureDetails(child, depth + 1));
+    }
+  }
+
+  return Array.from(new Set(details));
 }
 
 function extractFailedVideoError(payload: unknown, data: Record<string, unknown>) {
@@ -163,10 +218,20 @@ function extractFailedVideoError(payload: unknown, data: Record<string, unknown>
     return direct;
   }
 
+  const nestedDetails = collectFailureDetails(data);
+  if (nestedDetails.length > 0) {
+    return truncateText(`HeyGen video generation failed: ${nestedDetails.join("; ")}`);
+  }
+
   const fallback = extractErrorMessage(payload, "HeyGen video generation failed");
-  return String(fallback || "").trim().toLowerCase() === "success"
-    ? "HeyGen video generation failed"
-    : fallback;
+  if (String(fallback || "").trim().toLowerCase() !== "success") {
+    return fallback;
+  }
+
+  const payloadText = stringifyHeygenPayload(payload);
+  return payloadText
+    ? truncateText(`HeyGen video generation failed. Raw status payload: ${payloadText}`)
+    : "HeyGen video generation failed";
 }
 
 function isPhotarNotFoundError(error: unknown) {
