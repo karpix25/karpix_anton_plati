@@ -205,6 +205,9 @@ function resolveLookId(look: HeygenAvatarLook) {
 }
 
 export async function GET() {
+  const startedAt = Date.now();
+  console.info("[HeyGen catalog] Import request started");
+
   try {
     const groups = await fetchPaginatedHeygenList<HeygenAvatarGroup>(
       "/v2/avatar_group.list",
@@ -219,6 +222,7 @@ export async function GET() {
         return Array.isArray(list) ? list as HeygenAvatarGroup[] : [];
       }
     );
+    console.info(`[HeyGen catalog] Loaded avatar groups: ${groups.length}`);
 
     const groupLookResults = await Promise.all(
       groups.map(async (group, index) => {
@@ -330,9 +334,19 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json(groupLookResults.filter(Boolean));
+    const catalog = groupLookResults.filter(Boolean);
+    const lookCount = catalog.reduce((sum, avatar) => {
+      const looks = avatar && "looks" in avatar && Array.isArray(avatar.looks) ? avatar.looks.length : 0;
+      return sum + looks;
+    }, 0);
+
+    console.info(
+      `[HeyGen catalog] Import request completed: avatars=${catalog.length}, looks=${lookCount}, duration_ms=${Date.now() - startedAt}`
+    );
+
+    return NextResponse.json(catalog);
   } catch (error) {
-    console.error("HeyGen catalog GET error:", error);
+    console.error(`[HeyGen catalog] Import request failed after ${Date.now() - startedAt}ms:`, error);
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Internal Server Error",

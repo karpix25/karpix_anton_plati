@@ -150,6 +150,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  const startedAt = Date.now();
   const { user, errorResponse } = await validateApiRequest(request);
   if (errorResponse) return errorResponse;
 
@@ -163,6 +164,13 @@ export async function PUT(request: Request) {
     if (!resolvedClientId || resolvedClientId <= 0) {
       return NextResponse.json({ error: 'clientId is required' }, { status: 400 });
     }
+    const requestedAvatarCount = Array.isArray(avatars) ? avatars.length : 0;
+    const requestedLookCount = Array.isArray(avatars)
+      ? avatars.reduce((sum, avatar) => sum + (Array.isArray(avatar?.looks) ? avatar.looks.length : 0), 0)
+      : 0;
+    console.info(
+      `[HeyGen avatars] Save request started: client_id=${resolvedClientId}, avatars=${requestedAvatarCount}, looks=${requestedLookCount}`
+    );
 
     const existingCalibrationResult = await client.query(
       `SELECT avatar_id, tts_provider, tts_voice_id, elevenlabs_voice_id,
@@ -268,10 +276,13 @@ export async function PUT(request: Request) {
 
     await client.query('COMMIT');
     triggerAvatarVoiceCalibration(resolvedClientId, avatarIdsToCalibrate);
+    console.info(
+      `[HeyGen avatars] Save request completed: client_id=${resolvedClientId}, avatars=${requestedAvatarCount}, looks=${requestedLookCount}, calibration_queue=${avatarIdsToCalibrate.length}, duration_ms=${Date.now() - startedAt}`
+    );
     return NextResponse.json({ ok: true });
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error('HeyGen avatars PUT error:', error);
+    console.error(`[HeyGen avatars] Save request failed after ${Date.now() - startedAt}ms:`, error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   } finally {
     client.release();
