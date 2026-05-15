@@ -102,6 +102,15 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
       })
       .slice(0, 6);
   }, [avatarSearchQuery, heygenCatalog]);
+  const exactCatalogMatch = useMemo(
+    () =>
+      heygenCatalog.find((catalogAvatar) => {
+        const normalizedInput = (avatar.avatar_id || "").trim().toLowerCase();
+        if (!normalizedInput) return false;
+        return catalogAvatar.avatar_id.trim().toLowerCase() === normalizedInput;
+      }) || null,
+    [avatar.avatar_id, heygenCatalog]
+  );
 
   const isCustomId = useMemo(() => {
     return currentVoiceId && !availableVoices.some((v: Voice) => v.voice_id === currentVoiceId);
@@ -275,8 +284,27 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                       <input
                         value={avatar.avatar_id}
                         onChange={(e) => updateAvatar(avatarIndex, "avatar_id", e.target.value)}
+                        onBlur={() => {
+                          if (exactCatalogMatch) {
+                            applyHeygenCatalogAvatar(avatarIndex, exactCatalogMatch);
+                          }
+                        }}
                         className="w-full rounded-xl border-none bg-slate-100 px-4 py-3 text-xs font-mono outline-none focus:ring-2 focus:ring-primary/10 transition-shadow"
                       />
+                      {avatar.avatar_id && exactCatalogMatch ? (
+                        <button
+                          type="button"
+                          onClick={() => applyHeygenCatalogAvatar(avatarIndex, exactCatalogMatch)}
+                          className="mt-2 inline-flex items-center gap-2 rounded-lg bg-primary/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-primary transition-colors hover:bg-primary/15"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          Найдено в HeyGen: подтянуть looks
+                        </button>
+                      ) : avatar.avatar_id && heygenCatalog.length ? (
+                        <p className="mt-2 text-[10px] font-semibold text-slate-400">
+                          Точного совпадения в каталоге HeyGen нет. Проверьте ID или нажмите "Импорт из HeyGen".
+                        </p>
+                      ) : null}
                    </div>
                 </div>
 
