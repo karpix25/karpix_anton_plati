@@ -322,7 +322,7 @@ async function selectAvatarVariant(
     );
 
     if (avatarResult.rows.length === 0) {
-      throw new Error("No active HeyGen avatar is configured for this client");
+      throw new Error("Для этого проекта не выбран активный HeyGen аватар. Откройте Настройки -> HeyGen Pool, включите хотя бы один аватар и сохраните настройки.");
     }
 
     let selectedAvatar: AvatarRow | null = null;
@@ -354,7 +354,7 @@ async function selectAvatarVariant(
     }
 
     if (!selectedAvatar || !selectedLook) {
-      throw new Error("No active HeyGen look is configured for the active avatar pool");
+      throw new Error("Для активного HeyGen аватара не выбран активный образ. Откройте Настройки -> HeyGen Pool, включите хотя бы один образ и сохраните настройки.");
     }
 
     // Reserve selected variant on scenario to keep retries idempotent and avoid
