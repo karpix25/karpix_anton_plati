@@ -62,6 +62,9 @@ export interface Client {
   daily_final_video_count?: number;
   monthly_final_video_limit?: number;
   monthly_final_video_count?: number;
+  final_video_project_started_job_count?: number;
+  final_video_automation_stopped_at?: string | null;
+  final_video_automation_stop_reason?: string | null;
   total_final_video_count?: number;
   open_final_video_jobs?: number;
   learned_rules_scenario?: string;
@@ -208,6 +211,9 @@ export interface Settings {
   daily_final_video_count: number;
   monthly_final_video_limit: number;
   monthly_final_video_count: number;
+  final_video_project_started_job_count?: number;
+  final_video_automation_stopped_at?: string | null;
+  final_video_automation_stop_reason?: string | null;
   total_final_video_count?: number;
   open_final_video_jobs: number;
   learned_rules_scenario?: string;

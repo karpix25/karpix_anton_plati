@@ -20,11 +20,13 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   const autoActive = draftSettings.auto_generate_final_videos ?? false;
   const dailyCount = draftSettings.daily_final_video_count || 0;
   const dailyLimit = draftSettings.daily_final_video_limit || 1;
-  const monthlyCount = draftSettings.monthly_final_video_count || 0;
-  const monthlyLimit = draftSettings.monthly_final_video_limit || 1;
+  const projectCount = draftSettings.monthly_final_video_count || 0;
+  const projectLimit = draftSettings.monthly_final_video_limit || 1;
+  const automationStoppedAt = draftSettings.final_video_automation_stopped_at || null;
+  const automationStopReason = draftSettings.final_video_automation_stop_reason || null;
   const openJobs = draftSettings.open_final_video_jobs || 0;
   const [dailyLimitInput, setDailyLimitInput] = React.useState(String(dailyLimit));
-  const [monthlyLimitInput, setMonthlyLimitInput] = React.useState(String(monthlyLimit));
+  const [projectLimitInput, setProjectLimitInput] = React.useState(String(projectLimit));
 
   const targetMin = draftSettings.target_duration_min_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
   const targetMax = draftSettings.target_duration_max_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
@@ -44,49 +46,42 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   }, [dailyLimit]);
 
   React.useEffect(() => {
-    setMonthlyLimitInput(String(monthlyLimit));
-  }, [monthlyLimit]);
+    setProjectLimitInput(String(projectLimit));
+  }, [projectLimit]);
 
   const commitDailyLimitInput = () => {
     const parsed = Number(dailyLimitInput);
     let committedDaily = dailyLimit;
-    let committedMonthly = monthlyLimit;
 
     setDraftSettings((prev) => {
       const fallbackDaily = Number(prev.daily_final_video_limit || 1);
-      const fallbackMonthly = Number(prev.monthly_final_video_limit || fallbackDaily);
       const normalizedDaily = Number.isFinite(parsed) ? Math.max(1, Math.round(parsed)) : fallbackDaily;
-      const normalizedMonthly = Math.max(fallbackMonthly, normalizedDaily);
       committedDaily = normalizedDaily;
-      committedMonthly = normalizedMonthly;
       return {
         ...prev,
         daily_final_video_limit: normalizedDaily,
-        monthly_final_video_limit: normalizedMonthly,
       };
     });
 
     setDailyLimitInput(String(committedDaily));
-    setMonthlyLimitInput(String(committedMonthly));
   };
 
-  const commitMonthlyLimitInput = () => {
-    const parsed = Number(monthlyLimitInput);
-    let committedMonthly = monthlyLimit;
+  const commitProjectLimitInput = () => {
+    const parsed = Number(projectLimitInput);
+    let committedProject = projectLimit;
 
     setDraftSettings((prev) => {
-      const fallbackDaily = Number(prev.daily_final_video_limit || 1);
-      const fallbackMonthly = Number(prev.monthly_final_video_limit || fallbackDaily);
+      const fallbackMonthly = Number(prev.monthly_final_video_limit || 1);
       const normalizedMonthlyCandidate = Number.isFinite(parsed) ? Math.max(1, Math.round(parsed)) : fallbackMonthly;
-      const normalizedMonthly = Math.max(fallbackDaily, normalizedMonthlyCandidate);
-      committedMonthly = normalizedMonthly;
+      const normalizedMonthly = Math.max(1, normalizedMonthlyCandidate);
+      committedProject = normalizedMonthly;
       return {
         ...prev,
         monthly_final_video_limit: normalizedMonthly,
       };
     });
 
-    setMonthlyLimitInput(String(committedMonthly));
+    setProjectLimitInput(String(committedProject));
   };
 
   const commitTargetMinInput = () => {
@@ -151,8 +146,17 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   const estMax = Math.round(targetMax * 2.2);
 
   const dailyProgress = Math.min(100, Math.round((dailyCount / Math.max(1, dailyLimit)) * 100));
-  const monthlyProgress = Math.min(100, Math.round((monthlyCount / Math.max(1, monthlyLimit)) * 100));
-  const manualRunHint = `Ручной запуск добавляет до ${dailyLimit} задач в очередь (игнорируя дневной остаток, но с учетом месячного лимита).`;
+  const projectProgress = Math.min(100, Math.round((projectCount / Math.max(1, projectLimit)) * 100));
+  const manualRunHint = `Ручной запуск добавляет до ${dailyLimit} задач в очередь с учетом лимита проекта.`;
+  const formattedStoppedAt = automationStoppedAt
+    ? new Intl.DateTimeFormat("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(automationStoppedAt))
+    : null;
 
   return (
     <div className="space-y-6">
@@ -205,13 +209,27 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
                 <span className="text-foreground">{dailyCount} / {dailyLimit}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Сделано в месяце (запрошено в месяце):</span>
-                <span className="text-foreground">{monthlyCount} / {monthlyLimit}</span>
+                <span className="text-muted-foreground">Создано в проекте (запрошено):</span>
+                <span className="text-foreground">{projectCount} / {projectLimit}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">В очереди:</span>
                 <span className="text-foreground">{openJobs} задач</span>
               </div>
+              {formattedStoppedAt ? (
+                <>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Дата остановки:</span>
+                    <span className="text-right text-foreground">{formattedStoppedAt}</span>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <span className="text-muted-foreground">Причина остановки:</span>
+                    <span className="text-right text-foreground">
+                      {automationStopReason || "Достигнут лимит проекта"}
+                    </span>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -237,15 +255,15 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Лимит в месяц
+                Лимит проекта
               </label>
               <input
                 type="number"
-                min={dailyLimit}
+                min={1}
                 step={1}
-                value={monthlyLimitInput}
-                onChange={(event) => setMonthlyLimitInput(event.target.value)}
-                onBlur={commitMonthlyLimitInput}
+                value={projectLimitInput}
+                onChange={(event) => setProjectLimitInput(event.target.value)}
+                onBlur={commitProjectLimitInput}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.currentTarget.blur();
@@ -269,11 +287,11 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
           </div>
           <div className="space-y-2">
             <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              <span>Прогресс (месяц)</span>
-              <span>{monthlyProgress}%</span>
+              <span>Прогресс проекта</span>
+              <span>{projectProgress}%</span>
             </div>
             <div className="h-2 rounded-full bg-[#f0f4f7] overflow-hidden">
-              <div className="h-full bg-primary transition-all duration-500" style={{ width: `${monthlyProgress}%` }} />
+              <div className="h-full bg-primary transition-all duration-500" style={{ width: `${projectProgress}%` }} />
             </div>
           </div>
         </div>

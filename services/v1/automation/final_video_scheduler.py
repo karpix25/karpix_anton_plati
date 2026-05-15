@@ -7,7 +7,13 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-from services.v1.database.db_service import enqueue_final_video_job, get_auto_final_video_client_stats, get_db_connection, init_db
+from services.v1.database.db_service import (
+    enqueue_final_video_job,
+    get_auto_final_video_client_stats,
+    get_db_connection,
+    init_db,
+    stop_final_video_automation,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -61,7 +67,7 @@ def run_scheduler_cycle() -> int:
             completed = int(client.get("monthly_final_video_count") or 0)
             open_jobs = int(client.get("open_final_video_jobs") or 0)
             daily_job_count = int(client.get("daily_final_video_jobs") or 0)
-            monthly_job_count = int(client.get("monthly_final_video_jobs") or 0)
+            project_job_count = int(client.get("monthly_final_video_jobs") or 0)
             daily_limit = max(0, int(client.get("daily_final_video_limit") or 0))
             limit = max(0, int(client.get("monthly_final_video_limit") or 0))
 
@@ -71,8 +77,18 @@ def run_scheduler_cycle() -> int:
             # STRICT GATE: count already-created final_video_jobs in day/month.
             # This prevents endless auto-generation retries when upstream services fail.
             remaining_today = max(0, daily_limit - daily_job_count)
-            remaining_month = max(0, limit - monthly_job_count)
-            remaining = min(remaining_today, remaining_month)
+            remaining_project = max(0, limit - project_job_count)
+            if remaining_project <= 0:
+                stop_final_video_automation(int(client["id"]))
+                logger.info(
+                    "Stopped final video automation for client_id=%s: project limit reached (%s/%s).",
+                    client["id"],
+                    project_job_count,
+                    limit,
+                )
+                continue
+
+            remaining = min(remaining_today, remaining_project)
             backlog_room = max(0, max_backlog_per_client - open_jobs)
             to_enqueue = min(max_batch_per_client, remaining, backlog_room)
 
@@ -81,21 +97,30 @@ def run_scheduler_cycle() -> int:
                 queued += 1
 
             if to_enqueue:
+                project_job_count_after = project_job_count + to_enqueue
                 logger.info(
                     (
                         "Queued %s final video jobs for client_id=%s "
-                        "(created jobs today: %s/%s, created jobs month: %s/%s, completed today: %s, completed month: %s, open: %s)"
+                        "(created jobs today: %s/%s, created jobs project: %s/%s, completed today: %s, completed project: %s, open: %s)"
                     ),
                     to_enqueue,
                     client["id"],
                     daily_job_count,
                     daily_limit,
-                    monthly_job_count,
+                    project_job_count,
                     limit,
                     completed_today,
                     completed,
                     open_jobs,
                 )
+                if project_job_count_after >= limit:
+                    stop_final_video_automation(int(client["id"]))
+                    logger.info(
+                        "Stopped final video automation for client_id=%s after queueing: project limit reached (%s/%s).",
+                        client["id"],
+                        project_job_count_after,
+                        limit,
+                    )
 
         return queued
     finally:

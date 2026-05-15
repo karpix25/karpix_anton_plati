@@ -770,7 +770,7 @@ export const useSettingsState = ({
 
       const queuedCount = Number(payload?.queuedCount || 0);
       const requestedBatchSize = Number(payload?.requestedBatchSize || 0);
-      const remainingMonthlyAfter = Number(payload?.remainingMonthlyAfter || 0);
+      const remainingProjectAfter = Number(payload?.remainingMonthlyAfter || 0);
 
       setDraftSettings((prev) => ({
         ...prev,
@@ -780,10 +780,10 @@ export const useSettingsState = ({
       if (queuedCount > 0) {
         alert(
           `Ручной запуск выполнен: в очередь добавлено ${queuedCount} задач (пакет ${requestedBatchSize}). ` +
-            `Остаток месячного лимита по запросам: ${remainingMonthlyAfter}.`
+            `Остаток лимита проекта по запросам: ${remainingProjectAfter}.`
         );
       } else {
-        alert("Ручной запуск не добавил задач: месячный лимит уже исчерпан.");
+        alert("Ручной запуск не добавил задач: лимит проекта уже исчерпан.");
       }
 
       if (onRefreshWorkspace) onRefreshWorkspace();

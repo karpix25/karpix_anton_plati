@@ -369,6 +369,9 @@ def init_db() -> None:
             auto_generate_final_videos BOOLEAN DEFAULT FALSE,
             daily_final_video_limit INTEGER DEFAULT 3,
             monthly_final_video_limit INTEGER DEFAULT 30,
+            final_video_project_started_job_count INTEGER DEFAULT 0,
+            final_video_automation_stopped_at TIMESTAMP,
+            final_video_automation_stop_reason TEXT,
             learned_rules_scenario TEXT,
             learned_rules_visual TEXT,
             learned_rules_video TEXT,
@@ -584,6 +587,9 @@ def init_db() -> None:
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_generate_final_videos BOOLEAN DEFAULT FALSE",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_final_video_limit INTEGER DEFAULT 3",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS monthly_final_video_limit INTEGER DEFAULT 30",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_project_started_job_count INTEGER DEFAULT 0",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stopped_at TIMESTAMP",
+        "ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stop_reason TEXT",
         "ALTER TABLE processed_content ADD COLUMN IF NOT EXISTS topic_card_id INTEGER",
         "ALTER TABLE processed_content ADD COLUMN IF NOT EXISTS structure_card_id INTEGER",
         "ALTER TABLE processed_content ADD COLUMN IF NOT EXISTS word_count INTEGER",
@@ -722,6 +728,29 @@ def init_db() -> None:
                     UPDATE clients
                     SET broll_generator_model = 'veo3_lite'
                     WHERE broll_generator_model IS DISTINCT FROM 'veo3_lite'
+                    """
+                )
+            cursor.execute(
+                """
+                INSERT INTO app_migrations(name)
+                VALUES (%s)
+                ON CONFLICT (name) DO NOTHING
+                RETURNING name
+                """,
+                ("2026_05_15_seed_final_video_project_start_counts",),
+            )
+            migration_row = cursor.fetchone()
+            if migration_row:
+                cursor.execute(
+                    """
+                    UPDATE clients c
+                    SET final_video_project_started_job_count = COALESCE(job_stats.total_jobs, 0)
+                    FROM (
+                        SELECT client_id, COUNT(*)::int AS total_jobs
+                        FROM final_video_jobs
+                        GROUP BY client_id
+                    ) job_stats
+                    WHERE job_stats.client_id = c.id
                     """
                 )
         logger.info("Database initialized successfully")
@@ -1357,11 +1386,14 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                 c.auto_generate_final_videos,
                 c.daily_final_video_limit,
                 c.monthly_final_video_limit,
+                COALESCE(c.final_video_project_started_job_count, 0) AS final_video_project_started_job_count,
+                c.final_video_automation_stopped_at,
+                c.final_video_automation_stop_reason,
                 COALESCE(completed.daily_completed_count, 0) AS daily_final_video_count,
-                COALESCE(completed.completed_count, 0) AS monthly_final_video_count,
+                GREATEST(0, COALESCE(job_stats.total_job_count, 0) - COALESCE(c.final_video_project_started_job_count, 0)) AS monthly_final_video_count,
                 COALESCE(open_jobs.open_count, 0) AS open_final_video_jobs,
                 COALESCE(job_stats.daily_job_count, 0) AS daily_final_video_jobs,
-                COALESCE(job_stats.monthly_job_count, 0) AS monthly_final_video_jobs
+                GREATEST(0, COALESCE(job_stats.total_job_count, 0) - COALESCE(c.final_video_project_started_job_count, 0)) AS monthly_final_video_jobs
             FROM clients c
             LEFT JOIN (
                 SELECT
@@ -1421,7 +1453,8 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
                                 'month',
                                 ((created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
                               ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
-                    )::int AS monthly_job_count
+                    )::int AS monthly_job_count,
+                    COUNT(*)::int AS total_job_count
                 FROM final_video_jobs
                 GROUP BY client_id
             ) job_stats ON job_stats.client_id = c.id
@@ -1431,6 +1464,20 @@ def get_auto_final_video_client_stats() -> List[Dict[str, Any]]:
         )
         rows = cursor.fetchall() or []
         return [dict(row) for row in rows]
+
+def stop_final_video_automation(client_id: int, reason: str = "Достигнут лимит проекта") -> bool:
+    with DBConnection() as cursor:
+        cursor.execute(
+            """
+            UPDATE clients
+            SET auto_generate_final_videos = FALSE,
+                final_video_automation_stopped_at = CURRENT_TIMESTAMP,
+                final_video_automation_stop_reason = %s
+            WHERE id = %s
+            """,
+            (reason, client_id),
+        )
+    return True
 
 def update_client(client_id: int, **kwargs: Any) -> bool:
     fields, values = list(kwargs.keys()), list(kwargs.values())

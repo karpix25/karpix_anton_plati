@@ -17,6 +17,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Valid clientId is required" }, { status: 400 });
     }
 
+    await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_project_started_job_count INTEGER DEFAULT 0");
+    await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stopped_at TIMESTAMP");
+    await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stop_reason TEXT");
+
     const dbClient = await pool.connect();
     try {
       await dbClient.query("BEGIN");
@@ -37,43 +41,21 @@ export async function POST(request: Request) {
       const statsRes = await dbClient.query<{
         id: number;
         daily_limit: number;
-        monthly_limit: number;
-        monthly_job_count: number;
+        project_limit: number;
+        project_job_count: number;
       }>(
         `
         SELECT
           c.id,
           GREATEST(0, COALESCE(c.daily_final_video_limit, 0))::int AS daily_limit,
-          GREATEST(0, COALESCE(c.monthly_final_video_limit, 0))::int AS monthly_limit,
-          (
-            COALESCE((
-              SELECT COUNT(*)::int
-              FROM generated_scenarios gs
-              WHERE gs.client_id = c.id
-                AND gs.montage_status = 'completed'
-                AND DATE_TRUNC(
-                  'month',
-                  ((COALESCE(gs.montage_yandex_uploaded_at, gs.montage_updated_at, gs.created_at) AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')
-                ) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
-                AND EXISTS (
-                  SELECT 1
-                  FROM final_video_jobs fvj
-                  WHERE fvj.client_id = gs.client_id
-                    AND (
-                      fvj.scenario_id = gs.id
-                      OR (fvj.scenario_job_id IS NOT NULL AND fvj.scenario_job_id = gs.job_id)
-                    )
-                    AND DATE_TRUNC('month', ((fvj.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Europe/Moscow')) = DATE_TRUNC('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Europe/Moscow'))
-                )
-            ), 0)
-            +
+          GREATEST(0, COALESCE(c.monthly_final_video_limit, 0))::int AS project_limit,
+          GREATEST(0, (
             COALESCE((
               SELECT COUNT(*)::int
               FROM final_video_jobs fvj
               WHERE fvj.client_id = c.id
-                AND fvj.status IN ('queued', 'processing')
             ), 0)
-          )::int AS monthly_job_count
+          ) - COALESCE(c.final_video_project_started_job_count, 0))::int AS project_job_count
         FROM clients c
         WHERE c.id = $1
         FOR UPDATE
@@ -88,20 +70,20 @@ export async function POST(request: Request) {
       }
 
       const dailyLimit = Number(stats.daily_limit || 0);
-      const monthlyLimit = Number(stats.monthly_limit || 0);
-      const monthlyJobCount = Number(stats.monthly_job_count || 0);
+      const monthlyLimit = Number(stats.project_limit || 0);
+      const monthlyJobCount = Number(stats.project_job_count || 0);
 
       if (dailyLimit <= 0 || monthlyLimit <= 0) {
         await dbClient.query("ROLLBACK");
         return NextResponse.json(
-          { error: "Set daily and monthly final video limits above zero first" },
+          { error: "Сначала задайте дневной лимит и лимит проекта больше нуля" },
           { status: 400 }
         );
       }
 
-      const remainingMonthly = Math.max(0, monthlyLimit - monthlyJobCount);
+      const remainingProject = Math.max(0, monthlyLimit - monthlyJobCount);
       const requestedBatchSize = dailyLimit;
-      const toEnqueue = Math.min(requestedBatchSize, remainingMonthly);
+      const toEnqueue = Math.min(requestedBatchSize, remainingProject);
 
       if (toEnqueue > 0) {
         await dbClient.query(
@@ -109,6 +91,20 @@ export async function POST(request: Request) {
            SELECT $1
            FROM generate_series(1, $2)`,
           [clientId, toEnqueue]
+        );
+      }
+
+      const reachedProjectLimit = monthlyJobCount + toEnqueue >= monthlyLimit;
+      if (reachedProjectLimit) {
+        await dbClient.query(
+          `
+          UPDATE clients
+          SET auto_generate_final_videos = FALSE,
+              final_video_automation_stopped_at = CURRENT_TIMESTAMP,
+              final_video_automation_stop_reason = 'Достигнут лимит проекта'
+          WHERE id = $1
+          `,
+          [clientId]
         );
       }
 
@@ -122,8 +118,9 @@ export async function POST(request: Request) {
         monthlyLimit,
         monthlyJobCountBefore: monthlyJobCount,
         monthlyJobCountAfter: monthlyJobCount + toEnqueue,
-        remainingMonthlyAfter: remainingMonthly - toEnqueue,
+        remainingMonthlyAfter: remainingProject - toEnqueue,
         skippedDueToMonthlyLimit: toEnqueue === 0,
+        reachedProjectLimit,
       });
     } catch (error) {
       await dbClient.query("ROLLBACK");

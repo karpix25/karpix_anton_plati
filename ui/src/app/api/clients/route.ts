@@ -124,6 +124,9 @@ async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_generate_final_videos BOOLEAN DEFAULT FALSE");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_final_video_limit INTEGER DEFAULT 3");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS monthly_final_video_limit INTEGER DEFAULT 30");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_project_started_job_count INTEGER DEFAULT 0");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stopped_at TIMESTAMP");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS final_video_automation_stop_reason TEXT");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_min_seconds INTEGER DEFAULT 50");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS target_duration_max_seconds INTEGER DEFAULT 50");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS broll_timing_mode TEXT DEFAULT 'coverage_percent'");
@@ -179,6 +182,25 @@ async function ensureClientVoiceColumn() {
        WHERE typography_hook_enabled IS DISTINCT FROM FALSE`
     );
   }
+  const projectStartMigrationRes = await pool.query(
+    `INSERT INTO app_migrations(name)
+     VALUES ($1)
+     ON CONFLICT (name) DO NOTHING
+     RETURNING name`,
+    ["2026_05_15_seed_final_video_project_start_counts"]
+  );
+  if (projectStartMigrationRes.rowCount) {
+    await pool.query(
+      `UPDATE clients c
+       SET final_video_project_started_job_count = COALESCE(job_stats.total_jobs, 0)
+       FROM (
+         SELECT client_id, COUNT(*)::int AS total_jobs
+         FROM final_video_jobs
+         GROUP BY client_id
+       ) job_stats
+       WHERE job_stats.client_id = c.id`
+    );
+  }
 }
 
 async function ensureScenarioStatsColumns() {
@@ -189,14 +211,34 @@ async function ensureScenarioStatsColumns() {
 
 function resolveFinalVideoLimits(dailyLimit: unknown, monthlyLimit: unknown) {
   const resolvedDailyLimit = Math.max(1, Number.parseInt(String(dailyLimit || 3), 10) || 3);
-  const resolvedMonthlyLimit = Math.max(
-    resolvedDailyLimit,
-    Number.parseInt(String(monthlyLimit || 30), 10) || 30
-  );
+  const resolvedMonthlyLimit = Math.max(1, Number.parseInt(String(monthlyLimit || 30), 10) || 30);
   return {
     resolvedDailyLimit,
     resolvedMonthlyLimit,
   };
+}
+
+async function getFinalVideoAutomationState(clientId: number) {
+  const { rows } = await pool.query<{
+    auto_generate_final_videos: boolean;
+    total_final_video_jobs: number;
+  }>(
+    `
+    SELECT
+      COALESCE(c.auto_generate_final_videos, FALSE) AS auto_generate_final_videos,
+      COALESCE(job_stats.total_final_video_jobs, 0)::int AS total_final_video_jobs
+    FROM clients c
+    LEFT JOIN (
+      SELECT client_id, COUNT(*)::int AS total_final_video_jobs
+      FROM final_video_jobs
+      WHERE client_id = $1
+      GROUP BY client_id
+    ) job_stats ON job_stats.client_id = c.id
+    WHERE c.id = $1
+    `,
+    [clientId]
+  );
+  return rows[0] || null;
 }
 
 export async function GET(request: Request) {
@@ -210,7 +252,7 @@ export async function GET(request: Request) {
       SELECT
         c.*,
         COALESCE(stats.daily_final_video_count, 0) AS daily_final_video_count,
-        COALESCE(stats.monthly_final_video_count, 0) AS monthly_final_video_count,
+        GREATEST(0, COALESCE(project_jobs.total_final_video_jobs, 0) - COALESCE(c.final_video_project_started_job_count, 0)) AS monthly_final_video_count,
         COALESCE(total_stats.total_final_video_count, 0) AS total_final_video_count,
         COALESCE(open_jobs.open_final_video_jobs, 0) AS open_final_video_jobs
       FROM clients c
@@ -268,6 +310,13 @@ export async function GET(request: Request) {
         WHERE fvj.status IN ('queued', 'processing')
         GROUP BY fvj.client_id
       ) open_jobs ON open_jobs.client_id = c.id
+      LEFT JOIN (
+        SELECT
+          fvj.client_id,
+          COUNT(*)::int AS total_final_video_jobs
+        FROM final_video_jobs fvj
+        GROUP BY fvj.client_id
+      ) project_jobs ON project_jobs.client_id = c.id
       ORDER BY c.created_at DESC
     `);
     return NextResponse.json(
@@ -534,6 +583,7 @@ export async function PUT(request: Request) {
       daily_final_video_limit,
       monthly_final_video_limit
     );
+    const previousAutomationState = await getFinalVideoAutomationState(Number(id));
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
     const { rows } = await pool.query(
@@ -590,12 +640,42 @@ export async function PUT(request: Request) {
       return NextResponse.json(updatedClient);
     }
 
+    let clientForResponse = updatedClient;
+    const isEnablingFinalAutomation =
+      Boolean(auto_generate_final_videos) && !Boolean(previousAutomationState?.auto_generate_final_videos);
+    const isDisablingFinalAutomation =
+      !Boolean(auto_generate_final_videos) && Boolean(previousAutomationState?.auto_generate_final_videos);
+
+    if (isEnablingFinalAutomation) {
+      const stateUpdate = await pool.query(
+        `UPDATE clients
+         SET final_video_project_started_job_count = $1,
+             final_video_automation_stopped_at = NULL,
+             final_video_automation_stop_reason = NULL
+         WHERE id = $2
+         RETURNING *`,
+        [Number(previousAutomationState?.total_final_video_jobs || 0), updatedClient.id]
+      );
+      clientForResponse = stateUpdate.rows[0] || clientForResponse;
+    } else if (isDisablingFinalAutomation) {
+      const stateUpdate = await pool.query(
+        `UPDATE clients
+         SET final_video_automation_stopped_at = CURRENT_TIMESTAMP,
+             final_video_automation_stop_reason = 'Остановлено вручную'
+         WHERE id = $1
+           AND final_video_automation_stop_reason IS DISTINCT FROM 'Достигнут лимит проекта'
+         RETURNING *`,
+        [updatedClient.id]
+      );
+      clientForResponse = stateUpdate.rows[0] || clientForResponse;
+    }
+
     const updatedPronunciationOverrides = await pool.query(
       `UPDATE clients
        SET tts_pronunciation_overrides = $1::jsonb
        WHERE id = $2
        RETURNING *`,
-      [JSON.stringify(normalizedTtsPronunciationOverrides), updatedClient.id]
+      [JSON.stringify(normalizedTtsPronunciationOverrides), clientForResponse.id]
     );
 
     return NextResponse.json({
