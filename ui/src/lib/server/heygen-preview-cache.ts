@@ -39,8 +39,10 @@ type HeygenAvatarLook = {
 
 let isCacheTableReady = false;
 let cacheDisabledUntil = 0;
+let lastCacheWarningAt = 0;
 
 const CACHE_ERROR_COOLDOWN_MS = 60_000;
+const CACHE_WARNING_THROTTLE_MS = 60_000;
 const IMAGE_KEYS = [
   "preview_image_url",
   "preview_image",
@@ -59,7 +61,18 @@ function isPreviewCacheTemporarilyDisabled(): boolean {
 
 function markPreviewCacheFailure(error: unknown): void {
   cacheDisabledUntil = Date.now() + CACHE_ERROR_COOLDOWN_MS;
-  console.error("HeyGen preview cache disabled temporarily:", error);
+  isCacheTableReady = false;
+
+  const now = Date.now();
+  if (now - lastCacheWarningAt < CACHE_WARNING_THROTTLE_MS) {
+    return;
+  }
+
+  lastCacheWarningAt = now;
+  const message = error instanceof Error ? error.message : String(error);
+  console.warn(
+    `HeyGen preview cache unavailable, bypassing DB cache for ${Math.round(CACHE_ERROR_COOLDOWN_MS / 1000)}s: ${message}`
+  );
 }
 
 function normalizeUrlCandidate(value: unknown): string {
@@ -132,9 +145,6 @@ async function ensurePreviewCacheTable(): Promise<void> {
   if (isCacheTableReady) {
     return;
   }
-  if (isPreviewCacheTemporarilyDisabled()) {
-    throw new Error("HeyGen preview cache temporarily disabled");
-  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS heygen_preview_cache (
@@ -191,7 +201,13 @@ async function readCachedPreviewMeta(cacheKey: string): Promise<CachedPreviewRow
 
 async function savePreviewCache(cacheKey: string, sourceUrl: string, mimeType: string, data: Buffer): Promise<CachedPreviewMeta> {
   if (isPreviewCacheTemporarilyDisabled()) {
-    throw new Error("HeyGen preview cache temporarily disabled");
+    const contentHash = createHash("sha1").update(data).digest("hex");
+    return {
+      cacheKey,
+      sourceUrl,
+      contentHash,
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   await ensurePreviewCacheTable();
@@ -371,7 +387,13 @@ async function recoverHeygenPreviewCache(cacheKey: string): Promise<CachedPrevie
     return null;
   }
 
-  const saved = await savePreviewCache(cacheKey, sourceUrl, downloaded.mimeType, downloaded.data);
+  const saved = isPreviewCacheTemporarilyDisabled()
+    ? {
+        contentHash: createHash("sha1").update(downloaded.data).digest("hex"),
+        updatedAt: new Date().toISOString(),
+      }
+    : await savePreviewCache(cacheKey, sourceUrl, downloaded.mimeType, downloaded.data);
+
   return {
     mimeType: downloaded.mimeType,
     contentHash: saved.contentHash,
@@ -427,6 +449,10 @@ export async function getStableHeygenPreviewUrl(params: {
     }
   }
 
+  if (isPreviewCacheTemporarilyDisabled()) {
+    return sourceUrl;
+  }
+
   let existing: CachedPreviewRow | null = null;
 
   try {
@@ -468,7 +494,12 @@ export async function getCachedHeygenPreviewBlob(cacheKeyInput: unknown): Promis
     return null;
   }
   if (isPreviewCacheTemporarilyDisabled()) {
-    return null;
+    try {
+      return await recoverHeygenPreviewCache(cacheKey);
+    } catch (error) {
+      console.warn("HeyGen preview direct recovery failed while cache is disabled:", error);
+      return null;
+    }
   }
 
   let result;
