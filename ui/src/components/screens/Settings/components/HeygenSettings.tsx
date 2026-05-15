@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { HeygenAvatarConfig, Voice, Settings } from "@/types";
 import { Button } from "@/components/ui/button";
-import { LoaderCircle, Plus, Shuffle } from "lucide-react";
+import { ChevronLeft, ChevronRight, LoaderCircle, Plus, Shuffle } from "lucide-react";
 import { HeygenAvatarItem } from "./HeygenAvatarItem";
 import { getAvatarConfigKey } from "../SettingsUtils";
 
@@ -62,6 +62,28 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
   handleGenerateMotionPrompt,
   setSelectedLookTabs,
 }) => {
+  const pageSize = 10;
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalAvatars = avatarConfigs.length;
+  const totalPages = Math.max(1, Math.ceil(totalAvatars / pageSize));
+  const activeAvatarsCount = useMemo(
+    () => avatarConfigs.filter((avatar) => avatar.is_active ?? true).length,
+    [avatarConfigs]
+  );
+  const visibleAvatarEntries = useMemo(
+    () =>
+      avatarConfigs
+        .map((avatar, index) => ({ avatar, index }))
+        .slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [avatarConfigs, currentPage]
+  );
+  const firstVisibleAvatar = totalAvatars ? (currentPage - 1) * pageSize + 1 : 0;
+  const lastVisibleAvatar = Math.min(currentPage * pageSize, totalAvatars);
+
+  useEffect(() => {
+    setCurrentPage((page) => Math.min(Math.max(page, 1), totalPages));
+  }, [totalPages]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-6 shadow-sm">
@@ -104,8 +126,47 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
         </div>
       </div>
 
+      <div className="flex flex-col gap-3 rounded-2xl border border-[#e5ebf0] bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="space-y-1">
+          <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+            Аватары {firstVisibleAvatar}-{lastVisibleAvatar} из {totalAvatars}
+          </div>
+          <div className="text-[11px] font-semibold text-slate-400">
+            Активных: {activeAvatarsCount}. На странице: до {pageSize}.
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 rounded-xl border-[#e5ebf0]"
+            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+            disabled={currentPage <= 1}
+            title="Предыдущая страница"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-24 rounded-xl bg-slate-100 px-3 py-2 text-center text-[10px] font-black uppercase tracking-widest text-slate-600">
+            {currentPage} / {totalPages}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-9 w-9 rounded-xl border-[#e5ebf0]"
+            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            disabled={currentPage >= totalPages}
+            title="Следующая страница"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
       <div className="space-y-4">
-        {avatarConfigs.map((avatar, idx) => {
+        {visibleAvatarEntries.map(({ avatar, index: idx }) => {
           const panelKey = getAvatarConfigKey(avatar, idx);
           const legacyKeys = [
             String(idx),

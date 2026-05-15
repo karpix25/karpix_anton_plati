@@ -27,6 +27,8 @@ type HeygenPhotoAvatarDetails = {
   status?: string;
 };
 
+type HeygenPaginationParam = { key: string; value: string | number } | null;
+
 const IMAGE_KEYS = [
   "preview_image_url",
   "preview_image",
@@ -111,23 +113,129 @@ async function heygenFetch(path: string) {
   return data;
 }
 
+function appendQuery(path: string, params: Record<string, string | number | boolean | null | undefined>) {
+  const [pathname, query = ""] = path.split("?");
+  const searchParams = new URLSearchParams(query);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== "") {
+      searchParams.set(key, String(value));
+    }
+  });
+  const nextQuery = searchParams.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
+function readCursorValue(value: unknown): string | number | null {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return null;
+}
+
+function readNextPageParam(payload: unknown): HeygenPaginationParam {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  const root = payload as Record<string, unknown>;
+  const data = root.data && typeof root.data === "object" && !Array.isArray(root.data)
+    ? root.data as Record<string, unknown>
+    : {};
+  const pagination = data.pagination && typeof data.pagination === "object" && !Array.isArray(data.pagination)
+    ? data.pagination as Record<string, unknown>
+    : {};
+  const meta = data.meta && typeof data.meta === "object" && !Array.isArray(data.meta)
+    ? data.meta as Record<string, unknown>
+    : {};
+
+  const candidates: Array<[string, unknown]> = [
+    ["page_token", data.next_page_token],
+    ["page_token", data.nextPageToken],
+    ["cursor", data.next_cursor],
+    ["cursor", data.nextCursor],
+    ["page_token", pagination.next_page_token],
+    ["page_token", pagination.nextPageToken],
+    ["cursor", pagination.next_cursor],
+    ["cursor", pagination.nextCursor],
+    ["page_token", meta.next_page_token],
+    ["page_token", meta.nextPageToken],
+    ["cursor", meta.next_cursor],
+    ["cursor", meta.nextCursor],
+  ];
+
+  for (const [key, rawValue] of candidates) {
+    const value = readCursorValue(rawValue);
+    if (value !== null) {
+      return { key, value };
+    }
+  }
+
+  return null;
+}
+
+async function fetchPaginatedHeygenList<T>(
+  basePath: string,
+  readItems: (payload: unknown) => T[],
+  options?: { maxPages?: number }
+) {
+  const maxPages = options?.maxPages || 20;
+  const collected: T[] = [];
+  let nextPageParam: HeygenPaginationParam = null;
+  let page = 0;
+
+  do {
+    const pagePath = nextPageParam
+      ? appendQuery(basePath, { [nextPageParam.key]: nextPageParam.value })
+      : basePath;
+    const payload = await heygenFetch(pagePath);
+    const items = readItems(payload);
+    collected.push(...items);
+    nextPageParam = readNextPageParam(payload);
+    page += 1;
+  } while (nextPageParam && page < maxPages);
+
+  return collected;
+}
+
 function resolveLookId(look: HeygenAvatarLook) {
-  const candidate = [look.id, look.look_id, look.photo_avatar_id, look.avatar_id].find(
-    (value) => typeof value === "string" && value.trim()
-  );
-  return candidate?.trim() || "";
+  return pickString(look.id, look.look_id, look.photo_avatar_id, look.avatar_id);
 }
 
 export async function GET() {
   try {
-    const groupsPayload = await heygenFetch("/v2/avatar_group.list");
-    const groups: HeygenAvatarGroup[] = groupsPayload?.data?.avatar_group_list || [];
+    const groups = await fetchPaginatedHeygenList<HeygenAvatarGroup>(
+      "/v2/avatar_group.list",
+      (payload) => {
+        const data = payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>).data
+          : null;
+        if (!data || typeof data !== "object" || Array.isArray(data)) {
+          return [];
+        }
+        const list = (data as Record<string, unknown>).avatar_group_list;
+        return Array.isArray(list) ? list as HeygenAvatarGroup[] : [];
+      }
+    );
 
     const groupLookResults = await Promise.all(
       groups.map(async (group, index) => {
         try {
-          const looksPayload = await heygenFetch(`/v2/avatar_group/${group.id}/avatars`);
-          const looks: HeygenAvatarLook[] = looksPayload?.data?.avatar_list || [];
+          const looks = await fetchPaginatedHeygenList<HeygenAvatarLook>(
+            `/v2/avatar_group/${encodeURIComponent(group.id)}/avatars`,
+            (payload) => {
+              const data = payload && typeof payload === "object" && !Array.isArray(payload)
+                ? (payload as Record<string, unknown>).data
+                : null;
+              if (!data || typeof data !== "object" || Array.isArray(data)) {
+                return [];
+              }
+              const list = (data as Record<string, unknown>).avatar_list;
+              return Array.isArray(list) ? list as HeygenAvatarLook[] : [];
+            }
+          );
           const lookDetails = await Promise.all(
             looks.map(async (look) => {
               const resolvedLookId = resolveLookId(look);
