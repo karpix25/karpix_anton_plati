@@ -225,6 +225,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                     draftSettings={state.draftSettings}
                     onRefreshHeygenCatalog={props.onRefreshHeygenCatalog}
                     updateAvatar={state.updateAvatar}
+                    applyHeygenCatalogAvatar={state.applyHeygenCatalogAvatar}
                     toggleAvatarPanel={state.toggleAvatarPanel}
                     updateLook={state.updateLook}
                     updateLookMotionField={state.updateLookMotionField}

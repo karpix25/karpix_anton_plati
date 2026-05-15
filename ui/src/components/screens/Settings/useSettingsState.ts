@@ -344,6 +344,36 @@ export const useSettingsState = ({
     );
   };
 
+  const applyHeygenCatalogAvatar = (avatarIndex: number, catalogAvatar: HeygenAvatarConfig) => {
+    setAvatarConfigs((prev) =>
+      prev.map((avatar, index) =>
+        index === avatarIndex
+          ? normalizeAvatar(
+              {
+                ...catalogAvatar,
+                id: avatar.id,
+                tts_provider: avatar.tts_provider || draftSettings.tts_provider || "minimax",
+                tts_voice_id:
+                  avatar.tts_voice_id ||
+                  draftSettings.tts_voice_id ||
+                  minimaxVoices[0]?.voice_id ||
+                  DEFAULT_MINIMAX_VOICE_ID,
+                elevenlabs_voice_id:
+                  avatar.elevenlabs_voice_id ||
+                  draftSettings.elevenlabs_voice_id ||
+                  elevenlabsVoices[0]?.voice_id ||
+                  DEFAULT_ELEVENLABS_VOICE_ID,
+                is_active: avatar.is_active ?? true,
+                usage_count: avatar.usage_count ?? 0,
+                sort_order: avatar.sort_order ?? index,
+              },
+              index
+            )
+          : avatar
+      )
+    );
+  };
+
   const toggleAvatarPanel = (avatar: HeygenAvatarConfig, avatarIndex: number) => {
     const panelKey = getAvatarConfigKey(avatar, avatarIndex);
     setExpandedAvatarPanels((prev) => ({ ...prev, [panelKey]: !prev[panelKey] }));
@@ -816,6 +846,7 @@ export const useSettingsState = ({
     subtitlePreviewScale,
     subtitlePreviewRef,
     updateAvatar,
+    applyHeygenCatalogAvatar,
     toggleAvatarPanel,
     updateLook,
     updateLookMotionField,

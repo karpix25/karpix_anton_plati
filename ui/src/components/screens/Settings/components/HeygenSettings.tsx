@@ -20,6 +20,7 @@ interface HeygenSettingsProps {
   draftSettings: Settings;
   onRefreshHeygenCatalog?: () => Promise<HeygenAvatarConfig[]>;
   updateAvatar: (avatarIndex: number, field: keyof HeygenAvatarConfig, value: string | number | boolean) => void;
+  applyHeygenCatalogAvatar: (avatarIndex: number, catalogAvatar: HeygenAvatarConfig) => void;
   toggleAvatarPanel: (avatar: HeygenAvatarConfig, avatarIndex: number) => void;
   updateLook: (avatarIndex: number, lookIndex: number, field: "look_id" | "look_name" | "preview_image_url" | "is_active", value: string | boolean) => void;
   updateLookMotionField: (avatarIndex: number, lookIndex: number, field: "motion_prompt" | "motion_type", value: string) => void;
@@ -49,6 +50,7 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
   draftSettings,
   onRefreshHeygenCatalog,
   updateAvatar,
+  applyHeygenCatalogAvatar,
   toggleAvatarPanel,
   updateLook,
   updateLookMotionField,
@@ -186,10 +188,12 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
             minimaxVoices={minimaxVoices}
             elevenlabsVoices={elevenlabsVoices}
             draftSettings={draftSettings}
+            heygenCatalog={heygenCatalog}
             selectedLookTabs={selectedLookTabs}
             motionLookRequestKey={motionLookRequestKey}
             motionPromptRequestKey={motionPromptRequestKey}
             updateAvatar={updateAvatar}
+            applyHeygenCatalogAvatar={applyHeygenCatalogAvatar}
             toggleAvatarPanel={toggleAvatarPanel}
             updateLook={updateLook}
             updateLookMotionField={updateLookMotionField}
