@@ -15,6 +15,10 @@ type HeygenAvatarLook = {
   look_id?: string;
   photo_avatar_id?: string;
   name?: string;
+  created_at?: string | number;
+  create_time?: string | number;
+  updated_at?: string | number;
+  update_time?: string | number;
   image_url?: string | null;
   preview_image?: string | null;
   preview_image_url?: string | null;
@@ -25,6 +29,10 @@ type HeygenPhotoAvatarDetails = {
   id?: string;
   is_motion?: boolean;
   status?: string;
+  created_at?: string | number;
+  create_time?: string | number;
+  updated_at?: string | number;
+  update_time?: string | number;
 };
 
 type HeygenPaginationParam = { key: string; value: string | number } | null;
@@ -204,6 +212,27 @@ function resolveLookId(look: HeygenAvatarLook) {
   return pickString(look.id, look.look_id, look.photo_avatar_id, look.avatar_id);
 }
 
+function readTimeMs(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value > 10_000_000_000 ? value : value * 1000;
+    }
+    if (typeof value === "string" && value.trim()) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        return numeric > 10_000_000_000 ? numeric : numeric * 1000;
+      }
+
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return 0;
+}
+
 export async function GET() {
   const startedAt = Date.now();
   console.info("[HeyGen catalog] Import request started");
@@ -241,13 +270,16 @@ export async function GET() {
             }
           );
           const lookDetails = await Promise.all(
-            looks.map(async (look) => {
+            looks.map(async (look, lookIndex) => {
               const resolvedLookId = resolveLookId(look);
               if (!resolvedLookId) {
                 return {
                   look,
                   resolvedLookId: "",
                   isMotion: false,
+                  status: "",
+                  createdAtMs: 0,
+                  index: lookIndex,
                 };
               }
               try {
@@ -257,6 +289,18 @@ export async function GET() {
                   look,
                   resolvedLookId,
                   isMotion: details.is_motion === true,
+                  status: String(details.status || "").toLowerCase(),
+                  createdAtMs: readTimeMs(
+                    details.updated_at,
+                    details.update_time,
+                    details.created_at,
+                    details.create_time,
+                    look.updated_at,
+                    look.update_time,
+                    look.created_at,
+                    look.create_time
+                  ),
+                  index: lookIndex,
                 };
               } catch {
                 // Not all looks are photo avatars (some are studio/regular),
@@ -265,23 +309,30 @@ export async function GET() {
                   look,
                   resolvedLookId,
                   isMotion: false,
+                  status: "",
+                  createdAtMs: readTimeMs(
+                    look.updated_at,
+                    look.update_time,
+                    look.created_at,
+                    look.create_time
+                  ),
+                  index: lookIndex,
                 };
               }
             })
           );
-          const nonMotionLooks = lookDetails
-            .filter((item) => item.resolvedLookId && !item.isMotion)
-            .map((item) => ({
-              ...item.look,
-              id: item.resolvedLookId,
-            }));
-
-          if (looks.length > 0 && nonMotionLooks.length === 0) {
-            return null;
-          }
+          const nonMotionLookDetails = lookDetails.filter((item) => item.resolvedLookId && !item.isMotion);
+          const latestMotionLookDetail = lookDetails
+            .filter((item) => item.resolvedLookId && item.isMotion)
+            .sort((a, b) => (b.createdAtMs || b.index) - (a.createdAtMs || a.index))[0];
+          const importableLookDetails = nonMotionLookDetails.length
+            ? nonMotionLookDetails
+            : latestMotionLookDetail
+              ? [latestMotionLookDetail]
+              : [];
 
           const avatarPreviewSourceUrl = readImageUrl(group)
-            || readImageUrl(nonMotionLooks[0])
+            || readImageUrl(importableLookDetails[0]?.look)
             || readImageUrl(looks[0]);
 
           const stableAvatarPreviewImageUrl = await getStableHeygenPreviewUrl({
@@ -291,17 +342,36 @@ export async function GET() {
           });
 
           const stableLooks = await Promise.all(
-            nonMotionLooks.map(async (look, lookIndex) => ({
-              look_id: look.id,
-              look_name: look.name || `${group.name || group.id} look ${lookIndex + 1}`,
-              preview_image_url: await getStableHeygenPreviewUrl({
-                cacheKey: `look:${look.id}`,
-                sourceUrl: readImageUrl(look),
-                refresh: true,
-              }),
-              is_active: true,
-              sort_order: lookIndex,
-            }))
+            importableLookDetails.map(async (item, lookIndex) => {
+              const look = {
+                ...item.look,
+                id: item.resolvedLookId,
+              };
+              const motionStatus = item.isMotion
+                ? item.status === "completed"
+                  ? "ready"
+                  : item.status || "pending"
+                : "";
+
+              return {
+                look_id: look.id,
+                look_name: look.name || `${group.name || group.id} look ${lookIndex + 1}`,
+                preview_image_url: await getStableHeygenPreviewUrl({
+                  cacheKey: `look:${look.id}`,
+                  sourceUrl: readImageUrl(look),
+                  refresh: true,
+                }),
+                ...(item.isMotion
+                  ? {
+                      motion_look_id: look.id,
+                      motion_status: motionStatus,
+                      motion_updated_at: new Date().toISOString(),
+                    }
+                  : {}),
+                is_active: true,
+                sort_order: lookIndex,
+              };
+            })
           );
 
           return {
@@ -311,7 +381,7 @@ export async function GET() {
             preview_image_url: stableAvatarPreviewImageUrl,
             is_active: true,
             sort_order: index,
-            gender: nonMotionLooks[0]?.gender || looks[0]?.gender || "female",
+            gender: importableLookDetails[0]?.look?.gender || looks[0]?.gender || "female",
             looks: stableLooks,
           };
         } catch (error) {

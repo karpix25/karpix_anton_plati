@@ -45,6 +45,9 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
   onSelect,
 }) => {
   const motionIndicator = getMotionIndicator(look.motion_look_id, look.motion_status);
+  const isReadyImportedMotionLook =
+    Boolean(look.look_id && look.motion_look_id && look.look_id === look.motion_look_id) &&
+    motionIndicator.tone === "ready";
 
   return (
     <div className={`space-y-4 rounded-2xl border bg-white p-4 transition-all ${isSelected ? "border-primary shadow-lg ring-1 ring-primary/20" : "border-[#e5ebf0] opacity-90 hover:opacity-100"}`}>
@@ -86,7 +89,7 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
                 {motionIndicator.label}
               </div>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2 text-[9px] font-black uppercase tracking-widest text-white text-center">
-                 {look.is_active ? "Live" : "Inactive"}
+                 {look.is_active ? "Активен" : "Выключен"}
               </div>
           </div>
 
@@ -183,9 +186,9 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
                    variant="outline" 
                    size="sm" 
                    className="text-[10px] font-black uppercase tracking-widest"
-                   onClick={onSelect}
+                  onClick={onSelect}
                 >
-                  Edit
+                  Выбрать
                 </Button>
              )}
           </div>
@@ -241,14 +244,17 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
                     !avatar.id ||
                     !look.id ||
                     !look.look_id ||
+                    isReadyImportedMotionLook ||
                     motionLookRequestKey === `${avatar.id}-${look.id}` ||
                     isPendingMotionStatus(look.motion_status)
                   }
                 >
                   {motionLookRequestKey === `${avatar.id}-${look.id}` || isPendingMotionStatus(look.motion_status) ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : isReadyImportedMotionLook ? (
+                    "Motion готов"
                   ) : (
-                    look.motion_look_id ? "Обновить motion" : "Add Motion"
+                    look.motion_look_id ? "Обновить motion" : "Добавить motion"
                   )}
                </Button>
             </div>

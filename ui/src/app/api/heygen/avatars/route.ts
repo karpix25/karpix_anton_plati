@@ -89,6 +89,52 @@ function triggerAvatarVoiceCalibration(clientId: number, avatarIds: number[]) {
   });
 }
 
+function isImportedMotionLook(look: Record<string, unknown>) {
+  const lookId = typeof look.look_id === 'string' ? look.look_id.trim() : '';
+  const motionLookId = typeof look.motion_look_id === 'string' ? look.motion_look_id.trim() : '';
+
+  return Boolean(lookId && motionLookId && lookId === motionLookId);
+}
+
+function readLookTimeMs(value: unknown) {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value > 10_000_000_000 ? value : value * 1000;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
+function collapseOldImportedMotionLooks<T extends Record<string, unknown>>(looks: T[]) {
+  const motionLooks = looks.filter(isImportedMotionLook);
+  if (motionLooks.length <= 1) {
+    return looks;
+  }
+
+  const latestMotionLook = [...motionLooks].sort((a, b) => {
+    const sortOrderDiff = Number(b.sort_order ?? 0) - Number(a.sort_order ?? 0);
+    if (sortOrderDiff !== 0) return sortOrderDiff;
+
+    const updatedDiff = readLookTimeMs(b.motion_updated_at) - readLookTimeMs(a.motion_updated_at);
+    if (updatedDiff !== 0) return updatedDiff;
+
+    const createdDiff = readLookTimeMs(b.created_at) - readLookTimeMs(a.created_at);
+    if (createdDiff !== 0) return createdDiff;
+
+    return Number(b.id ?? 0) - Number(a.id ?? 0);
+  })[0];
+
+  return looks.filter((look) => !isImportedMotionLook(look) || look.id === latestMotionLook.id);
+}
+
 export async function GET(request: Request) {
   const { user, errorResponse } = await validateApiRequest(request);
   if (errorResponse) return errorResponse;
@@ -119,6 +165,7 @@ export async function GET(request: Request) {
          ORDER BY sort_order ASC, created_at ASC`,
         [avatar.id]
       );
+      const visibleLookRows = collapseOldImportedMotionLooks(lookRows.rows);
 
       const stableAvatarPreview = await getStableHeygenPreviewUrl({
         cacheKey: `avatar:${avatar.avatar_id || avatar.id}`,
@@ -126,7 +173,7 @@ export async function GET(request: Request) {
       });
 
       const stableLooks = await Promise.all(
-        lookRows.rows.map(async (look) => ({
+        visibleLookRows.map(async (look) => ({
           ...look,
           preview_image_url: await getStableHeygenPreviewUrl({
             cacheKey: `look:${look.look_id || look.id}`,

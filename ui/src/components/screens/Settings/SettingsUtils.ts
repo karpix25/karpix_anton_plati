@@ -24,18 +24,18 @@ export function getMotionIndicator(motionLookId: unknown, motionStatus: unknown)
   const normalizedStatus = safeTrim(motionStatus).toLowerCase();
 
   if (hasMotionLook && isReadyMotionStatus(normalizedStatus)) {
-    return { label: "Motion Active", tone: "ready" as const };
+    return { label: "Motion готов", tone: "ready" as const };
   }
 
   if (isPendingMotionStatus(normalizedStatus)) {
-    return { label: "Motion Pending", tone: "pending" as const };
+    return { label: "Motion готовится", tone: "pending" as const };
   }
 
   if (normalizedStatus === "failed") {
-    return { label: "Motion Failed", tone: "failed" as const };
+    return { label: "Motion ошибка", tone: "failed" as const };
   }
 
-  return { label: "No Motion", tone: "none" as const };
+  return { label: "Без motion", tone: "none" as const };
 }
 
 export const normalizeMotionPrompt = (value: unknown) => safeTrim(value).slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH);

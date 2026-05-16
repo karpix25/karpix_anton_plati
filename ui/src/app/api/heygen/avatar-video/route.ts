@@ -340,11 +340,23 @@ async function selectAvatarVariant(
            FROM client_heygen_avatar_looks
            WHERE client_avatar_id = $1 AND is_active = TRUE
            ORDER BY
-             COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
              CASE
                WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
                ELSE 1
              END ASC,
+             CASE
+               WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN sort_order
+               ELSE NULL
+             END DESC NULLS LAST,
+             CASE
+               WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN created_at
+               ELSE NULL
+             END DESC NULLS LAST,
+             CASE
+               WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN id
+               ELSE NULL
+             END DESC NULLS LAST,
+             COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
              sort_order ASC,
              created_at ASC,
              id ASC
@@ -399,11 +411,23 @@ async function selectAvatarVariant(
          FROM client_heygen_avatar_looks
          WHERE client_avatar_id = $1 AND is_active = TRUE
          ORDER BY
-           COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
            CASE
              WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN 0
              ELSE 1
            END ASC,
+           CASE
+             WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN sort_order
+             ELSE NULL
+           END DESC NULLS LAST,
+           CASE
+             WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN created_at
+             ELSE NULL
+           END DESC NULLS LAST,
+           CASE
+             WHEN motion_look_id IS NOT NULL AND COALESCE(motion_status, '') IN ('ready', 'completed') THEN id
+             ELSE NULL
+           END DESC NULLS LAST,
+           COALESCE(last_used_at, TIMESTAMP '1970-01-01') ASC,
            sort_order ASC,
            created_at ASC,
            id ASC

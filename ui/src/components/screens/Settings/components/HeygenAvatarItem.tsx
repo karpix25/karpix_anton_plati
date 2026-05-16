@@ -386,7 +386,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="space-y-1">
                    <h4 className="text-sm font-black uppercase tracking-widest text-foreground">Настроенные образы (Looks)</h4>
-                   <p className="text-[11px] text-muted-foreground font-medium">Inside this avatar, one active look will be picked randomly for each video.</p>
+                   <p className="text-[11px] text-muted-foreground font-medium">Для видео берётся активный образ; готовый motion-образ имеет приоритет.</p>
                 </div>
                 <Button 
                    onClick={() => addLook(avatarIndex)} 
@@ -394,7 +394,7 @@ export const HeygenAvatarItem: React.FC<HeygenAvatarItemProps> = ({
                    className="rounded-full bg-primary/10 text-primary hover:bg-primary/20 shadow-none border-none font-bold text-[10px] uppercase tracking-widest h-8"
                 >
                    <Plus className="h-3.5 w-3.5 mr-1" />
-                   Add Look
+                   Добавить образ
                 </Button>
              </div>
 
