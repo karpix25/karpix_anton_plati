@@ -8,6 +8,17 @@ import { validateApiRequest } from '@/lib/server/telegram-auth';
 
 async function ensureHeygenLookMotionColumns() {
   const statements = [
+    `CREATE TABLE IF NOT EXISTS heygen_avatar_voice_defaults (
+      avatar_id TEXT PRIMARY KEY,
+      avatar_name TEXT,
+      tts_provider TEXT DEFAULT 'minimax',
+      tts_voice_id TEXT,
+      elevenlabs_voice_id TEXT,
+      gender TEXT,
+      updated_from_client_id INTEGER,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_look_id TEXT',
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_prompt TEXT',
     'ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_type TEXT',
@@ -22,6 +33,32 @@ async function ensureHeygenLookMotionColumns() {
     'ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_calibrated_at TIMESTAMP',
     'ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_calibration_error TEXT',
     'ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_calibration_samples_json JSONB',
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS avatar_name TEXT',
+    "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'",
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS tts_voice_id TEXT',
+    "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT",
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS gender TEXT',
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS updated_from_client_id INTEGER',
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+    `INSERT INTO heygen_avatar_voice_defaults (
+      avatar_id, avatar_name, tts_provider, tts_voice_id, elevenlabs_voice_id,
+      gender, updated_from_client_id, created_at, updated_at
+    )
+    SELECT DISTINCT ON (a.avatar_id)
+      a.avatar_id,
+      a.avatar_name,
+      CASE WHEN a.tts_provider = 'elevenlabs' THEN 'elevenlabs' ELSE 'minimax' END,
+      a.tts_voice_id,
+      a.elevenlabs_voice_id,
+      a.gender,
+      a.client_id,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP
+    FROM client_heygen_avatars a
+    WHERE a.avatar_id IS NOT NULL AND a.avatar_id <> ''
+    ORDER BY a.avatar_id, a.created_at DESC, a.id DESC
+    ON CONFLICT (avatar_id) DO NOTHING`,
   ];
 
   for (const statement of statements) {
@@ -56,6 +93,50 @@ function buildAvatarVoiceKey(
   const normalizedAvatarId = typeof avatarId === "string" ? avatarId.trim() : "";
   const resolvedVoiceId = resolveAvatarVoiceId(provider, ttsVoiceId, elevenlabsVoiceId);
   return `${normalizedAvatarId}::${provider}::${resolvedVoiceId}`;
+}
+
+async function saveAvatarVoiceDefault(
+  client: PoolClient,
+  {
+    avatar,
+    clientId,
+    provider,
+  }: {
+    avatar: Record<string, unknown>;
+    clientId: number;
+    provider: "minimax" | "elevenlabs";
+  }
+) {
+  const avatarId = typeof avatar.avatar_id === 'string' ? avatar.avatar_id.trim() : '';
+  if (!avatarId) {
+    return;
+  }
+
+  await client.query(
+    `INSERT INTO heygen_avatar_voice_defaults (
+      avatar_id, avatar_name, tts_provider, tts_voice_id, elevenlabs_voice_id,
+      gender, updated_from_client_id, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT (avatar_id) DO UPDATE SET
+      avatar_name = EXCLUDED.avatar_name,
+      tts_provider = EXCLUDED.tts_provider,
+      tts_voice_id = EXCLUDED.tts_voice_id,
+      elevenlabs_voice_id = EXCLUDED.elevenlabs_voice_id,
+      gender = EXCLUDED.gender,
+      updated_from_client_id = EXCLUDED.updated_from_client_id,
+      updated_at = CURRENT_TIMESTAMP`,
+    [
+      avatarId,
+      typeof avatar.avatar_name === 'string' && avatar.avatar_name.trim() ? avatar.avatar_name.trim() : null,
+      provider,
+      typeof avatar.tts_voice_id === 'string' && avatar.tts_voice_id.trim() ? avatar.tts_voice_id.trim() : null,
+      typeof avatar.elevenlabs_voice_id === 'string' && avatar.elevenlabs_voice_id.trim()
+        ? avatar.elevenlabs_voice_id.trim()
+        : null,
+      normalizeAvatarGender(avatar.gender),
+      clientId,
+    ]
+  );
 }
 
 function triggerAvatarVoiceCalibration(clientId: number, avatarIds: number[]) {
@@ -292,6 +373,12 @@ export async function PUT(request: Request) {
       );
 
       const clientAvatarId = avatarResult.rows[0]?.id;
+      await saveAvatarVoiceDefault(client, {
+        avatar,
+        clientId: resolvedClientId,
+        provider,
+      });
+
       if ((avatar.is_active ?? true) && !(Number(preservedCalibration?.tts_chars_per_minute) > 0)) {
         avatarIdsToCalibrate.push(clientAvatarId);
       }

@@ -346,31 +346,55 @@ export const useSettingsState = ({
 
   const applyHeygenCatalogAvatar = (avatarIndex: number, catalogAvatar: HeygenAvatarConfig) => {
     setAvatarConfigs((prev) =>
-      prev.map((avatar, index) =>
-        index === avatarIndex
-          ? normalizeAvatar(
-              {
-                ...catalogAvatar,
-                id: avatar.id,
-                tts_provider: avatar.tts_provider || draftSettings.tts_provider || "minimax",
-                tts_voice_id:
-                  avatar.tts_voice_id ||
-                  draftSettings.tts_voice_id ||
-                  minimaxVoices[0]?.voice_id ||
-                  DEFAULT_MINIMAX_VOICE_ID,
-                elevenlabs_voice_id:
-                  avatar.elevenlabs_voice_id ||
-                  draftSettings.elevenlabs_voice_id ||
-                  elevenlabsVoices[0]?.voice_id ||
-                  DEFAULT_ELEVENLABS_VOICE_ID,
-                is_active: avatar.is_active ?? true,
-                usage_count: avatar.usage_count ?? 0,
-                sort_order: avatar.sort_order ?? index,
-              },
-              index
-            )
-          : avatar
-      )
+      prev.map((avatar, index) => {
+        if (index !== avatarIndex) {
+          return avatar;
+        }
+
+        const isSameSavedAvatar = Boolean(
+          avatar.id &&
+          avatar.avatar_id &&
+          catalogAvatar.avatar_id &&
+          avatar.avatar_id === catalogAvatar.avatar_id
+        );
+        const provider = isSameSavedAvatar
+          ? avatar.tts_provider || catalogAvatar.tts_provider || draftSettings.tts_provider || "minimax"
+          : catalogAvatar.tts_provider || avatar.tts_provider || draftSettings.tts_provider || "minimax";
+
+        return normalizeAvatar(
+          {
+            ...catalogAvatar,
+            id: avatar.id,
+            tts_provider: provider,
+            tts_voice_id: isSameSavedAvatar
+              ? avatar.tts_voice_id ||
+                catalogAvatar.tts_voice_id ||
+                draftSettings.tts_voice_id ||
+                minimaxVoices[0]?.voice_id ||
+                DEFAULT_MINIMAX_VOICE_ID
+              : catalogAvatar.tts_voice_id ||
+                avatar.tts_voice_id ||
+                draftSettings.tts_voice_id ||
+                minimaxVoices[0]?.voice_id ||
+                DEFAULT_MINIMAX_VOICE_ID,
+            elevenlabs_voice_id: isSameSavedAvatar
+              ? avatar.elevenlabs_voice_id ||
+                catalogAvatar.elevenlabs_voice_id ||
+                draftSettings.elevenlabs_voice_id ||
+                elevenlabsVoices[0]?.voice_id ||
+                DEFAULT_ELEVENLABS_VOICE_ID
+              : catalogAvatar.elevenlabs_voice_id ||
+                avatar.elevenlabs_voice_id ||
+                draftSettings.elevenlabs_voice_id ||
+                elevenlabsVoices[0]?.voice_id ||
+                DEFAULT_ELEVENLABS_VOICE_ID,
+            is_active: avatar.is_active ?? true,
+            usage_count: avatar.usage_count ?? 0,
+            sort_order: avatar.sort_order ?? index,
+          },
+          index
+        );
+      })
     );
   };
 

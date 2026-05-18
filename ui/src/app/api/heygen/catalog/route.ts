@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import pool from "@/lib/db";
 import { getStableHeygenPreviewUrl } from "@/lib/server/heygen-preview-cache";
 
 type HeygenAvatarGroup = {
@@ -36,6 +37,14 @@ type HeygenPhotoAvatarDetails = {
 };
 
 type HeygenPaginationParam = { key: string; value: string | number } | null;
+
+type AvatarVoiceDefault = {
+  avatar_id: string;
+  tts_provider: "minimax" | "elevenlabs";
+  tts_voice_id: string | null;
+  elevenlabs_voice_id: string | null;
+  gender: "male" | "female" | null;
+};
 
 const IMAGE_KEYS = [
   "preview_image_url",
@@ -119,6 +128,93 @@ async function heygenFetch(path: string) {
   }
 
   return data;
+}
+
+async function ensureAvatarVoiceDefaultColumns() {
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS heygen_avatar_voice_defaults (
+      avatar_id TEXT PRIMARY KEY,
+      avatar_name TEXT,
+      tts_provider TEXT DEFAULT 'minimax',
+      tts_voice_id TEXT,
+      elevenlabs_voice_id TEXT,
+      gender TEXT,
+      updated_from_client_id INTEGER,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`,
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS avatar_name TEXT',
+    "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'",
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS tts_voice_id TEXT',
+    "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT",
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS gender TEXT',
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS updated_from_client_id INTEGER',
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+    'ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+    `INSERT INTO heygen_avatar_voice_defaults (
+      avatar_id, avatar_name, tts_provider, tts_voice_id, elevenlabs_voice_id,
+      gender, updated_from_client_id, created_at, updated_at
+    )
+    SELECT DISTINCT ON (a.avatar_id)
+      a.avatar_id,
+      a.avatar_name,
+      CASE WHEN a.tts_provider = 'elevenlabs' THEN 'elevenlabs' ELSE 'minimax' END,
+      a.tts_voice_id,
+      a.elevenlabs_voice_id,
+      a.gender,
+      a.client_id,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP
+    FROM client_heygen_avatars a
+    WHERE a.avatar_id IS NOT NULL AND a.avatar_id <> ''
+    ORDER BY a.avatar_id, a.created_at DESC, a.id DESC
+    ON CONFLICT (avatar_id) DO NOTHING`,
+  ];
+
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+}
+
+async function loadAvatarVoiceDefaults() {
+  const defaults = new Map<string, AvatarVoiceDefault>();
+  try {
+    await ensureAvatarVoiceDefaultColumns();
+    const { rows } = await pool.query<AvatarVoiceDefault>(
+      `SELECT avatar_id,
+              CASE WHEN tts_provider = 'elevenlabs' THEN 'elevenlabs' ELSE 'minimax' END AS tts_provider,
+              tts_voice_id,
+              elevenlabs_voice_id,
+              CASE WHEN gender = 'male' THEN 'male' WHEN gender = 'female' THEN 'female' ELSE NULL END AS gender
+       FROM heygen_avatar_voice_defaults
+       WHERE avatar_id IS NOT NULL AND avatar_id <> ''`
+    );
+
+    for (const row of rows) {
+      defaults.set(row.avatar_id, row);
+    }
+  } catch (error) {
+    console.warn("[HeyGen catalog] Voice defaults unavailable, continuing without them:", error);
+  }
+
+  return defaults;
+}
+
+function applyVoiceDefault<T extends Record<string, unknown>>(
+  avatar: T,
+  voiceDefault?: AvatarVoiceDefault | null
+) {
+  if (!voiceDefault) {
+    return avatar;
+  }
+
+  return {
+    ...avatar,
+    tts_provider: voiceDefault.tts_provider,
+    tts_voice_id: voiceDefault.tts_voice_id || "",
+    elevenlabs_voice_id: voiceDefault.elevenlabs_voice_id || "",
+    gender: voiceDefault.gender || avatar.gender,
+  };
 }
 
 function appendQuery(path: string, params: Record<string, string | number | boolean | null | undefined>) {
@@ -238,6 +334,7 @@ export async function GET() {
   console.info("[HeyGen catalog] Import request started");
 
   try {
+    const voiceDefaults = await loadAvatarVoiceDefaults();
     const groups = await fetchPaginatedHeygenList<HeygenAvatarGroup>(
       "/v2/avatar_group.list",
       (payload) => {
@@ -375,14 +472,19 @@ export async function GET() {
           );
 
           return {
-            avatar_id: group.id,
-            avatar_name: group.name || group.id,
-            folder_name: group.group_type || "HEYGEN",
-            preview_image_url: stableAvatarPreviewImageUrl,
-            is_active: true,
-            sort_order: index,
-            gender: importableLookDetails[0]?.look?.gender || looks[0]?.gender || "female",
-            looks: stableLooks,
+            ...applyVoiceDefault(
+              {
+                avatar_id: group.id,
+                avatar_name: group.name || group.id,
+                folder_name: group.group_type || "HEYGEN",
+                preview_image_url: stableAvatarPreviewImageUrl,
+                is_active: true,
+                sort_order: index,
+                gender: importableLookDetails[0]?.look?.gender || looks[0]?.gender || "female",
+                looks: stableLooks,
+              },
+              voiceDefaults.get(group.id)
+            ),
           };
         } catch (error) {
           console.error(`HeyGen group import failed for ${group.id}:`, error);
@@ -392,13 +494,18 @@ export async function GET() {
             refresh: true,
           });
           return {
-            avatar_id: group.id,
-            avatar_name: group.name || group.id,
-            folder_name: group.group_type || "HEYGEN",
-            preview_image_url: fallbackPreview,
-            is_active: true,
-            sort_order: index,
-            looks: [],
+            ...applyVoiceDefault(
+              {
+                avatar_id: group.id,
+                avatar_name: group.name || group.id,
+                folder_name: group.group_type || "HEYGEN",
+                preview_image_url: fallbackPreview,
+                is_active: true,
+                sort_order: index,
+                looks: [],
+              },
+              voiceDefaults.get(group.id)
+            ),
           };
         }
       })

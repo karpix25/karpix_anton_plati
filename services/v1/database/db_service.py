@@ -547,6 +547,17 @@ def init_db() -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (client_avatar_id, look_id)
         )""",
+        """CREATE TABLE IF NOT EXISTS heygen_avatar_voice_defaults (
+            avatar_id TEXT PRIMARY KEY,
+            avatar_name TEXT,
+            tts_provider TEXT DEFAULT 'minimax',
+            tts_voice_id TEXT,
+            elevenlabs_voice_id TEXT,
+            gender TEXT,
+            updated_from_client_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""",
         # Migration helpers
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_generate BOOLEAN DEFAULT FALSE",
         "ALTER TABLE clients ADD COLUMN IF NOT EXISTS monthly_limit INTEGER DEFAULT 30",
@@ -661,6 +672,32 @@ def init_db() -> None:
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_calibrated_at TIMESTAMP",
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_calibration_error TEXT",
         "ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_calibration_samples_json JSONB",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS avatar_name TEXT",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS tts_voice_id TEXT",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS gender TEXT",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS updated_from_client_id INTEGER",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE heygen_avatar_voice_defaults ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        """INSERT INTO heygen_avatar_voice_defaults (
+            avatar_id, avatar_name, tts_provider, tts_voice_id, elevenlabs_voice_id,
+            gender, updated_from_client_id, created_at, updated_at
+        )
+        SELECT DISTINCT ON (a.avatar_id)
+            a.avatar_id,
+            a.avatar_name,
+            CASE WHEN a.tts_provider = 'elevenlabs' THEN 'elevenlabs' ELSE 'minimax' END,
+            a.tts_voice_id,
+            a.elevenlabs_voice_id,
+            a.gender,
+            a.client_id,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP
+        FROM client_heygen_avatars a
+        WHERE a.avatar_id IS NOT NULL AND a.avatar_id <> ''
+        ORDER BY a.avatar_id, a.created_at DESC, a.id DESC
+        ON CONFLICT (avatar_id) DO NOTHING""",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS preview_image_url TEXT",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_look_id TEXT",
         "ALTER TABLE client_heygen_avatar_looks ADD COLUMN IF NOT EXISTS motion_prompt TEXT",
