@@ -1,6 +1,6 @@
 import React from "react";
 import { Settings } from "@/types";
-import { Check, FolderOpen, LoaderCircle, Play, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, FolderOpen, LoaderCircle, Play, RefreshCw } from "lucide-react";
 
 interface AutomationSettingsProps {
   draftSettings: Settings;
@@ -73,6 +73,7 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   const [folderRoot, setFolderRoot] = React.useState<YandexDiskFolderNode | null>(null);
   const [isLoadingFolders, setIsLoadingFolders] = React.useState(false);
   const [folderLoadError, setFolderLoadError] = React.useState<string | null>(null);
+  const [isFolderPickerOpen, setIsFolderPickerOpen] = React.useState(false);
 
   const targetMin = draftSettings.target_duration_min_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
   const targetMax = draftSettings.target_duration_max_seconds || draftSettings.target_duration_seconds || MIN_DURATION_SECONDS;
@@ -112,10 +113,6 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
       setIsLoadingFolders(false);
     }
   }, []);
-
-  React.useEffect(() => {
-    loadYandexFolders();
-  }, [loadYandexFolders]);
 
   const commitDailyLimitInput = () => {
     const parsed = Number(dailyLimitInput);
@@ -216,6 +213,7 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
   const dailyProgress = Math.min(100, Math.round((dailyCount / Math.max(1, dailyLimit)) * 100));
   const projectProgress = Math.min(100, Math.round((projectCount / Math.max(1, projectLimit)) * 100));
   const manualRunHint = `Ручной запуск добавляет до ${dailyLimit} задач в очередь с учетом лимита проекта.`;
+  const yandexFolderPath = draftSettings.yandex_disk_folder_path || "";
   const formattedStoppedAt = automationStoppedAt
     ? new Intl.DateTimeFormat("ru-RU", {
         day: "2-digit",
@@ -372,7 +370,10 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
             </label>
             <button
               type="button"
-              onClick={loadYandexFolders}
+              onClick={() => {
+                setIsFolderPickerOpen(true);
+                loadYandexFolders();
+              }}
               disabled={isLoadingFolders}
               className="inline-flex h-8 items-center gap-2 rounded-lg border border-[#d6e0e8] bg-white px-3 text-xs font-bold text-slate-600 transition-colors hover:bg-[#f8fafc] disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -392,43 +393,79 @@ export const AutomationSettings: React.FC<AutomationSettingsProps> = ({
           <p className="text-xs text-muted-foreground">
             Если поле пустое, используется текущая папка по умолчанию для аватара и проекта.
           </p>
-          <div className="rounded-xl border border-[#e5ebf0] bg-[#fbfcfd] p-3">
-            {isLoadingFolders ? (
-              <div className="flex items-center gap-2 px-2 py-3 text-sm font-semibold text-muted-foreground">
-                <LoaderCircle className="h-4 w-4 animate-spin" />
-                Загружаю папки...
-              </div>
-            ) : folderLoadError ? (
-              <div className="px-2 py-3 text-sm font-semibold text-rose-500">{folderLoadError}</div>
-            ) : folderRoot ? (
-              <div className="space-y-2">
-                <button
-                  type="button"
-                  onClick={() => setDraftSettings((prev) => ({ ...prev, yandex_disk_folder_path: folderRoot.path }))}
-                  className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-black transition-colors ${
-                    draftSettings.yandex_disk_folder_path === folderRoot.path
-                      ? "bg-primary/10 text-primary"
-                      : "text-foreground hover:bg-[#f0f4f7]"
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                const nextOpen = !isFolderPickerOpen;
+                setIsFolderPickerOpen(nextOpen);
+                if (nextOpen && !folderRoot && !isLoadingFolders) {
+                  loadYandexFolders();
+                }
+              }}
+              className="flex w-full items-center gap-3 rounded-xl border border-[#d6e0e8] bg-[#fbfcfd] px-4 py-3 text-left text-sm font-bold text-foreground transition-colors hover:bg-[#f8fafc]"
+            >
+              <FolderOpen className="h-4 w-4 shrink-0 text-slate-500" />
+              <span className={`min-w-0 flex-1 truncate ${yandexFolderPath ? "text-foreground" : "text-muted-foreground"}`}>
+                {yandexFolderPath || "Выбрать папку из Яндекс.Диска"}
+              </span>
+              {isLoadingFolders ? (
+                <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-slate-400" />
+              ) : (
+                <ChevronDown
+                  className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${
+                    isFolderPickerOpen ? "rotate-180" : ""
                   }`}
-                >
-                  {draftSettings.yandex_disk_folder_path === folderRoot.path ? (
-                    <Check className="h-4 w-4" />
-                  ) : (
-                    <FolderOpen className="h-4 w-4 text-slate-400" />
-                  )}
-                  {folderRoot.name}
-                </button>
-                <FolderTree
-                  nodes={folderRoot.children || []}
-                  selectedPath={draftSettings.yandex_disk_folder_path || ""}
-                  onSelect={(path) => setDraftSettings((prev) => ({ ...prev, yandex_disk_folder_path: path }))}
                 />
+              )}
+            </button>
+
+            {isFolderPickerOpen ? (
+              <div className="absolute z-20 mt-2 max-h-80 w-full overflow-y-auto rounded-xl border border-[#d6e0e8] bg-white p-2 shadow-xl">
+                {isLoadingFolders ? (
+                  <div className="flex items-center gap-2 px-3 py-3 text-sm font-semibold text-muted-foreground">
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                    Загружаю папки...
+                  </div>
+                ) : folderLoadError ? (
+                  <div className="px-3 py-3 text-sm font-semibold text-rose-500">{folderLoadError}</div>
+                ) : folderRoot ? (
+                  <div className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftSettings((prev) => ({ ...prev, yandex_disk_folder_path: folderRoot.path }));
+                        setIsFolderPickerOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-black transition-colors ${
+                        yandexFolderPath === folderRoot.path
+                          ? "bg-primary/10 text-primary"
+                          : "text-foreground hover:bg-[#f0f4f7]"
+                      }`}
+                    >
+                      {yandexFolderPath === folderRoot.path ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <FolderOpen className="h-4 w-4 text-slate-400" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate">{folderRoot.name}</span>
+                    </button>
+                    <FolderTree
+                      nodes={folderRoot.children || []}
+                      selectedPath={yandexFolderPath}
+                      onSelect={(path) => {
+                        setDraftSettings((prev) => ({ ...prev, yandex_disk_folder_path: path }));
+                        setIsFolderPickerOpen(false);
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="px-3 py-3 text-sm font-semibold text-muted-foreground">
+                    Папки в disk:/ВИДЕО/АВТОМАТ не найдены.
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="px-2 py-3 text-sm font-semibold text-muted-foreground">
-                Папки в disk:/ВИДЕО/АВТОМАТ не найдены.
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
