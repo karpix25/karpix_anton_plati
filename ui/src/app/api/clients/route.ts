@@ -317,7 +317,7 @@ export async function GET(request: Request) {
         FROM final_video_jobs fvj
         GROUP BY fvj.client_id
       ) project_jobs ON project_jobs.client_id = c.id
-      ORDER BY c.created_at DESC
+      ORDER BY LOWER(c.name) ASC, c.name ASC, c.id ASC
     `);
     return NextResponse.json(
       rows.map((row) => ({

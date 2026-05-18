@@ -12,6 +12,15 @@ const EMPTY_COST_STATS = {
   totalCostUsd: 0,
 };
 
+const sortClientsByName = (clients: Client[]) =>
+  [...clients].sort((left, right) => {
+    const byName = String(left.name || "").localeCompare(String(right.name || ""), "ru", {
+      sensitivity: "base",
+      numeric: true,
+    });
+    return byName || Number(left.id || 0) - Number(right.id || 0);
+  });
+
 const normalizeProductMediaAssets = (value: unknown) => {
   if (!Array.isArray(value)) {
     return [];
@@ -71,7 +80,7 @@ export function useWorkspaceData(selectedClientId: string) {
     queryKey: ["clients"],
     queryFn: async () => {
       const { data } = await axios.get(`${API_BASE}/clients`);
-      return data;
+      return sortClientsByName(data || []);
     },
     staleTime: 60000, // 1 minute
   });
@@ -321,7 +330,7 @@ export function useWorkspaceData(selectedClientId: string) {
   });
 
   return {
-    clients: clientsQuery.data || [],
+    clients: sortClientsByName(clientsQuery.data || []),
     isLoadingClients: clientsQuery.isLoading,
     references: referencesQuery.data?.data || [],
     totalReferences: referencesQuery.data?.totalCount || 0,

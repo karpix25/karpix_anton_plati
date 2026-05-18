@@ -2,12 +2,21 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tansta
 import { fetchJson } from "@/lib/utils";
 import { Client, Reference, TopicCard, StructureCard, Scenario, ClientSettings } from "@/types";
 
+const sortClientsByName = (clients: Client[]) =>
+  [...clients].sort((left, right) => {
+    const byName = String(left.name || "").localeCompare(String(right.name || ""), "ru", {
+      sensitivity: "base",
+      numeric: true,
+    });
+    return byName || Number(left.id || 0) - Number(right.id || 0);
+  });
+
 export function useAppData(selectedClientId: string) {
   const queryClient = useQueryClient();
 
   const clientsQuery = useQuery<Client[]>({
     queryKey: ["clients"],
-    queryFn: () => fetchJson("/api/clients"),
+    queryFn: async () => sortClientsByName(await fetchJson<Client[]>("/api/clients")),
   });
 
   const referencesQuery = useQuery<Reference[]>({
@@ -100,7 +109,7 @@ export function useAppData(selectedClientId: string) {
       singleRewrite: singleRewriteMutation,
     },
     data: {
-      clients: clientsQuery.data || [],
+      clients: sortClientsByName(clientsQuery.data || []),
       references: referencesQuery.data || [],
       scenarios: scenariosQuery.data || [],
       topicCards: topicCardsQuery.data || [],
