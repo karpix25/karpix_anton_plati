@@ -95,11 +95,8 @@ export async function GET(req: NextRequest) {
             ) as p
             WHERE (p->>'use_ready_asset')::boolean IS NOT TRUE
               AND (
-                p->>'video_url' IS NOT NULL
+                NULLIF(BTRIM(p->>'video_url'), '') IS NOT NULL
                 OR jsonb_array_length(COALESCE(p->'result_urls', '[]'::jsonb)) > 0
-                OR p->>'task_id' IS NOT NULL
-                OR LOWER(p->>'task_state') IN ('success', 'fail')
-                OR LOWER(p->>'submission_status') IN ('submitted', 'success', 'completed', 'failed')
               )
           ) AS prompt_count,
           (
@@ -180,4 +177,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-

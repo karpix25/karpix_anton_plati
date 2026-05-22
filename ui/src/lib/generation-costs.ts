@@ -60,13 +60,7 @@ function isActuallyGeneratedPrompt(item: ScenarioVideoPromptItem): boolean {
   if (item.use_ready_asset) return false;
   if (item.video_url) return true;
   if (Array.isArray(item.result_urls) && item.result_urls.length > 0) return true;
-  if (item.task_id) return true;
-
-  const taskState = String(item.task_state || "").toLowerCase();
-  if (taskState === "success" || taskState === "fail") return true;
-
-  const submissionStatus = String(item.submission_status || "").toLowerCase();
-  return ["submitted", "success", "completed", "failed"].includes(submissionStatus);
+  return false;
 }
 
 function hasHeygenGenerationAttempt(scenario?: Scenario | null): boolean {
