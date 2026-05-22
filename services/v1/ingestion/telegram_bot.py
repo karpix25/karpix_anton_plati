@@ -2,7 +2,9 @@ import os
 import sys
 import logging
 import re
+import time
 from typing import Any, Dict, Optional, Set, Tuple
+from requests.exceptions import ConnectionError as RequestsConnectionError, ReadTimeout
 
 # Add project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../"))
@@ -46,6 +48,11 @@ if not token:
 
 bot = TeleBot(token)
 ACCESS_REQUEST_MESSAGES: Dict[int, Set[Tuple[int, int]]] = {}
+
+POLLING_TIMEOUT_SECONDS = int(os.getenv("TELEGRAM_POLLING_TIMEOUT_SECONDS", "30"))
+LONG_POLLING_TIMEOUT_SECONDS = int(os.getenv("TELEGRAM_LONG_POLLING_TIMEOUT_SECONDS", "25"))
+POLLING_BACKOFF_START_SECONDS = int(os.getenv("TELEGRAM_POLLING_BACKOFF_START_SECONDS", "3"))
+POLLING_BACKOFF_MAX_SECONDS = int(os.getenv("TELEGRAM_POLLING_BACKOFF_MAX_SECONDS", "60"))
 
 def _parse_admin_ids_from_env() -> Set[int]:
     raw_tokens = []
@@ -120,6 +127,41 @@ def _extract_command_arg(text: Optional[str], command: str) -> str:
     if not match:
         return ""
     return (match.group(1) or "").strip()
+
+
+def _run_polling_forever() -> None:
+    backoff_seconds = max(1, POLLING_BACKOFF_START_SECONDS)
+    while True:
+        try:
+            logger.info(
+                "Starting Telegram polling (timeout=%ss, long_polling_timeout=%ss)",
+                POLLING_TIMEOUT_SECONDS,
+                LONG_POLLING_TIMEOUT_SECONDS,
+            )
+            bot.infinity_polling(
+                timeout=POLLING_TIMEOUT_SECONDS,
+                long_polling_timeout=LONG_POLLING_TIMEOUT_SECONDS,
+                logger_level=logging.ERROR,
+            )
+            # Normal exit is unexpected for infinity polling, but if it happens,
+            # restart after a short delay.
+            logger.warning("Telegram polling exited unexpectedly, restarting...")
+            backoff_seconds = max(1, POLLING_BACKOFF_START_SECONDS)
+        except (ReadTimeout, RequestsConnectionError) as error:
+            logger.warning(
+                "Telegram polling network error (%s). Retrying in %ss...",
+                error,
+                backoff_seconds,
+            )
+        except Exception as error:
+            logger.exception(
+                "Telegram polling crashed (%s). Retrying in %ss...",
+                error,
+                backoff_seconds,
+            )
+
+        time.sleep(backoff_seconds)
+        backoff_seconds = min(max(1, POLLING_BACKOFF_MAX_SECONDS), backoff_seconds * 2)
 
 def _format_user_label(row: Optional[Dict[str, Any]]) -> str:
     if not row:
@@ -953,4 +995,4 @@ if __name__ == "__main__":
     if not WEBAPP_BASE_URL:
         logger.warning("WEBAPP_BASE_URL is not configured. Telegram web login callback links will be unavailable.")
     logger.info("Starting Multi-Client Bot...")
-    bot.infinity_polling()
+    _run_polling_forever()
