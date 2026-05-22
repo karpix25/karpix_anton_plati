@@ -31,6 +31,9 @@ const t = (text: string) => TRANSLATIONS[text] || text;
 const HEYGEN_PENDING_STATUSES = new Set(["pending", "waiting", "processing", "queued", "in_progress", "rendering"]);
 const AUTO_BUILD_POLL_INTERVAL_MS = 5000;
 const AUTO_BUILD_TIMEOUT_MS = 18 * 60 * 1000;
+const AUTO_HEYGEN_SUBMIT_RETRY_ATTEMPTS = 2;
+const AUTO_HEYGEN_SUBMIT_RETRY_DELAY_MS = 4000;
+const AUTO_HEYGEN_POLL_RECOVERY_ATTEMPTS = 1;
 const MOSCOW_TIME_ZONE = "Europe/Moscow";
 const MOSCOW_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
   timeZone: MOSCOW_TIME_ZONE,
@@ -48,6 +51,23 @@ type FeedbackOptimizationStatus = {
 
 const isPendingHeygenStatus = (status: string | null | undefined) =>
   HEYGEN_PENDING_STATUSES.has(String(status || "").toLowerCase());
+
+const HEYGEN_NON_RETRYABLE_PATTERNS = [
+  /payment_required/i,
+  /paid_plan_required/i,
+  /insufficient\s+(funds|balance|credits?)/i,
+  /credits?\s+insufficient/i,
+  /not\s+enough\s+(credit|balance|credits?)/i,
+  /out\s+of\s+credits?/i,
+  /quota/i,
+  /\b402\b/i,
+];
+
+const isHeygenNonRetryableError = (message: string) => {
+  const text = String(message || "").trim();
+  if (!text) return false;
+  return HEYGEN_NON_RETRYABLE_PATTERNS.some((pattern) => pattern.test(text));
+};
 
 const isPendingKiePrompt = (item: ScenarioVideoPromptItem) => {
   if (item.use_ready_asset || !item.task_id || item.video_url) return false;
@@ -550,6 +570,7 @@ export function ScenariosScreen({
     try {
       let currentScenario: Scenario | null = selectedScenario;
       const deadline = Date.now() + AUTO_BUILD_TIMEOUT_MS;
+      let heygenRecoveryAttempts = 0;
 
       const refreshCurrentScenario = async () => {
         await Promise.resolve(onRefresh());
@@ -562,6 +583,50 @@ export function ScenariosScreen({
         }
         return fresh;
       };
+
+      const startHeygenWithRetry = async (reason: "initial" | "recovery") => {
+        let lastError = "Не удалось запустить HeyGen.";
+        const maxAttempts = AUTO_HEYGEN_SUBMIT_RETRY_ATTEMPTS + 1;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          const attemptLabel = `${attempt}/${maxAttempts}`;
+          updateProcessingState(scenarioId, {
+            assembleAllStep:
+              reason === "initial"
+                ? `Проверяем и запускаем рендер аватара (${attemptLabel})...`
+                : `Повторно запускаем рендер аватара (${attemptLabel})...`,
+          });
+          uiLog("HeyGen submit from assemble-all", { scenarioId, attempt, reason });
+
+          const heygenResponse = await fetch("/api/heygen/avatar-video", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenarioId }),
+          });
+          const heygenPayload = await heygenResponse.json().catch(() => null);
+          if (heygenResponse.ok) {
+            uiLog("HeyGen submit success from assemble-all", { scenarioId, attempt, reason });
+            await refreshCurrentScenario();
+            return;
+          }
+
+          lastError = heygenPayload?.error || "Не удалось запустить HeyGen.";
+          const nonRetryable = isHeygenNonRetryableError(lastError);
+          if (nonRetryable || attempt >= maxAttempts) {
+            throw new Error(lastError);
+          }
+
+          await sleep(AUTO_HEYGEN_SUBMIT_RETRY_DELAY_MS);
+          await refreshCurrentScenario();
+        }
+
+        throw new Error(lastError);
+      };
+
+      const heygenStatus = String(currentScenario?.heygen_status || "").toLowerCase();
+      if (!currentScenario?.heygen_video_url && !isPendingHeygenStatus(heygenStatus)) {
+        await startHeygenWithRetry("initial");
+      }
 
       const initialPrompts = currentScenario?.video_generation_prompts?.prompts || [];
       if (initialPrompts.length && hasStartableVideoPrompts(initialPrompts)) {
@@ -580,23 +645,6 @@ export function ScenariosScreen({
         await refreshCurrentScenario();
       }
 
-      const heygenStatus = String(currentScenario?.heygen_status || "").toLowerCase();
-      if (!currentScenario?.heygen_video_url && !isPendingHeygenStatus(heygenStatus)) {
-        updateProcessingState(scenarioId, { assembleAllStep: "Запускаем рендер аватара..." });
-        uiLog("HeyGen submit from assemble-all", { scenarioId });
-        const heygenResponse = await fetch("/api/heygen/avatar-video", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scenarioId }),
-        });
-        const heygenPayload = await heygenResponse.json().catch(() => null);
-        if (!heygenResponse.ok) {
-          throw new Error(heygenPayload?.error || "Не удалось запустить HeyGen.");
-        }
-        uiLog("HeyGen submit success from assemble-all", { scenarioId });
-        await refreshCurrentScenario();
-      }
-
       while (Date.now() < deadline) {
         const prompts = currentScenario?.video_generation_prompts?.prompts || [];
         const kiePending = hasPendingVideoPrompts(prompts);
@@ -606,6 +654,11 @@ export function ScenariosScreen({
         const heygenFailed = currentHeygenStatus === "failed";
 
         if (heygenFailed) {
+          if (heygenRecoveryAttempts < AUTO_HEYGEN_POLL_RECOVERY_ATTEMPTS) {
+            heygenRecoveryAttempts += 1;
+            await startHeygenWithRetry("recovery");
+            continue;
+          }
           throw new Error(currentScenario?.heygen_error || "HeyGen завершился с ошибкой.");
         }
 

@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 _BOT: TeleBot | None = None
 _BOT_TOKEN: str | None = None
 _LAST_MISSING_TOKEN_WARNING_TS = 0.0
-_LAST_PAYMENT_ALERT_TS: dict[tuple[str, str, str], float] = {}
+_LAST_PAYMENT_ALERT_TS: dict[tuple[str, str], float] = {}
 _MISSING_TOKEN_WARNING_COOLDOWN_SECONDS = 300
-_PAYMENT_ALERT_COOLDOWN_SECONDS = 900
+_PAYMENT_ALERT_COOLDOWN_SECONDS = 3600
 
 
 def _resolve_bot_token() -> str | None:
@@ -182,8 +182,9 @@ def notify_service_payment_issue(client_id: int | None, provider: str, error: ob
 
     normalized_provider = (provider or "unknown").strip().lower()
     normalized_client = str(client_id or "global")
-    normalized_message = (message or "").strip().lower()
-    alert_key = (normalized_client, normalized_provider, normalized_message[:200])
+    # Keep one alert per client/provider for cooldown window.
+    # Error text often contains dynamic ids, so including message in key causes spam.
+    alert_key = (normalized_client, normalized_provider)
     now_ts = time.time()
     last_ts = _LAST_PAYMENT_ALERT_TS.get(alert_key)
     if last_ts and (now_ts - last_ts) < _PAYMENT_ALERT_COOLDOWN_SECONDS:

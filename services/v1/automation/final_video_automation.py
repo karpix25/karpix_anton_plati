@@ -275,25 +275,10 @@ def process_scenario_stage(job: Dict[str, Any]) -> None:
             "Check TTS provider (Minimax/ElevenLabs) and LLM (OpenRouter) logs/configuration."
         )
 
-    submit_result = submit_saved_kie_tasks(scenario_job_id)
-    if submit_result.get("has_payment_error"):
-        raise RuntimeError(f"KIE payment error: {submit_result.get('payment_error') or 'unknown payment issue'}")
-
-    prompts_total = _safe_int(submit_result.get("prompts_total"), 0)
-    ready_asset_count = _safe_int(submit_result.get("ready_asset_count"), 0)
-    submitted_count = _safe_int(submit_result.get("submitted_count"), 0)
-    pending_count = _safe_int(submit_result.get("pending_count"), 0)
-    failed_count = _safe_int(submit_result.get("failed_count"), 0)
-
-    if pending_count > 0:
-        next_stage = "waiting_kie"
-    elif (prompts_total - ready_asset_count) > 0 and submitted_count == 0:
-        raise RuntimeError(
-            "KIE submission failed without tasks. "
-            f"total={prompts_total} ready_asset={ready_asset_count} failed={failed_count}"
-        )
-    else:
-        next_stage = "avatar_submit"
+    # IMPORTANT: start with avatar first to avoid spending KIE budget when
+    # HeyGen cannot run (balance/limits/errors). KIE is submitted only after
+    # HeyGen reaches completed/success state.
+    next_stage = "avatar_submit"
     next_schedule = datetime.utcnow()
 
     update_final_video_job(
@@ -368,7 +353,7 @@ def poll_waiting_kie_stage(job: Dict[str, Any]) -> None:
     update_final_video_job(
         int(job["id"]),
         status="queued",
-        current_stage="avatar_submit",
+        current_stage="montage",
         scenario_id=scenario["id"],
         scheduled_for=datetime.utcnow(),
         lease_until=None,
@@ -391,8 +376,8 @@ def process_avatar_submit_stage(job: Dict[str, Any]) -> None:
             payload = _internal_request("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
         else:
             raise
-    stage = "montage" if str(payload.get("status") or "").lower() in {"completed", "success"} else "waiting_heygen"
-    delay_seconds = 0 if stage == "montage" else get_heygen_poll_interval_seconds()
+    stage = "waiting_heygen"
+    delay_seconds = get_heygen_poll_interval_seconds()
 
     requeue_final_video_job(
         int(job["id"]),
@@ -410,12 +395,43 @@ def poll_waiting_heygen_stage(job: Dict[str, Any]) -> None:
     payload = _internal_request("GET", f"/api/heygen/avatar-video?scenarioId={int(scenario_id)}", timeout=180)
     status = str(payload.get("status") or "").lower()
 
+    if status == "failed":
+        # Recovery path: re-run avatar submit stage (attempt limits are managed
+        # by queue job attempt_count/max_attempts in handle_job_exception).
+        raise RuntimeError(str(payload.get("error") or "HeyGen avatar generation failed"))
+
     if status in {"completed", "success"} and payload.get("videoUrl"):
+        scenario_job_id = str(job.get("scenario_job_id") or "").strip()
+        if not scenario_job_id:
+            raise RuntimeError("Final video job has no scenario_job_id")
+
+        submit_result = submit_saved_kie_tasks(scenario_job_id)
+        if submit_result.get("has_payment_error"):
+            raise RuntimeError(f"KIE payment error: {submit_result.get('payment_error') or 'unknown payment issue'}")
+
+        prompts_total = _safe_int(submit_result.get("prompts_total"), 0)
+        ready_asset_count = _safe_int(submit_result.get("ready_asset_count"), 0)
+        submitted_count = _safe_int(submit_result.get("submitted_count"), 0)
+        pending_count = _safe_int(submit_result.get("pending_count"), 0)
+        failed_count = _safe_int(submit_result.get("failed_count"), 0)
+
+        if pending_count > 0:
+            requeue_final_video_job(
+                int(job["id"]),
+                stage="waiting_kie",
+                delay_seconds=get_kie_poll_interval_seconds(),
+                error_message=None,
+            )
+            return
+
+        if (prompts_total - ready_asset_count) > 0 and submitted_count == 0:
+            raise RuntimeError(
+                "KIE submission failed without tasks. "
+                f"total={prompts_total} ready_asset={ready_asset_count} failed={failed_count}"
+            )
+
         requeue_final_video_job(int(job["id"]), stage="montage", delay_seconds=0, error_message=None)
         return
-
-    if status == "failed":
-        raise RuntimeError(str(payload.get("error") or "HeyGen avatar generation failed"))
 
     requeue_final_video_job(
         int(job["id"]),
@@ -478,6 +494,24 @@ def handle_job_exception(job: Dict[str, Any], error: Exception) -> None:
                 )
                 complete_final_video_job(int(job["id"]))
                 return
+
+    if stage == "waiting_heygen" and not _is_non_retryable_error(message):
+        # Retry by resubmitting avatar render instead of polling failed status forever.
+        if attempts >= max_attempts:
+            update_final_video_job(
+                int(job["id"]),
+                lease_until=None,
+                worker_id=None,
+            )
+            fail_final_video_job(int(job["id"]), message)
+            return
+        requeue_final_video_job(
+            int(job["id"]),
+            stage="avatar_submit",
+            delay_seconds=get_retry_delay_seconds(attempts),
+            error_message=message,
+        )
+        return
 
     if _is_non_retryable_error(message):
         update_final_video_job(

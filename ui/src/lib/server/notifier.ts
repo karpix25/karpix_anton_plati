@@ -23,7 +23,7 @@ const PAYMENT_ERROR_PATTERNS = [
   /probation/i,
 ];
 
-const ALERT_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 const lastAlerts = new Map<string, number>();
 
 function isPaymentIssue(message: string): boolean {
@@ -97,8 +97,9 @@ export async function notifyServicePaymentIssue(clientId: number | null, provide
 
   const normalizedProvider = (provider || "unknown").trim().toLowerCase();
   const normalizedClient = String(clientId || "global");
-  const normalizedMessage = message.trim().toLowerCase();
-  const alertKey = `${normalizedClient}:${normalizedProvider}:${normalizedMessage.slice(0, 200)}`;
+  // Keep one alert per client/provider for cooldown window.
+  // Error text often contains dynamic ids, so including message in key causes spam.
+  const alertKey = `${normalizedClient}:${normalizedProvider}`;
 
   const now = Date.now();
   const lastAlert = lastAlerts.get(alertKey);
