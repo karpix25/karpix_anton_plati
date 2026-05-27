@@ -4,6 +4,7 @@ const YANDEX_DISK_API_BASE = "https://cloud-api.yandex.net/v1/disk";
 const ROOT_VIDEO_FOLDER = "ВИДЕО";
 const ROOT_AUTOMATION_FOLDER = "АВТОМАТ";
 const ROOT_AVATAR_AUDIO_FOLDER = "Аудио для аватаров";
+const PROTECTED_AUTOMATION_ROOT_PATH = `disk:/${ROOT_VIDEO_FOLDER}/${ROOT_AUTOMATION_FOLDER}`;
 
 type UploadHrefPayload = {
   href?: string;
@@ -67,6 +68,34 @@ function toDiskPath(...segments: string[]) {
   return `disk:/${cleaned.join("/")}`;
 }
 
+function normalizeDiskPathForCompare(value: string) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/^disk:\/*/i, "")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/");
+  if (!normalized) return "disk:/";
+  const parts = normalized
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .map((segment) => segment.toLocaleLowerCase("ru-RU"));
+  return `disk:/${parts.join("/")}`;
+}
+
+function isProtectedAutomationRootPath(diskPath: string) {
+  return normalizeDiskPathForCompare(diskPath) === normalizeDiskPathForCompare(PROTECTED_AUTOMATION_ROOT_PATH);
+}
+
+function assertDeletionAllowed(method: string, pathname: string) {
+  if (method !== "DELETE") return;
+  const parsed = new URL(pathname, "https://yandex-disk-local");
+  const resourcePath = parsed.searchParams.get("path");
+  if (resourcePath && isProtectedAutomationRootPath(resourcePath)) {
+    throw new Error(`Protected folder cannot be deleted: ${PROTECTED_AUTOMATION_ROOT_PATH}`);
+  }
+}
+
 function normalizeCustomFolderPath(value?: string | null) {
   const raw = String(value || "").trim();
   if (!raw) return null;
@@ -91,6 +120,8 @@ async function yandexRequest(pathname: string, init: RequestInit = {}) {
   if (!token) {
     throw new Error("YANDEX_DISK_OAUTH_TOKEN is not configured");
   }
+  const method = String(init.method || "GET").toUpperCase();
+  assertDeletionAllowed(method, pathname);
 
   const response = await fetch(`${YANDEX_DISK_API_BASE}${pathname}`, {
     ...init,
