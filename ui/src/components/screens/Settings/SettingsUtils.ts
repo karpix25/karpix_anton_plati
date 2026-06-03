@@ -1,4 +1,4 @@
-import { HeygenAvatarConfig, ProductMediaAsset, Settings, TtsPronunciationOverride } from "@/types";
+import { DeepgramVocabularyRule, HeygenAvatarConfig, ProductMediaAsset, Settings, TtsPronunciationOverride } from "@/types";
 import {
   DEFAULT_ELEVENLABS_VOICE_ID,
   DEFAULT_HEYGEN_MOTION_PROMPT,
@@ -87,6 +87,21 @@ export const normalizeProductMediaAssets = (value: unknown): ProductMediaAsset[]
   return [];
 };
 
+export const normalizeDeepgramVocabularyRules = (value: unknown): DeepgramVocabularyRule[] => {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item): DeepgramVocabularyRule | null => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const rule = item as Record<string, unknown>;
+      const display = safeTrim(rule.display);
+      const variants = safeTrim(rule.variants);
+      if (!display) return null;
+      return { display, variants };
+    })
+    .filter((item): item is DeepgramVocabularyRule => Boolean(item));
+};
+
 export const normalizeSettings = (settings: Settings): Settings => {
   const fallbackPreset = settings.subtitle_style_preset || "classic";
   const fallbackMarginV = SUBTITLE_PRESET_DEFAULT_MARGIN_V[fallbackPreset];
@@ -148,6 +163,8 @@ export const normalizeSettings = (settings: Settings): Settings => {
     tts_sentence_trim_keep_gap_seconds:
       Number.isFinite(sentenceTrimKeepGapSeconds) && sentenceTrimKeepGapSeconds >= 0 ? sentenceTrimKeepGapSeconds : 0.1,
     tts_pronunciation_overrides: normalizedPronunciationOverrides,
+    deepgram_keywords: safeTrim(settings.deepgram_keywords),
+    deepgram_vocabulary_rules: normalizeDeepgramVocabularyRules(settings.deepgram_vocabulary_rules),
   };
 };
 

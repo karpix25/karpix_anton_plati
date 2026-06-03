@@ -9,6 +9,7 @@ import { SilenceHandlingSettings } from "./components/SilenceHandlingSettings";
 import { PronunciationSettings } from "./components/PronunciationSettings";
 import { PromptEvolutionSettings } from "./components/PromptEvolutionSettings";
 import { HeygenSettings } from "./components/HeygenSettings";
+import { DeepgramKeywordSettings } from "./components/DeepgramKeywordSettings";
 import { Button } from "@/components/ui/button";
 import { 
   LoaderCircle, 
@@ -148,6 +149,10 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                     setDraftSettings={state.setDraftSettings}
                     subtitlePreviewRef={state.subtitlePreviewRef}
                     subtitlePreviewScale={state.subtitlePreviewScale}
+                  />
+                  <DeepgramKeywordSettings
+                    draftSettings={state.draftSettings}
+                    setDraftSettings={state.setDraftSettings}
                   />
                 </div>
              )}

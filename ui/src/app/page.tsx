@@ -11,7 +11,16 @@ import { GeneratorScreen } from "@/components/screens/GeneratorScreen";
 import { SettingsScreen } from "@/components/screens/SettingsScreen";
 
 import { ReferenceModal } from "@/components/ReferenceModal";
-import { Screen, Reference, TopicCard, StructureCard, Settings, ProductMediaAsset, TtsPronunciationOverride } from "@/types";
+import {
+  DeepgramVocabularyRule,
+  Screen,
+  Reference,
+  TopicCard,
+  StructureCard,
+  Settings,
+  ProductMediaAsset,
+  TtsPronunciationOverride,
+} from "@/types";
 import { navItems } from "@/lib/constants";
 
 type AuthState = "loading" | "authenticated" | "unauthenticated";
@@ -109,6 +118,20 @@ const normalizeTtsPronunciationOverrides = (value: unknown): TtsPronunciationOve
   }
 
   return [];
+};
+
+const normalizeDeepgramVocabularyRules = (value: unknown): DeepgramVocabularyRule[] => {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item): DeepgramVocabularyRule | null => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+      const rule = item as Record<string, unknown>;
+      const display = typeof rule.display === "string" ? rule.display.trim() : "";
+      const variants = typeof rule.variants === "string" ? rule.variants.trim() : "";
+      return display ? { display, variants } : null;
+    })
+    .filter((item): item is DeepgramVocabularyRule => Boolean(item));
 };
 
 export default function CuratorDashboard() {
@@ -239,6 +262,8 @@ export default function CuratorDashboard() {
       subtitle_margin_v: selectedClient?.subtitle_margin_v || 140,
       subtitle_margin_percent: selectedClient?.subtitle_margin_percent
         ?? Math.round(((selectedClient?.subtitle_margin_v || 140) / 1920) * 100),
+      deepgram_keywords: selectedClient?.deepgram_keywords || "",
+      deepgram_vocabulary_rules: normalizeDeepgramVocabularyRules(selectedClient?.deepgram_vocabulary_rules),
       auto_generate_final_videos: selectedClient?.auto_generate_final_videos || false,
       daily_final_video_limit: selectedClient?.daily_final_video_limit || 3,
       yandex_disk_folder_path: selectedClient?.yandex_disk_folder_path || "",

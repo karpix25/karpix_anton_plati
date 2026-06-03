@@ -57,6 +57,8 @@ export interface Client {
   subtitle_outline_width?: number;
   subtitle_margin_v?: number;
   subtitle_margin_percent?: number;
+  deepgram_keywords?: string | null;
+  deepgram_vocabulary_rules?: DeepgramVocabularyRule[] | null;
   auto_generate_final_videos?: boolean;
   daily_final_video_limit?: number;
   yandex_disk_folder_path?: string | null;
@@ -84,6 +86,11 @@ export interface TtsPronunciationOverride {
   replace: string;
   case_sensitive?: boolean;
   word_boundaries?: boolean;
+}
+
+export interface DeepgramVocabularyRule {
+  display: string;
+  variants: string;
 }
 
 export interface PatternFramework {
@@ -207,6 +214,8 @@ export interface Settings {
   subtitle_outline_width: number;
   subtitle_margin_v: number;
   subtitle_margin_percent: number;
+  deepgram_keywords: string;
+  deepgram_vocabulary_rules: DeepgramVocabularyRule[];
   auto_generate_final_videos: boolean;
   daily_final_video_limit: number;
   yandex_disk_folder_path: string;

@@ -622,6 +622,8 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
         tts_sentence_trim_enabled = None
         tts_sentence_trim_min_gap_seconds = None
         tts_sentence_trim_keep_gap_seconds = None
+        deepgram_keywords = None
+        deepgram_vocabulary_rules = None
         learned_rules_scenario = None
         learned_rules_visual = None
         learned_rules_video = None
@@ -665,6 +667,8 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                 tts_sentence_trim_enabled = client_data.get("tts_sentence_trim_enabled")
                 tts_sentence_trim_min_gap_seconds = client_data.get("tts_sentence_trim_min_gap_seconds")
                 tts_sentence_trim_keep_gap_seconds = client_data.get("tts_sentence_trim_keep_gap_seconds")
+                deepgram_keywords = client_data.get("deepgram_keywords")
+                deepgram_vocabulary_rules = client_data.get("deepgram_vocabulary_rules")
                 learned_rules_scenario = client_data.get("learned_rules_scenario")
                 learned_rules_visual = client_data.get("learned_rules_visual")
                 learned_rules_video = client_data.get("learned_rules_video")
@@ -847,7 +851,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                             continue
 
                     try:
-                        deepgram_result = transcribe_media_deepgram(tts_audio_path)
+                        deepgram_result = transcribe_media_deepgram(
+                            tts_audio_path,
+                            keywords=deepgram_keywords,
+                            vocabulary_rules=deepgram_vocabulary_rules,
+                        )
                     except Exception as deepgram_error:
                         logger.warning(
                             "Deepgram unavailable for single scenario %s, using fallback transcript alignment: %s",
@@ -874,7 +882,11 @@ def generate_for_content(content_id, client_id=None, generate_video=False, gener
                         # This eliminates mathematical drift from trimming operations.
                         try:
                             logger.info(f"Re-transcribing final processed audio for {res_job_id} to ensure perfect sync.")
-                            final_deepgram_result = transcribe_media_deepgram(tts_audio_path)
+                            final_deepgram_result = transcribe_media_deepgram(
+                                tts_audio_path,
+                                keywords=deepgram_keywords,
+                                vocabulary_rules=deepgram_vocabulary_rules,
+                            )
                             deepgram_result = final_deepgram_result
                             effective_words = final_deepgram_result.get("words", [])
                             tts_word_timestamps["words"] = effective_words

@@ -1,4 +1,9 @@
 import { NextResponse } from 'next/server';
+import {
+  appendDeepgramKeywords,
+  applyDeepgramVocabularyToResult,
+  buildDeepgramKeywordSource,
+} from '@/lib/server/deepgram-keywords';
 
 type DeepgramWord = {
   word?: string;
@@ -30,6 +35,8 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get('file');
+    const keywords = formData.get('keywords');
+    const vocabularyRules = formData.get('vocabularyRules');
 
     if (!(file instanceof File)) {
       return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
@@ -41,6 +48,11 @@ export async function POST(request: Request) {
     deepgramUrl.searchParams.set('language', 'ru');
     deepgramUrl.searchParams.set('smart_format', 'true');
     deepgramUrl.searchParams.set('punctuate', 'true');
+    const keywordSource = buildDeepgramKeywordSource(
+      typeof vocabularyRules === 'string' ? vocabularyRules : [],
+      typeof keywords === 'string' ? keywords : ''
+    );
+    appendDeepgramKeywords(deepgramUrl, keywordSource);
 
     const response = await fetch(deepgramUrl, {
       method: 'POST',
@@ -58,11 +70,18 @@ export async function POST(request: Request) {
 
     const result = await response.json();
     const alternative = result?.results?.channels?.[0]?.alternatives?.[0];
-    const words = normalizeWords(alternative?.words);
+    const normalized = applyDeepgramVocabularyToResult(
+      {
+        transcript: alternative?.transcript || '',
+        words: normalizeWords(alternative?.words),
+      },
+      typeof vocabularyRules === 'string' ? vocabularyRules : [],
+      keywordSource
+    );
 
     return NextResponse.json({
-      transcript: alternative?.transcript || '',
-      words,
+      transcript: normalized.transcript,
+      words: normalized.words,
     });
   } catch (error) {
     console.error('Deepgram timestamp API Error:', error);

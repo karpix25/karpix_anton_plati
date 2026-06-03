@@ -47,6 +47,8 @@ export const defaultSettings: ClientSettings = {
   subtitle_outline_width: 3,
   subtitle_margin_v: 140,
   subtitle_margin_percent: 11,
+  deepgram_keywords: "",
+  deepgram_vocabulary_rules: [],
   auto_generate_final_videos: false,
   daily_final_video_limit: 3,
   yandex_disk_folder_path: "",

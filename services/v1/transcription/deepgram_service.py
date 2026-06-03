@@ -2,10 +2,13 @@ import os
 import logging
 import re
 import socket
+from typing import Any, List
 from deepgram import DeepgramClient
 
 logger = logging.getLogger(__name__)
 TOKEN_RE = re.compile(r"\S+")
+DEFAULT_DEEPGRAM_KEYWORD_BOOST = 5
+MAX_DEEPGRAM_KEYWORDS = 100
 
 
 def _round(value, digits=2):
@@ -76,7 +79,128 @@ def build_fallback_transcript_alignment(text):
         "is_fallback": True,
     }
 
-def transcribe_media_deepgram(file_path):
+def _split_deepgram_terms(value: Any) -> List[str]:
+    if not isinstance(value, str) or not value.strip():
+        return []
+    return [item.strip().strip("\"'") for item in re.split(r"[,;\n]", value) if item.strip()]
+
+def _normalize_deepgram_vocabulary_rules(value: Any, legacy_keywords: Any = None) -> List[dict]:
+    rules = []
+    if isinstance(value, list):
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            display = str(item.get("display") or "").strip()
+            variants = str(item.get("variants") or "").strip()
+            if display:
+                rules.append({"display": display, "variants": variants})
+    if rules:
+        return rules
+
+    legacy_terms = _split_deepgram_terms(legacy_keywords)
+    if len(legacy_terms) > 1:
+        return [{"display": legacy_terms[0], "variants": ", ".join(legacy_terms[1:])}]
+    return []
+
+def _build_deepgram_keyword_source(keywords: Any = None, vocabulary_rules: Any = None) -> str:
+    rules = _normalize_deepgram_vocabulary_rules(vocabulary_rules, keywords)
+    terms = []
+    for rule in rules:
+        terms.append(rule["display"])
+        terms.extend(_split_deepgram_terms(rule.get("variants")))
+    if terms:
+        return ", ".join(terms)
+    return str(keywords or "").strip()
+
+def _parse_deepgram_keywords(value: Any) -> List[str]:
+    terms = _split_deepgram_terms(value)
+    if not terms:
+        return []
+
+    keywords = []
+    for keyword in terms:
+        match = re.match(r"^(.+):(-?\d+(?:\.\d+)?)$", keyword)
+        if match:
+            term = match.group(1).strip()
+            try:
+                boost = min(10, max(1, float(match.group(2))))
+            except ValueError:
+                boost = DEFAULT_DEEPGRAM_KEYWORD_BOOST
+            keywords.append(f"{term}:{boost:g}")
+        else:
+            keywords.append(f"{keyword}:{DEFAULT_DEEPGRAM_KEYWORD_BOOST}")
+
+        if len(keywords) >= MAX_DEEPGRAM_KEYWORDS:
+            break
+
+    return keywords
+
+def _normalize_comparable(value: Any) -> str:
+    return re.sub(r"[^\wА-Яа-яЁё]+", "", str(value or "").lower(), flags=re.UNICODE)
+
+def _trailing_punctuation(value: Any) -> str:
+    match = re.search(r"[^\wА-Яа-яЁё]+$", str(value or ""), flags=re.UNICODE)
+    return match.group(0) if match else ""
+
+def _apply_transcript_replacements(transcript: str, replacements: List[dict]) -> str:
+    text = transcript or ""
+    for replacement in replacements:
+        pattern = re.compile(re.escape(replacement["term"]), flags=re.IGNORECASE)
+        text = pattern.sub(replacement["display"], text)
+    return text
+
+def _find_word_replacement(words: List[dict], index: int, replacements: List[dict]):
+    candidates = sorted(replacements, key=lambda item: len(item["tokens"]), reverse=True)
+    for replacement in candidates:
+        tokens = replacement["tokens"]
+        if len(tokens) > len(words) - index:
+            continue
+        if all(
+            _normalize_comparable(words[index + offset].get("punctuated_word") or words[index + offset].get("word"))
+            == _normalize_comparable(token)
+            for offset, token in enumerate(tokens)
+        ):
+            return replacement
+    return None
+
+def _apply_word_replacements(words: List[dict], replacements: List[dict]) -> List[dict]:
+    result = []
+    index = 0
+    while index < len(words):
+        replacement = _find_word_replacement(words, index, replacements)
+        if not replacement:
+            result.append(words[index])
+            index += 1
+            continue
+
+        matched = words[index:index + len(replacement["tokens"])]
+        first = dict(matched[0])
+        last = matched[-1]
+        first["word"] = replacement["display"]
+        first["punctuated_word"] = f"{replacement['display']}{_trailing_punctuation(last.get('punctuated_word') or last.get('word'))}"
+        first["end"] = last.get("end", first.get("end"))
+        confidences = [item.get("confidence") for item in matched if isinstance(item.get("confidence"), (int, float))]
+        first["confidence"] = min(confidences) if confidences else None
+        result.append(first)
+        index += len(replacement["tokens"])
+    return result
+
+def _apply_deepgram_vocabulary(transcript: str, words: List[dict], vocabulary_rules: Any, legacy_keywords: Any = None):
+    rules = _normalize_deepgram_vocabulary_rules(vocabulary_rules, legacy_keywords)
+    if not rules:
+        return transcript, words
+
+    replacements = []
+    for rule in rules:
+        display = rule["display"]
+        for term in [display, *_split_deepgram_terms(rule.get("variants"))]:
+            tokens = [token for token in str(term).split() if token]
+            if tokens:
+                replacements.append({"display": display, "term": term, "tokens": tokens})
+
+    return _apply_transcript_replacements(transcript, replacements), _apply_word_replacements(words, replacements)
+
+def transcribe_media_deepgram(file_path, keywords=None, vocabulary_rules=None):
     """
     Transcribes media using Deepgram SDK.
     Uses a robust implementation compatible with multiple SDK versions.
@@ -102,6 +226,9 @@ def transcribe_media_deepgram(file_path):
             "diarize": True,
             "language": "ru",
         }
+        keyword_params = _parse_deepgram_keywords(_build_deepgram_keyword_source(keywords, vocabulary_rules))
+        if keyword_params:
+            options["keywords"] = keyword_params
 
         logger.info(f"Sending request to Deepgram...")
         
@@ -134,6 +261,8 @@ def transcribe_media_deepgram(file_path):
             else:
                 # Handle pydantic/other models
                 word_list.append(dict(w))
+
+        transcript, word_list = _apply_deepgram_vocabulary(transcript, word_list, vocabulary_rules, keywords)
 
         return {
             "transcript": transcript,

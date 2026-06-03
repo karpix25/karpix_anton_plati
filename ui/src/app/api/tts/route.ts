@@ -4,6 +4,11 @@ import path from 'path';
 import { spawn } from 'child_process';
 import pool from '@/lib/db';
 import { notifyServicePaymentIssue } from '@/lib/server/notifier';
+import {
+  appendDeepgramKeywords,
+  applyDeepgramVocabularyToResult,
+  buildDeepgramKeywordSource,
+} from '@/lib/server/deepgram-keywords';
 
 const DEFAULT_TTS_PROVIDER = "minimax";
 const DEFAULT_MINIMAX_VOICE_ID = "Russian_Engaging_Podcaster_v1";
@@ -525,7 +530,7 @@ function normalizeDeepgramWords(words: DeepgramWord[] = []) {
     .filter((word) => word.end > word.start);
 }
 
-async function transcribeAudioWithDeepgram(audioBuffer: Buffer, contentType: string) {
+async function transcribeAudioWithDeepgram(audioBuffer: Buffer, contentType: string, keywords?: string | null) {
   const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
   if (!deepgramApiKey || deepgramApiKey.includes("your_")) {
     throw new Error("DEEPGRAM_API_KEY is not configured");
@@ -536,6 +541,7 @@ async function transcribeAudioWithDeepgram(audioBuffer: Buffer, contentType: str
   deepgramUrl.searchParams.set("language", "ru");
   deepgramUrl.searchParams.set("smart_format", "true");
   deepgramUrl.searchParams.set("punctuate", "true");
+  appendDeepgramKeywords(deepgramUrl, keywords);
 
   const response = await fetch(deepgramUrl, {
     method: "POST",
@@ -565,6 +571,8 @@ export async function POST(request: Request) {
     await pool.query('ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
     await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS tts_pronunciation_overrides JSONB DEFAULT '[]'::jsonb");
+    await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS deepgram_keywords TEXT");
+    await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS deepgram_vocabulary_rules JSONB DEFAULT '[]'::jsonb");
     await pool.query("ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_provider TEXT DEFAULT 'minimax'");
     await pool.query('ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS tts_voice_id TEXT');
     await pool.query("ALTER TABLE client_heygen_avatars ADD COLUMN IF NOT EXISTS elevenlabs_voice_id TEXT DEFAULT '0ArNnoIAWKlT4WweaVMY'");
@@ -584,6 +592,8 @@ export async function POST(request: Request) {
     let selectedProvider = DEFAULT_TTS_PROVIDER;
     let selectedVoiceId = DEFAULT_MINIMAX_VOICE_ID;
     let selectedPronunciationOverrides: ElevenLabsReplacementRule[] = [];
+    let selectedDeepgramKeywords = "";
+    let selectedDeepgramVocabularyRules: unknown = [];
 
     const resolvedScenarioId = Number.parseInt(String(scenarioId), 10);
     let resolvedClientId: number | null = null;
@@ -602,12 +612,16 @@ export async function POST(request: Request) {
         tts_voice_id: string | null;
         elevenlabs_voice_id: string | null;
         tts_pronunciation_overrides: unknown;
+        deepgram_keywords: string | null;
+        deepgram_vocabulary_rules: unknown;
       }>(
         `SELECT
            COALESCE(a.tts_provider, c.tts_provider) AS tts_provider,
            COALESCE(a.tts_voice_id, c.tts_voice_id) AS tts_voice_id,
            COALESCE(a.elevenlabs_voice_id, c.elevenlabs_voice_id) AS elevenlabs_voice_id,
            c.tts_pronunciation_overrides AS tts_pronunciation_overrides,
+           c.deepgram_keywords AS deepgram_keywords,
+           c.deepgram_vocabulary_rules AS deepgram_vocabulary_rules,
            a.tts_provider AS avatar_tts_provider,
            a.avatar_id AS matched_avatar_id
          FROM generated_scenarios gs
@@ -625,6 +639,8 @@ export async function POST(request: Request) {
           ? rows[0]?.elevenlabs_voice_id || DEFAULT_ELEVENLABS_VOICE_ID
           : rows[0]?.tts_voice_id || DEFAULT_MINIMAX_VOICE_ID;
       selectedPronunciationOverrides = normalizeElevenLabsOverrides(rows[0]?.tts_pronunciation_overrides);
+      selectedDeepgramVocabularyRules = rows[0]?.deepgram_vocabulary_rules || [];
+      selectedDeepgramKeywords = buildDeepgramKeywordSource(selectedDeepgramVocabularyRules, rows[0]?.deepgram_keywords || "");
       console.log(`[TTS] final provider=${selectedProvider}, voiceId=${selectedVoiceId}`);
     }
 
@@ -740,7 +756,12 @@ export async function POST(request: Request) {
         let timestampPayloadJson: string | null = null;
 
         try {
-          const deepgramData = await transcribeAudioWithDeepgram(finalAudioBuffer, "audio/mpeg");
+          const rawDeepgramData = await transcribeAudioWithDeepgram(finalAudioBuffer, "audio/mpeg", selectedDeepgramKeywords);
+          const deepgramData = applyDeepgramVocabularyToResult(
+            rawDeepgramData,
+            selectedDeepgramVocabularyRules,
+            selectedDeepgramKeywords
+          );
           timestampPayloadJson = JSON.stringify({
             transcript: deepgramData.transcript || "",
             words: deepgramData.words || [],

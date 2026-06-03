@@ -11,6 +11,11 @@ import {
   uploadFinalVideoToYandexDisk,
 } from "@/lib/server/yandex-disk";
 import { materializeSubtitleTrack } from "@/lib/server/subtitles";
+import {
+  appendDeepgramKeywords,
+  applyDeepgramVocabularyToResult,
+  buildDeepgramKeywordSource,
+} from "@/lib/server/deepgram-keywords";
 import { BackgroundAudioTag, Settings } from "@/types";
 
 type ScenarioRow = {
@@ -48,6 +53,8 @@ type ScenarioRow = {
   subtitle_outline_width: number | null;
   subtitle_margin_v: number | null;
   subtitle_margin_percent: number | null;
+  deepgram_keywords: string | null;
+  deepgram_vocabulary_rules: unknown;
   typography_hook_enabled: boolean | null;
   montage_video_path: string | null;
   montage_status: string | null;
@@ -146,6 +153,8 @@ async function ensureMontageColumns() {
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_width NUMERIC(4,1) DEFAULT 3.0",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_v INTEGER DEFAULT 140",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_percent INTEGER DEFAULT 11",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS deepgram_keywords TEXT",
+    "ALTER TABLE clients ADD COLUMN IF NOT EXISTS deepgram_vocabulary_rules JSONB DEFAULT '[]'::jsonb",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS typography_hook_enabled BOOLEAN DEFAULT FALSE",
     "ALTER TABLE clients ADD COLUMN IF NOT EXISTS yandex_disk_folder_path TEXT",
     "ALTER TABLE generated_scenarios ADD COLUMN IF NOT EXISTS montage_video_path TEXT",
@@ -277,6 +286,8 @@ async function getScenario(scenarioId: number) {
         c.subtitle_outline_width,
         c.subtitle_margin_v,
         c.subtitle_margin_percent,
+        c.deepgram_keywords,
+        c.deepgram_vocabulary_rules,
         c.typography_hook_enabled,
         gs.montage_video_path,
         gs.montage_status,
@@ -406,7 +417,11 @@ function hasReliableTimestamps(words: TimestampWord[], audioDuration: number): b
   return delta <= allowedDelta && confidenceShare >= 0.35;
 }
 
-async function transcribeAudioWithDeepgramFromFile(filePath: string): Promise<{ transcript: string; words: TimestampWord[] }> {
+async function transcribeAudioWithDeepgramFromFile(
+  filePath: string,
+  keywords?: string | null,
+  vocabularyRules?: unknown
+): Promise<{ transcript: string; words: TimestampWord[] }> {
   const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
   if (!deepgramApiKey || deepgramApiKey.includes("your_")) {
     throw new Error("DEEPGRAM_API_KEY is not configured");
@@ -418,6 +433,8 @@ async function transcribeAudioWithDeepgramFromFile(filePath: string): Promise<{ 
   deepgramUrl.searchParams.set("language", "ru");
   deepgramUrl.searchParams.set("smart_format", "true");
   deepgramUrl.searchParams.set("punctuate", "true");
+  const keywordSource = buildDeepgramKeywordSource(vocabularyRules, keywords);
+  appendDeepgramKeywords(deepgramUrl, keywordSource);
 
   const response = await fetch(deepgramUrl, {
     method: "POST",
@@ -435,18 +452,24 @@ async function transcribeAudioWithDeepgramFromFile(filePath: string): Promise<{ 
 
   const result = await response.json();
   const alternative = result?.results?.channels?.[0]?.alternatives?.[0];
-  return {
-    transcript: alternative?.transcript || "",
-    words: normalizeTimestampWords(alternative?.words || []),
-  };
+  return applyDeepgramVocabularyToResult(
+    {
+      transcript: alternative?.transcript || "",
+      words: normalizeTimestampWords(alternative?.words || []),
+    },
+    vocabularyRules,
+    keywordSource
+  );
 }
 
 async function refreshScenarioTimestamps(
   scenarioId: number,
   audioPath: string,
-  audioDuration: number
+  audioDuration: number,
+  keywords?: string | null,
+  vocabularyRules?: unknown
 ): Promise<TimestampWord[]> {
-  const refreshed = await transcribeAudioWithDeepgramFromFile(audioPath);
+  const refreshed = await transcribeAudioWithDeepgramFromFile(audioPath, keywords, vocabularyRules);
   if (!hasReliableTimestamps(refreshed.words, audioDuration)) {
     throw new Error("Deepgram returned low-confidence or inconsistent timestamps");
   }
@@ -488,7 +511,13 @@ async function resolveAccurateSubtitleWords(
   }
 
   try {
-    return await refreshScenarioTimestamps(scenarioId, audioPath, audioDuration);
+    return await refreshScenarioTimestamps(
+      scenarioId,
+      audioPath,
+      audioDuration,
+      scenario.deepgram_keywords,
+      scenario.deepgram_vocabulary_rules
+    );
   } catch (error) {
     const details = error instanceof Error ? error.message : String(error);
     throw new Error(

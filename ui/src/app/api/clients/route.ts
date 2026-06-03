@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
 import { getTelegramSessionUserFromRequest, validateApiRequest } from '@/lib/server/telegram-auth';
+import {
+  buildDeepgramKeywordSource,
+  normalizeDeepgramVocabularyRulesInput,
+} from '@/lib/server/deepgram-keywords';
 
 type TtsPronunciationOverride = {
   search: string;
@@ -121,6 +125,8 @@ async function ensureClientVoiceColumn() {
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_outline_width NUMERIC(4,1) DEFAULT 3.0");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_v INTEGER DEFAULT 140");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS subtitle_margin_percent INTEGER DEFAULT 11");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS deepgram_keywords TEXT");
+  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS deepgram_vocabulary_rules JSONB DEFAULT '[]'::jsonb");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS auto_generate_final_videos BOOLEAN DEFAULT FALSE");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_final_video_limit INTEGER DEFAULT 3");
   await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS monthly_final_video_limit INTEGER DEFAULT 30");
@@ -325,6 +331,10 @@ export async function GET(request: Request) {
         ...row,
         product_media_assets: normalizeProductMediaAssets(row.product_media_assets),
         tts_pronunciation_overrides: normalizeTtsPronunciationOverrides(row.tts_pronunciation_overrides),
+        deepgram_vocabulary_rules: normalizeDeepgramVocabularyRulesInput(
+          row.deepgram_vocabulary_rules,
+          row.deepgram_keywords
+        ),
       }))
     );
   } catch (error) {
@@ -382,11 +392,13 @@ export async function POST(request: Request) {
       subtitle_outline_width,
       subtitle_margin_v,
       subtitle_margin_percent,
+      deepgram_keywords,
       auto_generate_final_videos,
       daily_final_video_limit,
       monthly_final_video_limit,
       yandex_disk_folder_path,
       typography_hook_enabled,
+      deepgram_vocabulary_rules,
     } = await request.json();
     const resolvedTargetDurationMinSeconds = Math.max(
       15,
@@ -423,6 +435,8 @@ export async function POST(request: Request) {
     );
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
+    const normalizedDeepgramRules = normalizeDeepgramVocabularyRulesInput(deepgram_vocabulary_rules, deepgram_keywords);
+    const normalizedDeepgramKeywords = buildDeepgramKeywordSource(normalizedDeepgramRules, deepgram_keywords);
     const normalizedYandexDiskFolderPath =
       typeof yandex_disk_folder_path === "string" && yandex_disk_folder_path.trim()
         ? yandex_disk_folder_path.trim()
@@ -485,10 +499,17 @@ export async function POST(request: Request) {
 
     const updatedPronunciationOverrides = await pool.query(
       `UPDATE clients
-       SET tts_pronunciation_overrides = $1::jsonb
-       WHERE id = $2
+       SET tts_pronunciation_overrides = $1::jsonb,
+           deepgram_keywords = $2,
+           deepgram_vocabulary_rules = $3::jsonb
+       WHERE id = $4
        RETURNING *`,
-      [JSON.stringify(normalizedTtsPronunciationOverrides), insertedClient.id]
+      [
+        JSON.stringify(normalizedTtsPronunciationOverrides),
+        normalizedDeepgramKeywords || null,
+        JSON.stringify(normalizedDeepgramRules),
+        insertedClient.id,
+      ]
     );
 
     return NextResponse.json({
@@ -496,6 +517,10 @@ export async function POST(request: Request) {
       product_media_assets: normalizeProductMediaAssets(updatedPronunciationOverrides.rows[0]?.product_media_assets),
       tts_pronunciation_overrides: normalizeTtsPronunciationOverrides(
         updatedPronunciationOverrides.rows[0]?.tts_pronunciation_overrides
+      ),
+      deepgram_vocabulary_rules: normalizeDeepgramVocabularyRulesInput(
+        updatedPronunciationOverrides.rows[0]?.deepgram_vocabulary_rules,
+        updatedPronunciationOverrides.rows[0]?.deepgram_keywords
       ),
     });
   } catch (error) {
@@ -552,11 +577,13 @@ export async function PUT(request: Request) {
       subtitle_outline_width,
       subtitle_margin_v,
       subtitle_margin_percent,
+      deepgram_keywords,
       auto_generate_final_videos,
       daily_final_video_limit,
       monthly_final_video_limit,
       yandex_disk_folder_path,
       typography_hook_enabled,
+      deepgram_vocabulary_rules,
     } = await request.json();
     const resolvedTargetDurationMinSeconds = Math.max(
       15,
@@ -594,6 +621,8 @@ export async function PUT(request: Request) {
     const previousAutomationState = await getFinalVideoAutomationState(Number(id));
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
+    const normalizedDeepgramRules = normalizeDeepgramVocabularyRulesInput(deepgram_vocabulary_rules, deepgram_keywords);
+    const normalizedDeepgramKeywords = buildDeepgramKeywordSource(normalizedDeepgramRules, deepgram_keywords);
     const normalizedYandexDiskFolderPath =
       typeof yandex_disk_folder_path === "string" && yandex_disk_folder_path.trim()
         ? yandex_disk_folder_path.trim()
@@ -685,10 +714,17 @@ export async function PUT(request: Request) {
 
     const updatedPronunciationOverrides = await pool.query(
       `UPDATE clients
-       SET tts_pronunciation_overrides = $1::jsonb
-       WHERE id = $2
+       SET tts_pronunciation_overrides = $1::jsonb,
+           deepgram_keywords = $2,
+           deepgram_vocabulary_rules = $3::jsonb
+       WHERE id = $4
        RETURNING *`,
-      [JSON.stringify(normalizedTtsPronunciationOverrides), clientForResponse.id]
+      [
+        JSON.stringify(normalizedTtsPronunciationOverrides),
+        normalizedDeepgramKeywords || null,
+        JSON.stringify(normalizedDeepgramRules),
+        clientForResponse.id,
+      ]
     );
 
     return NextResponse.json({
@@ -696,6 +732,10 @@ export async function PUT(request: Request) {
       product_media_assets: normalizeProductMediaAssets(updatedPronunciationOverrides.rows[0]?.product_media_assets),
       tts_pronunciation_overrides: normalizeTtsPronunciationOverrides(
         updatedPronunciationOverrides.rows[0]?.tts_pronunciation_overrides
+      ),
+      deepgram_vocabulary_rules: normalizeDeepgramVocabularyRulesInput(
+        updatedPronunciationOverrides.rows[0]?.deepgram_vocabulary_rules,
+        updatedPronunciationOverrides.rows[0]?.deepgram_keywords
       ),
     });
   } catch (error) {

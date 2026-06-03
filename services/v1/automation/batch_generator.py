@@ -688,6 +688,8 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
     tts_sentence_trim_enabled = client.get("tts_sentence_trim_enabled")
     tts_sentence_trim_min_gap_seconds = client.get("tts_sentence_trim_min_gap_seconds")
     tts_sentence_trim_keep_gap_seconds = client.get("tts_sentence_trim_keep_gap_seconds")
+    deepgram_keywords = client.get("deepgram_keywords")
+    deepgram_vocabulary_rules = client.get("deepgram_vocabulary_rules")
     learned_rules_scenario = client.get("learned_rules_scenario")
     learned_rules_visual = client.get("learned_rules_visual")
     learned_rules_video = client.get("learned_rules_video")
@@ -969,7 +971,11 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                             continue
 
                     try:
-                        deepgram_result = transcribe_media_deepgram(tts_audio_path)
+                        deepgram_result = transcribe_media_deepgram(
+                            tts_audio_path,
+                            keywords=deepgram_keywords,
+                            vocabulary_rules=deepgram_vocabulary_rules,
+                        )
                     except Exception as deepgram_error:
                         logger.warning(
                             "Deepgram unavailable for scenario %s, using fallback transcript alignment: %s",
@@ -997,7 +1003,11 @@ def run_batch_generation(count=1, client_id=1, niche="General", topic=None, angl
                         # This eliminates mathematical drift from trimming operations.
                         try:
                             logger.info(f"Re-transcribing final processed audio for {res_job_id} to ensure perfect sync.")
-                            final_deepgram_result = transcribe_media_deepgram(tts_audio_path)
+                            final_deepgram_result = transcribe_media_deepgram(
+                                tts_audio_path,
+                                keywords=deepgram_keywords,
+                                vocabulary_rules=deepgram_vocabulary_rules,
+                            )
                             deepgram_result = final_deepgram_result
                             effective_words = final_deepgram_result.get("words", [])
                             tts_word_timestamps["words"] = effective_words
