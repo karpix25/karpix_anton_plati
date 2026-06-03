@@ -362,7 +362,7 @@ export async function uploadFinalVideoToYandexDisk(params: {
   const rootPath = toDiskPath(ROOT_VIDEO_FOLDER);
   const automationPath = toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER);
   const projectPath = customProjectPath || toDiskPath(ROOT_VIDEO_FOLDER, ROOT_AUTOMATION_FOLDER, avatarProjectFolder);
-  const avatarGroupPath = customProjectPath || `${projectPath}/${sanitizeFolderName(avatarFolder) || "Unknown avatar"}`;
+  const avatarGroupPath = `${projectPath}/${sanitizeFolderName(avatarFolder) || "Unknown avatar"}`;
   const filePath = `${avatarGroupPath}/${sanitizeFileName(params.fileName)}`;
 
   if (!customProjectPath) {
