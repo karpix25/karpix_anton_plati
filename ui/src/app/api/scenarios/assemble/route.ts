@@ -16,6 +16,7 @@ import {
   applyDeepgramVocabularyToResult,
   buildDeepgramKeywordSource,
 } from "@/lib/server/deepgram-keywords";
+import { cleanupMontageWorkspace } from "@/lib/server/temp-cleanup";
 import { BackgroundAudioTag, Settings } from "@/types";
 
 type ScenarioRow = {
@@ -1405,6 +1406,7 @@ async function buildMontage(scenarioId: number) {
   console.log(`[montage] Final overlay montage complete: ${outputPath}`);
 
   return {
+    workdir,
     outputPath,
     avatarName:
       scenario.resolved_avatar_name ||
@@ -1473,7 +1475,7 @@ export async function POST(request: Request) {
       [resolvedScenarioId]
     );
 
-    const { outputPath, avatarName, clientName, yandexDiskFolderPath, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
+    const { workdir, outputPath, avatarName, clientName, yandexDiskFolderPath, backgroundAudioName, backgroundAudioPath } = await buildMontage(resolvedScenarioId);
 
     let yandexDiskPath: string | null = null;
     let yandexPublicUrl: string | null = null;
@@ -1524,6 +1526,15 @@ export async function POST(request: Request) {
        WHERE id = $8`,
       [outputPath, backgroundAudioName, backgroundAudioPath, yandexDiskPath, yandexPublicUrl, yandexStatus, yandexError, resolvedScenarioId]
     );
+
+    try {
+      await cleanupMontageWorkspace({
+        workdir,
+        keepPaths: [outputPath],
+      });
+    } catch (cleanupError) {
+      console.warn("Montage temp cleanup failed:", cleanupError);
+    }
 
     return NextResponse.json({
       ok: true,
