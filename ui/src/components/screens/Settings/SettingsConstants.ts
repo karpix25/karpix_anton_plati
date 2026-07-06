@@ -113,6 +113,5 @@ export const HEYGEN_MOTION_TYPE_OPTIONS = [
 export const DEFAULT_MINIMAX_VOICE_ID = "Russian_Engaging_Podcaster_v1";
 export const DEFAULT_ELEVENLABS_VOICE_ID = "0ArNnoIAWKlT4WweaVMY";
 export const DEFAULT_HEYGEN_MOTION_TYPE = "consistent";
-export const HEYGEN_MOTION_PROMPT_MAX_LENGTH = 500;
 export const PENDING_MOTION_STATUSES = new Set(["pending", "queued", "processing", "in_progress"]);
 export const DEFAULT_HEYGEN_MOTION_PROMPT = `Лёгкое естественное дыхание, мягкие движения плеч и корпуса, деликатная живая пластика без резких жестов. Если видны руки, допустимы только аккуратные микродвижения. Если виден фон, можно оставить едва заметное фоновое движение.`;

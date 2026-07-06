@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 
 const OPENROUTER_API_BASE = "https://openrouter.ai/api/v1";
-const HEYGEN_MOTION_PROMPT_MAX_LENGTH = 500;
 
 function getOpenRouterApiKey() {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -49,7 +48,7 @@ function extractPromptFromResponse(payload: unknown) {
 }
 
 function normalizeMotionPrompt(value: string) {
-  return value.trim().slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH);
+  return value.trim();
 }
 
 export async function POST(request: Request) {
@@ -99,7 +98,7 @@ Rules:
 - Keep the energy calm, natural, professional, and believable.
 - Avoid dramatic gestures, dancing, walking, camera moves, exaggerated nodding, or cinematic action.
 - Mention subtle breathing, posture adjustments, and gentle human liveliness where appropriate.
-- Keep it concise and specific. The final prompt must be no longer than 500 characters.
+- Keep it concise and specific.
  - Remove vague filler and rewrite awkward phrasing into clean prompt language.
  - This prompt will be sent directly to HeyGen Add Motion.`,
               },

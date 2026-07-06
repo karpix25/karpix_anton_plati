@@ -4,7 +4,6 @@ import {
   DEFAULT_HEYGEN_MOTION_PROMPT,
   DEFAULT_HEYGEN_MOTION_TYPE,
   DEFAULT_MINIMAX_VOICE_ID,
-  HEYGEN_MOTION_PROMPT_MAX_LENGTH,
 } from "./SettingsConstants";
 import {
   SUBTITLE_PRESET_DEFAULT_MARGIN_PERCENT,
@@ -38,7 +37,7 @@ export function getMotionIndicator(motionLookId: unknown, motionStatus: unknown)
   return { label: "Без motion", tone: "none" as const };
 }
 
-export const normalizeMotionPrompt = (value: unknown) => safeTrim(value).slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH);
+export const normalizeMotionPrompt = (value: unknown) => safeTrim(value);
 
 export const normalizeProductMediaAssets = (value: unknown): ProductMediaAsset[] => {
   const normalizeItem = (item: unknown): ProductMediaAsset | null => {

@@ -4,7 +4,6 @@ import { notifyServicePaymentIssue } from "@/lib/server/notifier";
 
 const HEYGEN_API_BASE = "https://api.heygen.com";
 const DEFAULT_MOTION_TYPE = "consistent";
-const HEYGEN_MOTION_PROMPT_MAX_LENGTH = 500;
 const DEFAULT_MOTION_PROMPT = `Create natural, realistic motion from this portrait while preserving identity and framing. Add subtle breathing, soft shoulder adjustments, slight torso sway, and tiny posture corrections. If hands are visible, allow restrained micro-movements only. Keep the performance calm, professional, and believable. Avoid dramatic gestures, exaggerated nodding, sudden motion, or over-animated behavior. If background elements are visible, allow only faint ambient movement.`;
 const ALLOWED_MOTION_TYPES = new Set([
   "expressive",
@@ -26,7 +25,7 @@ function getHeygenApiKey() {
 
 function normalizeMotionPrompt(value: unknown) {
   return typeof value === "string" && value.trim()
-    ? value.trim().slice(0, HEYGEN_MOTION_PROMPT_MAX_LENGTH)
+    ? value.trim()
     : DEFAULT_MOTION_PROMPT;
 }
 

@@ -6,7 +6,6 @@ import { LoaderCircle, Trash2, Wand2, Eye, EyeOff } from "lucide-react";
 import {
   DEFAULT_HEYGEN_MOTION_PROMPT,
   DEFAULT_HEYGEN_MOTION_TYPE,
-  HEYGEN_MOTION_PROMPT_MAX_LENGTH,
   HEYGEN_MOTION_TYPE_OPTIONS,
 } from "../SettingsConstants";
 import { getMotionIndicator, isPendingMotionStatus } from "../SettingsUtils";
@@ -149,10 +148,9 @@ export const HeygenLookItem: React.FC<HeygenLookItemProps> = ({
                 value={look.motion_prompt || DEFAULT_HEYGEN_MOTION_PROMPT}
                 onChange={(e) => updateLookMotionField(avatarIndex, lookIndex, "motion_prompt", e.target.value)}
                 className="h-full w-full rounded-xl border-none bg-slate-100 px-3 py-2 text-xs text-slate-600 outline-none focus:ring-2 focus:ring-primary/10 resize-none min-h-[80px]"
-                maxLength={HEYGEN_MOTION_PROMPT_MAX_LENGTH}
               />
               <div className="absolute bottom-1 right-2 text-[8px] font-bold text-slate-400">
-                {(look.motion_prompt || "").length}/{HEYGEN_MOTION_PROMPT_MAX_LENGTH}
+                {(look.motion_prompt || "").length} символов
               </div>
             </div>
           </div>
