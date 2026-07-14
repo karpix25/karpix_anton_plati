@@ -1,13 +1,13 @@
 import pool from "@/lib/db";
 
 const PAYMENT_ERROR_PATTERNS = [
-  /payment_required/i,
-  /paid_plan_required/i,
-  /billing/i,
-  /balance/i,
-  /credit/i,
-  /quota/i,
-  /resource[_\s-]*exhausted/i,
+  /\bpayment_required\b/i,
+  /\bpaid_plan_required\b/i,
+  /\bbilling\b/i,
+  /\bbalances?\b/i,
+  /\bcredits?\b/i,
+  /\bquotas?\b/i,
+  /\bresource[_\s-]*exhausted\b/i,
   /insufficient\s+(funds|balance|credits?)/i,
   /credits?\s+insufficient/i,
   /not\s+enough\s+(credit|balance|credits?)/i,
@@ -15,12 +15,12 @@ const PAYMENT_ERROR_PATTERNS = [
   /out\s+of\s+credits?/i,
   /credits?\s+exhausted/i,
   /(recharge|top[\s-]*up|prepaid)/i,
-  /subscription|plan\s+required|upgrade/i,
+  /\bsubscription\b|plan\s+required|\bupgrade\b/i,
   /authorization\s+failed/i,
-  /unauthorized/i,
+  /\bunauthorized\b/i,
   /\b401\b/i,
   /\b402\b/i,
-  /probation/i,
+  /\bprobation\b/i,
 ];
 
 const ALERT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
@@ -108,7 +108,7 @@ export async function notifyServicePaymentIssue(clientId: number | null, provide
   }
 
   const shortMessage = message.length > 420 ? `${message.slice(0, 420)}...` : message;
-  const text = `🚨 [SERVICE ERROR] ${provider}\nПохоже, закончился баланс или достигнут лимит.\nДетали: ${shortMessage}`;
+  const text = `🚨 [SERVICE ERROR] ${provider}\nПохоже, проблема с оплатой, лимитом или доступом к сервису.\nДетали: ${shortMessage}`;
 
   let sentSuccessful = false;
 

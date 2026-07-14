@@ -53,13 +53,13 @@ def _get_bot() -> TeleBot | None:
     return _BOT
 
 PAYMENT_ERROR_PATTERNS = [
-    re.compile(r"payment_required", re.IGNORECASE),
-    re.compile(r"paid_plan_required", re.IGNORECASE),
-    re.compile(r"billing", re.IGNORECASE),
-    re.compile(r"balance", re.IGNORECASE),
-    re.compile(r"credit", re.IGNORECASE),
-    re.compile(r"quota", re.IGNORECASE),
-    re.compile(r"resource[_\s-]*exhausted", re.IGNORECASE),
+    re.compile(r"\bpayment_required\b", re.IGNORECASE),
+    re.compile(r"\bpaid_plan_required\b", re.IGNORECASE),
+    re.compile(r"\bbilling\b", re.IGNORECASE),
+    re.compile(r"\bbalances?\b", re.IGNORECASE),
+    re.compile(r"\bcredits?\b", re.IGNORECASE),
+    re.compile(r"\bquotas?\b", re.IGNORECASE),
+    re.compile(r"\bresource[_\s-]*exhausted\b", re.IGNORECASE),
     re.compile(r"insufficient\s+(funds|balance|credits?)", re.IGNORECASE),
     re.compile(r"credits?\s+insufficient", re.IGNORECASE),
     re.compile(r"not\s+enough\s+(credit|balance|credits?)", re.IGNORECASE),
@@ -67,12 +67,12 @@ PAYMENT_ERROR_PATTERNS = [
     re.compile(r"out\s+of\s+credits?", re.IGNORECASE),
     re.compile(r"credits?\s+exhausted", re.IGNORECASE),
     re.compile(r"(recharge|top[\s-]*up|prepaid)", re.IGNORECASE),
-    re.compile(r"subscription|plan\s+required|upgrade", re.IGNORECASE),
+    re.compile(r"\bsubscription\b|plan\s+required|\bupgrade\b", re.IGNORECASE),
     re.compile(r"authorization\s+failed", re.IGNORECASE),
-    re.compile(r"unauthorized", re.IGNORECASE),
-    re.compile(r"\\b401\\b", re.IGNORECASE),
-    re.compile(r"\\b402\\b", re.IGNORECASE),
-    re.compile(r"probation", re.IGNORECASE),
+    re.compile(r"\bunauthorized\b", re.IGNORECASE),
+    re.compile(r"\b401\b", re.IGNORECASE),
+    re.compile(r"\b402\b", re.IGNORECASE),
+    re.compile(r"\bprobation\b", re.IGNORECASE),
 ]
 
 def send_admin_notification(message_text):
@@ -196,7 +196,7 @@ def notify_service_payment_issue(client_id: int | None, provider: str, error: ob
 
     text = (
         f"🚨 [SERVICE ERROR] {provider}\n"
-        f"Похоже, закончился баланс или достигнут лимит.\n"
+        f"Похоже, проблема с оплатой, лимитом или доступом к сервису.\n"
         f"Детали: {short_message}"
     )
 

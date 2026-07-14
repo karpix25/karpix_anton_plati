@@ -1,20 +1,30 @@
 import json
 import logging
-import os
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-import requests
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
 from services.v1.automation.batch_generator import run_batch_generation
+from services.v1.automation.final_video_config import (
+    get_heygen_poll_interval_seconds,
+    get_kie_poll_interval_seconds,
+    get_kie_resubmit_attempt_limit,
+    get_retry_delay_seconds,
+)
+from services.v1.automation.internal_api_client import (
+    build_internal_api_error_message,
+    request_internal_json,
+    request_internal_response,
+)
 from services.v1.automation.notifier_service import (
     is_payment_issue_message,
     notify_service_payment_issue,
 )
 from services.v1.automation.poll_kie_tasks import poll_saved_kie_tasks
+from services.v1.automation.final_video_stage_transitions import queue_after_heygen_completed
 from services.v1.automation.submit_kie_tasks import submit_saved_kie_tasks
 from services.v1.database.db_service import (
     complete_final_video_job,
@@ -27,65 +37,6 @@ from services.v1.database.db_service import (
 )
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_INTERNAL_API_BASE_URL = "http://127.0.0.1:3000"
-DEFAULT_KIE_POLL_INTERVAL_SECONDS = 30
-DEFAULT_HEYGEN_POLL_INTERVAL_SECONDS = 30
-
-
-def get_internal_api_base_url() -> str:
-    return (os.getenv("INTERNAL_API_BASE_URL") or DEFAULT_INTERNAL_API_BASE_URL).rstrip("/")
-
-
-def get_kie_poll_interval_seconds() -> int:
-    return max(10, int(os.getenv("FINAL_VIDEO_KIE_POLL_INTERVAL_SECONDS", str(DEFAULT_KIE_POLL_INTERVAL_SECONDS))))
-
-
-def get_heygen_poll_interval_seconds() -> int:
-    return max(10, int(os.getenv("FINAL_VIDEO_HEYGEN_POLL_INTERVAL_SECONDS", str(DEFAULT_HEYGEN_POLL_INTERVAL_SECONDS))))
-
-
-def get_retry_delay_seconds(attempt_count: int) -> int:
-    base = max(15, int(os.getenv("FINAL_VIDEO_RETRY_BASE_SECONDS", "30")))
-    ceiling = max(base, int(os.getenv("FINAL_VIDEO_RETRY_MAX_SECONDS", "1800")))
-    return min(base * max(1, attempt_count), ceiling)
-
-
-def get_kie_resubmit_attempt_limit() -> int:
-    raw_value = (
-        os.getenv("FINAL_VIDEO_KIE_RESUBMIT_ATTEMPTS")
-        or os.getenv("KIE_RESUBMIT_ATTEMPTS")
-        or "3"
-    )
-    return max(1, int(raw_value))
-
-
-def _build_internal_headers() -> Dict[str, str]:
-    headers: Dict[str, str] = {}
-    token = (os.getenv("AUTOMATION_INTERNAL_TOKEN") or "").strip()
-    if token:
-        headers["x-automation-token"] = token
-    return headers
-
-
-def _internal_request(method: str, path: str, **kwargs: Any) -> Dict[str, Any]:
-    response = requests.request(
-        method,
-        f"{get_internal_api_base_url()}{path}",
-        headers={**_build_internal_headers(), **kwargs.pop("headers", {})},
-        timeout=kwargs.pop("timeout", 300),
-        **kwargs,
-    )
-
-    try:
-        payload = response.json()
-    except ValueError:
-        payload = {"error": response.text}
-
-    if not response.ok:
-        raise RuntimeError(str(payload.get("error") or f"Internal API {path} failed with status {response.status_code}"))
-
-    return payload
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -137,18 +88,14 @@ def _ensure_tts_audio(scenario_id: int) -> None:
     if not script:
         raise RuntimeError("Scenario script is empty; cannot generate TTS")
 
-    response = requests.post(
-        f"{get_internal_api_base_url()}/api/tts",
-        headers=_build_internal_headers(),
+    response = request_internal_response(
+        "POST",
+        "/api/tts",
         json={"text": script, "scenarioId": int(scenario_id)},
         timeout=600,
     )
     if not response.ok:
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = {"error": response.text}
-        raise RuntimeError(str(payload.get("error") or f"TTS regeneration failed with status {response.status_code}"))
+        raise RuntimeError(build_internal_api_error_message(response, "/api/tts"))
 
 
 def _scenario_has_pending_kie_tasks(scenario: Dict[str, Any]) -> bool:
@@ -368,12 +315,12 @@ def process_avatar_submit_stage(job: Dict[str, Any]) -> None:
         raise RuntimeError("Final video job has no scenario_id")
 
     try:
-        payload = _internal_request("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
+        request_internal_json("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
     except RuntimeError as error:
         if "TTS audio file is missing" in str(error):
             logger.warning("Missing TTS audio for scenario_id=%s. Regenerating TTS in web container.", scenario_id)
             _ensure_tts_audio(int(scenario_id))
-            payload = _internal_request("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
+            request_internal_json("POST", "/api/heygen/avatar-video", json={"scenarioId": int(scenario_id)}, timeout=600)
         else:
             raise
     stage = "waiting_heygen"
@@ -392,7 +339,13 @@ def poll_waiting_heygen_stage(job: Dict[str, Any]) -> None:
     if not scenario_id:
         raise RuntimeError("Final video job has no scenario_id")
 
-    payload = _internal_request("GET", f"/api/heygen/avatar-video?scenarioId={int(scenario_id)}", timeout=180)
+    scenario = get_generated_scenario_by_id(int(scenario_id))
+    scenario_status = str((scenario or {}).get("heygen_status") or "").lower()
+    if scenario_status in {"completed", "success"} and (scenario or {}).get("heygen_video_url"):
+        queue_after_heygen_completed(job)
+        return
+
+    payload = request_internal_json("GET", f"/api/heygen/avatar-video?scenarioId={int(scenario_id)}", timeout=180)
     status = str(payload.get("status") or "").lower()
 
     if status == "failed":
@@ -401,36 +354,7 @@ def poll_waiting_heygen_stage(job: Dict[str, Any]) -> None:
         raise RuntimeError(str(payload.get("error") or "HeyGen avatar generation failed"))
 
     if status in {"completed", "success"} and payload.get("videoUrl"):
-        scenario_job_id = str(job.get("scenario_job_id") or "").strip()
-        if not scenario_job_id:
-            raise RuntimeError("Final video job has no scenario_job_id")
-
-        submit_result = submit_saved_kie_tasks(scenario_job_id)
-        if submit_result.get("has_payment_error"):
-            raise RuntimeError(f"KIE payment error: {submit_result.get('payment_error') or 'unknown payment issue'}")
-
-        prompts_total = _safe_int(submit_result.get("prompts_total"), 0)
-        ready_asset_count = _safe_int(submit_result.get("ready_asset_count"), 0)
-        submitted_count = _safe_int(submit_result.get("submitted_count"), 0)
-        pending_count = _safe_int(submit_result.get("pending_count"), 0)
-        failed_count = _safe_int(submit_result.get("failed_count"), 0)
-
-        if pending_count > 0:
-            requeue_final_video_job(
-                int(job["id"]),
-                stage="waiting_kie",
-                delay_seconds=get_kie_poll_interval_seconds(),
-                error_message=None,
-            )
-            return
-
-        if (prompts_total - ready_asset_count) > 0 and submitted_count == 0:
-            raise RuntimeError(
-                "KIE submission failed without tasks. "
-                f"total={prompts_total} ready_asset={ready_asset_count} failed={failed_count}"
-            )
-
-        requeue_final_video_job(int(job["id"]), stage="montage", delay_seconds=0, error_message=None)
+        queue_after_heygen_completed(job)
         return
 
     requeue_final_video_job(
@@ -446,7 +370,7 @@ def process_montage_stage(job: Dict[str, Any]) -> None:
     if not scenario_id:
         raise RuntimeError("Final video job has no scenario_id")
 
-    payload = _internal_request("POST", "/api/scenarios/assemble", json={"scenarioId": int(scenario_id)}, timeout=1800)
+    payload = request_internal_json("POST", "/api/scenarios/assemble", json={"scenarioId": int(scenario_id)}, timeout=1800)
     yandex_status = str(payload.get("montage_yandex_status") or "").lower()
     yandex_error = payload.get("montage_yandex_error")
 
