@@ -50,6 +50,56 @@ def _release_scheduler_lock(conn: Optional[Any]) -> None:
         conn.close()
 
 
+def _load_brand_caps():
+    """Потолки на БРЕНД разговорных: оплата (talking_paid), реальный бэклог из папок
+    АВТОМАТ (disk_backlog_talking, источник правды), вечный стоп (force_stop), склад-таргет
+    уровня-3 (talking_stock — профили×9×%микса с учётом ОПЛАЧЕННЫХ аккаунтов, см.
+    /opt/crm/stock_regulator.py) как приоритетный буфер JIT вместо старого rate-буфера.
+    used = смонтированные сценарии + задачи в работе. Устойчиво: при ошибке — пустые карты."""
+    client_brand, brand_used, brand_paid, brand_rate, brand_disk, brand_force, brand_stock = {}, {}, {}, {}, {}, {}, {}
+    conn = None
+    try:
+        conn = get_db_connection()
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT id, talking_client_key(name) FROM clients")
+        for cid, brand in cur.fetchall():
+            if brand:
+                client_brand[int(cid)] = brand
+        cur.execute("SELECT talking_client_key(c.name), COUNT(*) FROM generated_scenarios s "
+                    "JOIN clients c ON c.id=s.client_id WHERE s.montage_status='completed' "
+                    "AND talking_client_key(c.name) IS NOT NULL GROUP BY 1")
+        for brand, cnt in cur.fetchall():
+            if brand:
+                brand_used[brand] = brand_used.get(brand, 0) + int(cnt)
+        cur.execute("SELECT talking_client_key(c.name), COUNT(*) FROM final_video_jobs j "
+                    "JOIN clients c ON c.id=j.client_id WHERE j.status NOT IN ('completed','failed') "
+                    "AND talking_client_key(c.name) IS NOT NULL GROUP BY 1")
+        for brand, cnt in cur.fetchall():
+            if brand:
+                brand_used[brand] = brand_used.get(brand, 0) + int(cnt)
+        cur.execute("SELECT client_key, COALESCE(talking_target, talking_paid), daily_post_rate, disk_backlog_talking, force_stop, talking_stock "
+                    "FROM client_video_limits")
+        for brand, paid, rate, disk_t, force, stock in cur.fetchall():
+            if int(paid or 0) > 0:
+                brand_paid[brand] = int(paid)
+            brand_rate[brand] = float(rate or 0)
+            brand_disk[brand] = int(disk_t) if disk_t is not None else -1
+            brand_force[brand] = bool(force)
+            brand_stock[brand] = int(stock) if stock is not None else 0
+        cur.close()
+    except Exception:
+        logger.exception("brand-cap load failed; потолки/JIT бренда пропущены в этом цикле")
+        return {}, {}, {}, {}, {}, {}, {}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return client_brand, brand_used, brand_paid, brand_rate, brand_disk, brand_force, brand_stock
+
+
 def run_scheduler_cycle() -> int:
     lock_conn = _acquire_scheduler_lock()
     if lock_conn is None:
@@ -62,7 +112,42 @@ def run_scheduler_cycle() -> int:
         max_backlog_per_client = max(1, int(os.getenv("FINAL_VIDEO_QUEUE_BACKLOG_PER_CLIENT", "3")))
         queued = 0
 
+        # Потолки на бренд: force_stop (вечный стоп) + оплата + JIT «не в стол» (реальный бэклог папок).
+        client_brand, brand_used, brand_paid, brand_rate, brand_disk, brand_force, brand_stock = _load_brand_caps()
+        JIT_SEED_BUFFER = 20
+        # BRAND_CAP_MIDCYCLE_20260816: brand_used считан ОДИН раз в начале цикла (см. _load_brand_caps
+        # выше) — у бренда может быть много товар-строк (ARSEVA — 8), и без этого счётчика каждая
+        # успевала бы поставить в очередь job, думая, что лимит бренда ещё не пробит, хотя пробит
+        # уже соседним товаром В ЭТОМ ЖЕ цикле (тот же класс бага, что и в Sora2, авария UPECO 16.08:
+        # там клиентский потолок перепроверялся один раз на весь батч задач одного товара — здесь
+        # то же самое на уровне бренда с несколькими товарами). Копим локально то, что САМ этот цикл
+        # уже поставил в очередь по бренду, и учитываем при проверке лимита каждого следующего товара.
+        queued_this_cycle_by_brand = {}
+
         for client in clients:
+            _cid = int(client["id"])
+            _brand = client_brand.get(_cid)
+            if _brand:
+                if brand_force.get(_brand):
+                    stop_final_video_automation(_cid)
+                    logger.info("Stopped final video automation for client_id=%s: BRAND force-stopped (brand=%s).", _cid, _brand)
+                    continue
+                _paid = brand_paid.get(_brand, 0)
+                _used = brand_used.get(_brand, 0) + queued_this_cycle_by_brand.get(_brand, 0)
+                if _paid > 0 and _used >= _paid:
+                    stop_final_video_automation(_cid)
+                    logger.info("Stopped final video automation for client_id=%s: BRAND paid cap reached (brand=%s, %s/%s).", _cid, _brand, _used, _paid)
+                    continue
+                _rate = brand_rate.get(_brand, 0.0)
+                _disk = brand_disk.get(_brand, -1)
+                # Буфер = уровень-3 CRM (talking_stock), если посчитан и >0; иначе старый буфер
+                # по темпу выкладки (rate) — тот же fallback, что и paid/target выше.
+                _stock = brand_stock.get(_brand, 0)
+                _buf = max(1, _stock) if _stock > 0 else (max(1, round(_rate)) if _rate > 0 else JIT_SEED_BUFFER)
+                if _disk < 0 or _disk >= _buf:
+                    logger.info("JIT skip client_id=%s brand=%s: бэклог(диск) %s >= буфер %s (склад=%s темп=%s/день). Не в стол.", _cid, _brand, _disk, _buf, _stock, _rate)
+                    continue
+
             completed_today = int(client.get("daily_final_video_count") or 0)
             completed = int(client.get("monthly_final_video_count") or 0)
             open_jobs = int(client.get("open_final_video_jobs") or 0)
@@ -89,12 +174,20 @@ def run_scheduler_cycle() -> int:
                 continue
 
             remaining = min(remaining_today, remaining_project)
+            if _brand and _paid > 0:
+                # тот же локальный счётчик выше — не даём ЭТОМУ товару взять больше, чем
+                # реально осталось у бренда, даже если FINAL_VIDEO_SCHEDULER_BATCH_PER_CLIENT
+                # когда-нибудь поднимут выше дефолтной 1 (см. комментарий у queued_this_cycle_by_brand).
+                remaining = min(remaining, max(0, _paid - _used))
             backlog_room = max(0, max_backlog_per_client - open_jobs)
             to_enqueue = min(max_batch_per_client, remaining, backlog_room)
 
             for _ in range(to_enqueue):
                 enqueue_final_video_job(int(client["id"]))
                 queued += 1
+
+            if to_enqueue and _brand:
+                queued_this_cycle_by_brand[_brand] = queued_this_cycle_by_brand.get(_brand, 0) + to_enqueue
 
             if to_enqueue:
                 project_job_count_after = project_job_count + to_enqueue

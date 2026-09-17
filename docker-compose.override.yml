@@ -1,0 +1,19 @@
+{
+  "networks": {
+    "easypanel": {
+      "external": true
+    }
+  },
+  "services": {
+    "web": {
+      "networks": {
+        "default": null,
+        "easypanel": {
+          "aliases": [
+            "n8n_ai_avatars_web"
+          ]
+        }
+      }
+    }
+  }
+}
