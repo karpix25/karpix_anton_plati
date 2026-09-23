@@ -53,7 +53,7 @@ def _resolve_broll_model_profile(generator_model: str | None) -> Dict[str, Any]:
     if resolved_model == VEO3_QUALITY:
         return {
             "generator_model": resolved_model,
-            "clip_duration_seconds": 5.0,
+            "clip_duration_seconds": 4.0,
             "resolution": "1080p",
             "aspect_ratio": "9:16",
             "generate_audio": False,
@@ -64,7 +64,7 @@ def _resolve_broll_model_profile(generator_model: str | None) -> Dict[str, Any]:
     if resolved_model == VEO3_FAST:
         return {
             "generator_model": resolved_model,
-            "clip_duration_seconds": 5.0,
+            "clip_duration_seconds": 4.0,
             "resolution": "720p",
             "aspect_ratio": "9:16",
             "generate_audio": False,
@@ -75,7 +75,7 @@ def _resolve_broll_model_profile(generator_model: str | None) -> Dict[str, Any]:
     if resolved_model == VEO3_LITE:
         return {
             "generator_model": resolved_model,
-            "clip_duration_seconds": 5.0,
+            "clip_duration_seconds": 4.0,
             "resolution": "720p",
             "aspect_ratio": "9:16",
             "generate_audio": False,
@@ -85,7 +85,7 @@ def _resolve_broll_model_profile(generator_model: str | None) -> Dict[str, Any]:
 
     return {
         "generator_model": DEFAULT_KIE_MODEL,
-        "clip_duration_seconds": 5.0,
+        "clip_duration_seconds": 4.0,
         "resolution": "720p",
         "aspect_ratio": "9:16",
         "generate_audio": False,
@@ -235,7 +235,7 @@ VEO-3 META-FRAMEWORK RULES (CRITICAL):
    Every description in the "action" field must be a flowing paragraph following this sequence:
    - [Cinematography]: Shot type (CU, MS, WS), angle, and specific movement (Dolly In/Out, Trucking Left/Right, Panning, Tilting, Arc Shot, Crane/Jib movement).
    - [Subject]: Detailed physical description, materials, and textures.
-   - [Action]: A singular, clear, and steady primary action.
+   - [Action]: A singular, clear, and steady primary action that visibly continues for the ENTIRE clip duration — never a quick gesture followed by the subject holding still or freezing. If the real-life action would naturally finish sooner than the clip length, choose a continuous motion instead (walking, stirring, scrolling, adjusting, writing) that fills the full duration at a natural, real-life pace — not slow motion, not sped up.
    - [Context]: Environment, specific lighting (Golden Hour, Volumetric, Rembrandt, Soft diffused light), and weather.
    - [Style & Ambiance]: Color palette and mood derived from visual facts.
 

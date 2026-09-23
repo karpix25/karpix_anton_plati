@@ -197,7 +197,9 @@ def build_kie_request_payload(prompt_json: Dict[str, Any], model: str | None = N
                 "prompt": prompt_text,
                 "aspect_ratio": "9:16",
                 "resolution": "720p",
-                "duration": "8",
+                # Профиль биролла просит 4.0с (_resolve_broll_model_profile) — было жёстко "8",
+                # вдвое длиннее, чем написан промпт (тот же класс бага, что у veo3, 23.09).
+                "duration": "4",
                 "fixed_lens": False,
                 "generate_audio": False,
                 "nsfw_checker": False,
@@ -243,6 +245,10 @@ def submit_veo_video_task(prompt_json: Dict[str, Any], model: str | None = None)
         "aspect_ratio": "9:16",
         "generationType": "TEXT_2_VIDEO",
         "enableTranslation": True,
+        # Без duration KIE молча берёт 8с, а профиль биролла (_resolve_broll_model_profile) пишет
+        # промпт под 5.0с — вдвое короче. 5 недоступно («Duration must be 4, 6 or 8 seconds»,
+        # проверено живым запросом 23.09), берём ближайшее разрешённое.
+        "duration": 4,
     }
 
     if not api_key:
