@@ -235,7 +235,7 @@ VEO-3 META-FRAMEWORK RULES (CRITICAL):
    Every description in the "action" field must be a flowing paragraph following this sequence:
    - [Cinematography]: Shot type (CU, MS, WS), angle, and specific movement (Dolly In/Out, Trucking Left/Right, Panning, Tilting, Arc Shot, Crane/Jib movement).
    - [Subject]: Detailed physical description, materials, and textures.
-   - [Action]: A singular, clear, and steady primary action that visibly continues for the ENTIRE clip duration — never a quick gesture followed by the subject holding still or freezing. If the real-life action would naturally finish sooner than the clip length, choose a continuous motion instead (walking, stirring, scrolling, adjusting, writing) that fills the full duration at a natural, real-life pace — not slow motion, not sped up.
+   - [Action]: A singular, clear, and steady primary action that visibly continues for the ENTIRE clip duration — never a quick gesture followed by the subject holding still or freezing. If the real-life action would naturally finish sooner than the clip length, choose a continuous motion instead (walking, stirring, scrolling, adjusting, writing) that fills the full duration at a natural, real-life pace — not slow motion, not sped up. If the action involves a tool or object (spoon, phone, grate, cloth), it must have a visible lifecycle within the shot: picked up, used, then set down or handed off — never let it vanish from the hand between beats or be silently replaced by a different object.
    - [Context]: Environment, specific lighting (Golden Hour, Volumetric, Rembrandt, Soft diffused light), and weather.
    - [Style & Ambiance]: Color palette and mood derived from visual facts.
 
