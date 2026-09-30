@@ -1,0 +1,222 @@
+import logging
+import os
+import time
+from typing import Any, Optional
+
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
+from services.v1.database.db_service import (
+    enqueue_final_video_job,
+    get_auto_final_video_client_stats,
+    get_db_connection,
+    init_db,
+    stop_final_video_automation,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+SCHEDULER_ADVISORY_LOCK_KEY = 84244001
+
+
+def _acquire_scheduler_lock() -> Optional[Any]:
+    conn = get_db_connection()
+    conn.autocommit = True
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT pg_try_advisory_lock(%s)", (SCHEDULER_ADVISORY_LOCK_KEY,))
+        row = cursor.fetchone()
+        locked = bool(row[0]) if row else False
+    finally:
+        cursor.close()
+
+    if not locked:
+        conn.close()
+        return None
+
+    return conn
+
+
+def _release_scheduler_lock(conn: Optional[Any]) -> None:
+    if conn is None:
+        return
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT pg_advisory_unlock(%s)", (SCHEDULER_ADVISORY_LOCK_KEY,))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _load_brand_caps():
+    """Потолки на БРЕНД разговорных: оплата (talking_paid), реальный бэклог из папок
+    АВТОМАТ (disk_backlog_talking, источник правды), вечный стоп (force_stop), склад-таргет
+    уровня-3 (talking_stock — профили×9×%микса с учётом ОПЛАЧЕННЫХ аккаунтов, см.
+    /opt/crm/stock_regulator.py) как приоритетный буфер JIT вместо старого rate-буфера.
+    used = смонтированные сценарии + задачи в работе. Устойчиво: при ошибке — пустые карты."""
+    client_brand, brand_used, brand_paid, brand_rate, brand_disk, brand_force, brand_stock = {}, {}, {}, {}, {}, {}, {}
+    conn = None
+    try:
+        conn = get_db_connection()
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT id, talking_client_key(name) FROM clients")
+        for cid, brand in cur.fetchall():
+            if brand:
+                client_brand[int(cid)] = brand
+        cur.execute("SELECT talking_client_key(c.name), COUNT(*) FROM generated_scenarios s "
+                    "JOIN clients c ON c.id=s.client_id WHERE s.montage_status='completed' "
+                    "AND talking_client_key(c.name) IS NOT NULL GROUP BY 1")
+        for brand, cnt in cur.fetchall():
+            if brand:
+                brand_used[brand] = brand_used.get(brand, 0) + int(cnt)
+        cur.execute("SELECT talking_client_key(c.name), COUNT(*) FROM final_video_jobs j "
+                    "JOIN clients c ON c.id=j.client_id WHERE j.status NOT IN ('completed','failed') "
+                    "AND talking_client_key(c.name) IS NOT NULL GROUP BY 1")
+        for brand, cnt in cur.fetchall():
+            if brand:
+                brand_used[brand] = brand_used.get(brand, 0) + int(cnt)
+        cur.execute("SELECT client_key, COALESCE(talking_target, talking_paid), daily_post_rate, disk_backlog_talking, force_stop, talking_stock "
+                    "FROM client_video_limits")
+        for brand, paid, rate, disk_t, force, stock in cur.fetchall():
+            if int(paid or 0) > 0:
+                brand_paid[brand] = int(paid)
+            brand_rate[brand] = float(rate or 0)
+            brand_disk[brand] = int(disk_t) if disk_t is not None else -1
+            brand_force[brand] = bool(force)
+            brand_stock[brand] = int(stock) if stock is not None else 0
+        cur.close()
+    except Exception:
+        logger.exception("brand-cap load failed; потолки/JIT бренда пропущены в этом цикле")
+        return {}, {}, {}, {}, {}, {}, {}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return client_brand, brand_used, brand_paid, brand_rate, brand_disk, brand_force, brand_stock
+
+
+def run_scheduler_cycle() -> int:
+    lock_conn = _acquire_scheduler_lock()
+    if lock_conn is None:
+        logger.info("Skipped scheduler cycle: advisory lock is held by another scheduler instance.")
+        return 0
+
+    try:
+        clients = get_auto_final_video_client_stats()
+        max_batch_per_client = max(1, int(os.getenv("FINAL_VIDEO_SCHEDULER_BATCH_PER_CLIENT", "1")))
+        max_backlog_per_client = max(1, int(os.getenv("FINAL_VIDEO_QUEUE_BACKLOG_PER_CLIENT", "3")))
+        queued = 0
+
+        # Потолки на бренд: force_stop (вечный стоп) + оплата + JIT «не в стол» (реальный бэклог папок).
+        client_brand, brand_used, brand_paid, brand_rate, brand_disk, brand_force, brand_stock = _load_brand_caps()
+        JIT_SEED_BUFFER = 20
+
+        for client in clients:
+            _cid = int(client["id"])
+            _brand = client_brand.get(_cid)
+            if _brand:
+                if brand_force.get(_brand):
+                    stop_final_video_automation(_cid)
+                    logger.info("Stopped final video automation for client_id=%s: BRAND force-stopped (brand=%s).", _cid, _brand)
+                    continue
+                _paid = brand_paid.get(_brand, 0)
+                _used = brand_used.get(_brand, 0)
+                if _paid > 0 and _used >= _paid:
+                    stop_final_video_automation(_cid)
+                    logger.info("Stopped final video automation for client_id=%s: BRAND paid cap reached (brand=%s, %s/%s).", _cid, _brand, _used, _paid)
+                    continue
+                _rate = brand_rate.get(_brand, 0.0)
+                _disk = brand_disk.get(_brand, -1)
+                # Буфер = уровень-3 CRM (talking_stock), если посчитан и >0; иначе старый буфер
+                # по темпу выкладки (rate) — тот же fallback, что и paid/target выше.
+                _stock = brand_stock.get(_brand, 0)
+                _buf = max(1, _stock) if _stock > 0 else (max(1, round(_rate)) if _rate > 0 else JIT_SEED_BUFFER)
+                if _disk < 0 or _disk >= _buf:
+                    logger.info("JIT skip client_id=%s brand=%s: бэклог(диск) %s >= буфер %s (склад=%s темп=%s/день). Не в стол.", _cid, _brand, _disk, _buf, _stock, _rate)
+                    continue
+
+            completed_today = int(client.get("daily_final_video_count") or 0)
+            completed = int(client.get("monthly_final_video_count") or 0)
+            open_jobs = int(client.get("open_final_video_jobs") or 0)
+            daily_job_count = int(client.get("daily_final_video_jobs") or 0)
+            project_job_count = int(client.get("monthly_final_video_jobs") or 0)
+            daily_limit = max(0, int(client.get("daily_final_video_limit") or 0))
+            limit = max(0, int(client.get("monthly_final_video_limit") or 0))
+
+            if limit <= 0 or daily_limit <= 0:
+                continue
+
+            # STRICT GATE: count already-created final_video_jobs in day/month.
+            # This prevents endless auto-generation retries when upstream services fail.
+            remaining_today = max(0, daily_limit - daily_job_count)
+            remaining_project = max(0, limit - project_job_count)
+            if remaining_project <= 0:
+                stop_final_video_automation(int(client["id"]))
+                logger.info(
+                    "Stopped final video automation for client_id=%s: project limit reached (%s/%s).",
+                    client["id"],
+                    project_job_count,
+                    limit,
+                )
+                continue
+
+            remaining = min(remaining_today, remaining_project)
+            backlog_room = max(0, max_backlog_per_client - open_jobs)
+            to_enqueue = min(max_batch_per_client, remaining, backlog_room)
+
+            for _ in range(to_enqueue):
+                enqueue_final_video_job(int(client["id"]))
+                queued += 1
+
+            if to_enqueue:
+                project_job_count_after = project_job_count + to_enqueue
+                logger.info(
+                    (
+                        "Queued %s final video jobs for client_id=%s "
+                        "(created jobs today: %s/%s, created jobs project: %s/%s, completed today: %s, completed project: %s, open: %s)"
+                    ),
+                    to_enqueue,
+                    client["id"],
+                    daily_job_count,
+                    daily_limit,
+                    project_job_count,
+                    limit,
+                    completed_today,
+                    completed,
+                    open_jobs,
+                )
+                if project_job_count_after >= limit:
+                    stop_final_video_automation(int(client["id"]))
+                    logger.info(
+                        "Stopped final video automation for client_id=%s after queueing: project limit reached (%s/%s).",
+                        client["id"],
+                        project_job_count_after,
+                        limit,
+                    )
+
+        return queued
+    finally:
+        _release_scheduler_lock(lock_conn)
+
+
+def main() -> None:
+    init_db()
+    sleep_seconds = max(10, int(os.getenv("FINAL_VIDEO_SCHEDULER_INTERVAL_SECONDS", "60")))
+    logger.info("Final video scheduler started")
+
+    while True:
+        try:
+            queued = run_scheduler_cycle()
+            logger.info("Final video scheduler cycle completed. New jobs queued: %s", queued)
+        except Exception:
+            logger.exception("Final video scheduler cycle failed")
+        time.sleep(sleep_seconds)
+
+
+if __name__ == "__main__":
+    main()
