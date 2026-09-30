@@ -70,6 +70,18 @@ services:
       - 8.8.8.8
     expose:
       - "3000"
+    # Traefik ходит в web по имени n8n_ai_avatars_web в сети easypanel. Раньше эта
+    # привязка жила ТОЛЬКО в docker-compose.override.yml, а override не подхватывается
+    # автоматически: файла docker-compose.yml тут нет, и любой
+    # `docker compose -f docker-compose.production.yml up -d` пересоздавал web без сети
+    # easypanel -> публичный домен отдавал 502 до ручного docker network connect
+    # (проверено 30.09: 10 минут недоступности). Держим привязку здесь, чтобы
+    # пересоздание было безопасным при любом наборе -f.
+    networks:
+      default: null
+      easypanel:
+        aliases:
+          - n8n_ai_avatars_web
 
   final-video-worker:
     build:
@@ -203,6 +215,10 @@ services:
     dns:
       - 1.1.1.1
       - 8.8.8.8
+
+networks:
+  easypanel:
+    external: true
 
 volumes:
   postgres_data:
