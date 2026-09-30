@@ -166,11 +166,36 @@ def _resolve_usable_look_id(look_id: Optional[str]) -> Optional[str]:
         return None
 
 
+LEGACY_ENGINE = "legacy"
+
+
+def _build_v3_payload(avatar_id: str, look_id: Optional[str], audio_url: str, engine: str) -> Dict[str, Any]:
+    """v3 (/v3/videos): аватар и фото-лук передаются одним полем avatar_id,
+    движок — через engine.type. motion_prompt/expressiveness поддерживаются
+    для фото-луков, поэтому поведение остаётся тем же, что и в v2."""
+    payload: Dict[str, Any] = {
+        "type": "avatar",
+        "avatar_id": look_id or avatar_id,
+        "engine": {"type": engine},
+        "resolution": "720p",
+        "aspect_ratio": "9:16",
+    }
+    if audio_url.startswith("http://") or audio_url.startswith("https://"):
+        payload["audio_url"] = audio_url
+    else:
+        payload["audio_asset_id"] = upload_audio_asset(audio_url)
+    if look_id:
+        payload["expressiveness"] = "medium"
+        payload["motion_prompt"] = PHOTO_AVATAR_MOTION_PROMPT
+    return payload
+
+
 def generate_avatar_video(
     audio_url: str,
     avatar_id: str,
     look_id: Optional[str] = None,
     fallback_look_id: Optional[str] = None,
+    engine: Optional[str] = None,
 ) -> str:
     """
     Triggers HeyGen to generate an avatar video from an uploaded or remote audio source.
@@ -178,6 +203,17 @@ def generate_avatar_video(
     candidate_motion_look_id = look_id if look_id and look_id != fallback_look_id else None
     resolved_look_id = _resolve_usable_look_id(candidate_motion_look_id) or fallback_look_id
     logger.info("Triggering HeyGen video generation with avatar_id=%s look_id=%s fallback_look_id=%s resolved_look_id=%s", avatar_id, look_id, fallback_look_id, resolved_look_id)
+
+    # Движок выбирается на уровне клиента. Пусто или "legacy" -> прежний путь v2.
+    engine_code = (engine or LEGACY_ENGINE).strip() or LEGACY_ENGINE
+    if engine_code != LEGACY_ENGINE:
+        v3_payload = _build_v3_payload(avatar_id, resolved_look_id, audio_url, engine_code)
+        v3_response = _heygen_request("POST", f"{HEYGEN_API_BASE}/v3/videos", json=v3_payload)
+        v3_video_id = (v3_response.get("data") or {}).get("video_id")
+        if not v3_video_id:
+            raise RuntimeError("HeyGen v3 create video response did not include video_id")
+        logger.info("HeyGen v3 video requested: engine=%s video_id=%s", engine_code, v3_video_id)
+        return str(v3_video_id)
 
     payload = {
         "video_inputs": [

@@ -78,12 +78,14 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
     learned_rules_scenario = None
     learned_rules_visual = None
     learned_rules_video = None
+    heygen_engine = None
     
     if client_id:
         from services.v1.database.db_service import get_client, get_client_monthly_count
         client_data = get_client(client_id=client_id)
         if client_data:
             brand_voice = client_data.get("brand_voice")
+            heygen_engine = client_data.get("heygen_engine")
             target_audience = client_data.get("target_audience")
             target_product_info = target_product_info or client_data.get("product_info")
             auto_generate = client_data.get("auto_generate", False)
@@ -283,6 +285,7 @@ def run_content_gen_pipeline(job_id, transcript=None, reels_url=None, niche="Gen
             avatar_id,
             look_id=motion_look_id or fallback_look_id,
             fallback_look_id=fallback_look_id,
+            engine=heygen_engine,
         )
     except Exception as error:
         notify_service_payment_issue(client_id, "HeyGen", error)

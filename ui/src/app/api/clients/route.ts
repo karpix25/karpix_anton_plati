@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import pool from '@/lib/db';
+import { ensureEngineTable, resolveEngine } from '@/lib/server/heygen-engines';
 import { getTelegramSessionUserFromRequest, validateApiRequest } from '@/lib/server/telegram-auth';
 import {
   buildDeepgramKeywordSource,
@@ -254,6 +255,7 @@ export async function GET(request: Request) {
     if (errorResponse) return errorResponse;
 
     await ensureClientVoiceColumn();
+    await ensureEngineTable();
     await ensureScenarioStatsColumns();
     const { rows } = await pool.query(`
       SELECT
@@ -349,6 +351,7 @@ export async function POST(request: Request) {
     if (errorResponse) return errorResponse;
 
     await ensureClientVoiceColumn();
+    await ensureEngineTable();
     const {
       name,
       niche,
@@ -535,8 +538,10 @@ export async function PUT(request: Request) {
     if (errorResponse) return errorResponse;
 
     await ensureClientVoiceColumn();
+    await ensureEngineTable();
     const {
       id,
+      heygen_engine,
       brand_voice,
       product_info,
       target_audience,
@@ -554,6 +559,7 @@ export async function PUT(request: Request) {
       broll_product_clip_policy,
       broll_generator_model,
       product_media_assets,
+      product_media_assets_baseline,
       product_keyword,
       product_video_url,
       tts_provider,
@@ -620,6 +626,14 @@ export async function PUT(request: Request) {
     );
     const previousAutomationState = await getFinalVideoAutomationState(Number(id));
     const normalizedAssets = normalizeProductMediaAssets(product_media_assets);
+    // Форма присылает список ассетов целиком. Если её открыли ДО загрузки нового
+    // ассета, сохранение затирало свежую загрузку: файл оставался на диске, а ссылка
+    // из базы исчезала (воспроизведено на проде: 19 ассетов -> 18 + файл-сирота).
+    // Базовый список = то, что форма реально видела: удаляем только то, что в нём
+    // было, остальное из базы сохраняем. Нет базового списка — поведение прежнее.
+    const assetsBaseline = Array.isArray(product_media_assets_baseline)
+      ? normalizeProductMediaAssets(product_media_assets_baseline)
+      : null;
     const normalizedTtsPronunciationOverrides = normalizeTtsPronunciationOverrides(tts_pronunciation_overrides);
     const normalizedDeepgramRules = normalizeDeepgramVocabularyRulesInput(deepgram_vocabulary_rules, deepgram_keywords);
     const normalizedDeepgramKeywords = buildDeepgramKeywordSource(normalizedDeepgramRules, deepgram_keywords);
@@ -627,8 +641,11 @@ export async function PUT(request: Request) {
       typeof yandex_disk_folder_path === "string" && yandex_disk_folder_path.trim()
         ? yandex_disk_folder_path.trim()
         : null;
+    const updateClientSql = 'UPDATE clients SET brand_voice = $1, product_info = $2, target_audience = $3, auto_generate = $4, monthly_limit = $5, target_duration_seconds = $6, target_duration_min_seconds = $7, target_duration_max_seconds = $8, broll_interval_seconds = $9, broll_timing_mode = $10, broll_pacing_profile = $11, broll_pause_threshold_seconds = $12, broll_coverage_percent = $13, broll_semantic_relevance_priority = $14, broll_product_clip_policy = $15, broll_generator_model = $16, product_media_assets = $17::jsonb, product_keyword = $18, product_video_url = $19, tts_provider = $20, tts_voice_id = $21, elevenlabs_voice_id = $22, tts_silence_trim_min_duration_seconds = $23, tts_silence_trim_threshold_db = $24, tts_silence_trim_enabled = $25, tts_sentence_trim_enabled = $26, tts_sentence_trim_min_gap_seconds = $27, tts_sentence_trim_keep_gap_seconds = $28, subtitles_enabled = $29, subtitle_mode = $30, subtitle_style_preset = $31, subtitle_font_family = $32, subtitle_font_color = $33, subtitle_font_size = $34, subtitle_font_weight = $35, subtitle_outline_color = $36, subtitle_outline_width = $37, subtitle_margin_v = $38, subtitle_margin_percent = $39, auto_generate_final_videos = $40, daily_final_video_limit = $41, monthly_final_video_limit = $42, yandex_disk_folder_path = $43, typography_hook_enabled = $44 WHERE id = $45 RETURNING *';
     const { rows } = await pool.query(
-      'UPDATE clients SET brand_voice = $1, product_info = $2, target_audience = $3, auto_generate = $4, monthly_limit = $5, target_duration_seconds = $6, target_duration_min_seconds = $7, target_duration_max_seconds = $8, broll_interval_seconds = $9, broll_timing_mode = $10, broll_pacing_profile = $11, broll_pause_threshold_seconds = $12, broll_coverage_percent = $13, broll_semantic_relevance_priority = $14, broll_product_clip_policy = $15, broll_generator_model = $16, product_media_assets = $17::jsonb, product_keyword = $18, product_video_url = $19, tts_provider = $20, tts_voice_id = $21, elevenlabs_voice_id = $22, tts_silence_trim_min_duration_seconds = $23, tts_silence_trim_threshold_db = $24, tts_silence_trim_enabled = $25, tts_sentence_trim_enabled = $26, tts_sentence_trim_min_gap_seconds = $27, tts_sentence_trim_keep_gap_seconds = $28, subtitles_enabled = $29, subtitle_mode = $30, subtitle_style_preset = $31, subtitle_font_family = $32, subtitle_font_color = $33, subtitle_font_size = $34, subtitle_font_weight = $35, subtitle_outline_color = $36, subtitle_outline_width = $37, subtitle_margin_v = $38, subtitle_margin_percent = $39, auto_generate_final_videos = $40, daily_final_video_limit = $41, monthly_final_video_limit = $42, yandex_disk_folder_path = $43, typography_hook_enabled = $44 WHERE id = $45 RETURNING *',
+      assetsBaseline
+        ? updateClientSql.replace("product_media_assets = $17::jsonb", "product_media_assets = (SELECT COALESCE(jsonb_agg(m.value ORDER BY m.pos), \'[]\'::jsonb) FROM (SELECT s.value, s.ord AS pos FROM jsonb_array_elements($17::jsonb) WITH ORDINALITY AS s(value, ord) UNION ALL SELECT d.value, 1000000 + d.ord FROM jsonb_array_elements(COALESCE(clients.product_media_assets, \'[]\'::jsonb)) WITH ORDINALITY AS d(value, ord) WHERE d.value->>\'url\' NOT IN (SELECT x.value->>\'url\' FROM jsonb_array_elements($17::jsonb) AS x(value)) AND d.value->>\'url\' NOT IN (SELECT y.value->>\'url\' FROM jsonb_array_elements($46::jsonb) AS y(value))) m)")
+        : updateClientSql,
       [
         brand_voice,
         product_info,
@@ -675,6 +692,7 @@ export async function PUT(request: Request) {
         normalizedYandexDiskFolderPath,
         typography_hook_enabled || false,
         id,
+              ...(assetsBaseline ? [JSON.stringify(assetsBaseline)] : []),
       ]
     );
     const updatedClient = rows[0];
@@ -712,17 +730,21 @@ export async function PUT(request: Request) {
       clientForResponse = stateUpdate.rows[0] || clientForResponse;
     }
 
+    // Код движка не берём из формы на веру: незнакомый или выключенный -> legacy.
+    const resolvedHeygenEngine = await resolveEngine(heygen_engine);
     const updatedPronunciationOverrides = await pool.query(
       `UPDATE clients
        SET tts_pronunciation_overrides = $1::jsonb,
            deepgram_keywords = $2,
-           deepgram_vocabulary_rules = $3::jsonb
-       WHERE id = $4
+           deepgram_vocabulary_rules = $3::jsonb,
+           heygen_engine = $4
+       WHERE id = $5
        RETURNING *`,
       [
         JSON.stringify(normalizedTtsPronunciationOverrides),
         normalizedDeepgramKeywords || null,
         JSON.stringify(normalizedDeepgramRules),
+        resolvedHeygenEngine,
         clientForResponse.id,
       ]
     );
@@ -751,6 +773,7 @@ export async function DELETE(request: Request) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     await ensureClientVoiceColumn();
+    await ensureEngineTable();
     if (!user.isSuperAdmin) {
       return NextResponse.json({ error: "Only super admin can delete projects" }, { status: 403 });
     }

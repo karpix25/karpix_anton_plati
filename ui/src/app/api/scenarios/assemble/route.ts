@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import path from "path";
-import { spawn } from "child_process";
 import pool from "@/lib/db";
 import {
   getBackgroundAudioTrackByDiskPath,
@@ -10,6 +9,8 @@ import {
   isYandexDiskConfigured,
   uploadFinalVideoToYandexDisk,
 } from "@/lib/server/yandex-disk";
+import { mediaPathFromUrl } from "@/lib/server/media";
+import { spawnWithTimeout } from "@/lib/server/spawn";
 import { materializeSubtitleTrack } from "@/lib/server/subtitles";
 import {
   appendDeepgramKeywords,
@@ -193,52 +194,24 @@ async function ensureMontageColumns() {
   }
 }
 
-function runCommand(command: string, args: string[]) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+// Потолки заведомо выше нормы (клип рендерится секунды, финальный оверлей —
+// минуты). Нужны только чтобы зависший ffmpeg не держал монтаж вечно.
+const MONTAGE_COMMAND_TIMEOUT_MS = 1_800_000;
+const MONTAGE_PROBE_TIMEOUT_MS = 300_000;
 
-    let stderr = "";
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(stderr || `${command} failed with code ${code}`));
-      }
-    });
-
-    child.on("error", reject);
-  });
+async function runCommand(command: string, args: string[]) {
+  const { stderr, code } = await spawnWithTimeout(command, args, MONTAGE_COMMAND_TIMEOUT_MS);
+  if (code !== 0) {
+    throw new Error(stderr || `${command} failed with code ${code}`);
+  }
 }
 
-function runCommandCapture(command: string, args: string[]) {
-  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(stderr || stdout || `Command failed: ${command}`));
-      }
-    });
-    child.on("error", reject);
-  });
+async function runCommandCapture(command: string, args: string[]) {
+  const { stdout, stderr, code } = await spawnWithTimeout(command, args, MONTAGE_PROBE_TIMEOUT_MS);
+  if (code !== 0) {
+    throw new Error(stderr || stdout || `Command failed: ${command}`);
+  }
+  return { stdout, stderr };
 }
 
 function escapeFilterExpr(value: string) {
@@ -977,6 +950,14 @@ async function downloadBinaryFile(url: string, targetPath: string, fallbackConte
 }
 
 async function materializeSource(source: string, workdir: string, key: string) {
+  const mediaPath = mediaPathFromUrl(source);
+  if (mediaPath) {
+    if (!existsSync(mediaPath)) {
+      throw new Error(`Local asset not found: ${source}`);
+    }
+    return mediaPath;
+  }
+
   if (source.startsWith("/")) {
     const publicPath = path.join(process.cwd(), "public", source.replace(/^\/+/, ""));
     if (!existsSync(publicPath)) {

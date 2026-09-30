@@ -191,6 +191,9 @@ export interface Settings {
   broll_product_clip_policy: "contextual" | "required";
   broll_generator_model: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
   product_media_assets: ProductMediaAsset[];
+  /** Список ассетов, который форма получила с сервера. Нужен, чтобы
+   *  сохранение настроек не стирало ассеты, загруженные уже ПОСЛЕ открытия формы. */
+  product_media_assets_baseline?: ProductMediaAsset[];
   product_keyword: string;
   product_video_url: string;
   tts_provider: "minimax" | "elevenlabs";

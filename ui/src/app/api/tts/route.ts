@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
+import { spawnWithTimeout } from "@/lib/server/spawn";
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
-import { spawn } from 'child_process';
 import pool from '@/lib/db';
 import { notifyServicePaymentIssue } from '@/lib/server/notifier';
 import {
@@ -448,33 +448,14 @@ function applyElevenLabsReplacements(text: string, rules: ElevenLabsReplacementR
   return resolved;
 }
 
-function runCommandCapture(command: string, args: string[]) {
-  return new Promise<string>((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+const TTS_COMMAND_TIMEOUT_MS = 300_000;
 
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        reject(new Error(stderr || `${command} failed with code ${code}`));
-      }
-    });
-
-    child.on('error', reject);
-  });
+async function runCommandCapture(command: string, args: string[]) {
+  const { stdout, stderr, code } = await spawnWithTimeout(command, args, TTS_COMMAND_TIMEOUT_MS);
+  if (code !== 0) {
+    throw new Error(stderr || `${command} failed with code ${code}`);
+  }
+  return stdout.trim();
 }
 
 async function probeDurationSeconds(filePath: string) {

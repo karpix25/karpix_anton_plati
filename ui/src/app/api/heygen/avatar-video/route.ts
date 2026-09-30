@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { readFile } from "fs/promises";
 import pool from "@/lib/db";
+import { isV3Engine, resolveEngine } from "@/lib/server/heygen-engines";
 import { notifyServicePaymentIssue } from "@/lib/server/notifier";
 
 const HEYGEN_API_BASE = "https://api.heygen.com";
@@ -26,6 +27,7 @@ type ScenarioRow = {
   heygen_avatar_name: string | null;
   heygen_look_id: string | null;
   heygen_look_name: string | null;
+  heygen_engine: string | null;
 };
 
 type AvatarRow = {
@@ -291,10 +293,12 @@ async function uploadAudioAsset(filePath: string) {
 
 async function getScenario(scenarioId: number) {
   const { rows } = await pool.query<ScenarioRow>(
-    `SELECT id, client_id, tts_audio_path, heygen_video_id, heygen_status,
-            heygen_avatar_id, heygen_avatar_name, heygen_look_id, heygen_look_name
-     FROM generated_scenarios
-     WHERE id = $1`,
+    `SELECT s.id, s.client_id, s.tts_audio_path, s.heygen_video_id, s.heygen_status,
+            s.heygen_avatar_id, s.heygen_avatar_name, s.heygen_look_id, s.heygen_look_name,
+            c.heygen_engine
+     FROM generated_scenarios s
+     LEFT JOIN clients c ON c.id = s.client_id
+     WHERE s.id = $1`,
     [scenarioId]
   );
 
@@ -521,6 +525,21 @@ function buildVideoPayload(avatar: AvatarRow, look: LookRow | null, audioAssetId
   };
 }
 
+// v3 (/v3/videos) принимает и видео-аватар, и фото-лук одним полем avatar_id,
+// а движок выбирается через engine.type. Поля motion_prompt/expressiveness
+// поддерживаются для фото-луков — поведение остаётся как в v2.
+function buildV3Payload(avatar: AvatarRow, look: LookRow | null, audioAssetId: string, engine: string) {
+  return {
+    type: "avatar",
+    avatar_id: look ? look.look_id : avatar.avatar_id,
+    audio_asset_id: audioAssetId,
+    engine: { type: engine },
+    resolution: "720p",
+    aspect_ratio: "9:16",
+    ...(look ? { expressiveness: "medium", motion_prompt: PHOTO_AVATAR_MOTION_PROMPT } : {}),
+  };
+}
+
 async function resolveTalkingPhoto(look: LookRow | null): Promise<SelectedTalkingPhoto | null> {
   if (!look) {
     return null;
@@ -692,8 +711,14 @@ export async function POST(request: Request) {
           look_name: selectedTalkingPhoto.talkingPhotoName,
         }
       : look;
-    const videoPayload = buildVideoPayload(avatar, resolvedLook, audioAssetId);
-    const createPayload = await heygenFetch("/v2/video/generate", {
+    // Движок берём у клиента. Пусто или незнакомый код -> legacy, то есть
+    // ровно тот путь v2, что работал до появления этой настройки.
+    const engine = await resolveEngine(scenario.heygen_engine);
+    const useV3 = isV3Engine(engine);
+    const videoPayload = useV3
+      ? buildV3Payload(avatar, resolvedLook, audioAssetId, engine)
+      : buildVideoPayload(avatar, resolvedLook, audioAssetId);
+    const createPayload = await heygenFetch(useV3 ? "/v3/videos" : "/v2/video/generate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -706,7 +731,7 @@ export async function POST(request: Request) {
       throw new Error("HeyGen create video response did not include video_id");
     }
     console.log(
-      `[HEYGEN] video requested: scenarioId=${resolvedScenarioId} videoId=${videoId} avatarId=${avatar.avatar_id} lookId=${selectedTalkingPhoto?.talkingPhotoId || "NULL"}`
+      `[HEYGEN] video requested: scenarioId=${resolvedScenarioId} videoId=${videoId} engine=${engine} avatarId=${avatar.avatar_id} lookId=${selectedTalkingPhoto?.talkingPhotoId || "NULL"}`
     );
 
     await pool.query(

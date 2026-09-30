@@ -1,36 +1,15 @@
 import { NextResponse } from "next/server";
-import { mkdir, readFile, writeFile, rm } from "fs/promises";
+import { mkdir, writeFile, rm } from "fs/promises";
 import path from "path";
-import { spawn } from "child_process";
-import crypto from "crypto";
 import pool from "@/lib/db";
+import { spawnWithTimeout } from "@/lib/server/spawn";
+import { MEDIA_ROOT, MEDIA_URL_PREFIX } from "@/lib/server/media";
 
 const PRODUCT_ASSET_WIDTH = 720;
 const PRODUCT_ASSET_HEIGHT = 1280;
 const PRODUCT_ASSET_DURATION_SECONDS = 4;
 const PRODUCT_ASSET_FPS = 30;
-
-type S3Config = {
-  endpoint: string;
-  region: string;
-  bucket: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  publicBaseUrl: string;
-  forcePathStyle: boolean;
-};
-
-function getS3Config(): S3Config {
-  return {
-    endpoint: process.env.S3_ENDPOINT || "",
-    region: process.env.S3_REGION || "us-east-1",
-    bucket: process.env.S3_BUCKET || process.env.S3_BUCKET_NAME || "",
-    accessKeyId: process.env.S3_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || "",
-    publicBaseUrl: process.env.S3_PUBLIC_BASE_URL || "",
-    forcePathStyle: String(process.env.S3_FORCE_PATH_STYLE || "true").toLowerCase() === "true",
-  };
-}
+const PRODUCT_ASSET_DIR = "product-assets";
 
 type UploadedProductAsset = {
   id: string;
@@ -41,144 +20,43 @@ type UploadedProductAsset = {
   created_at: string;
 };
 
-function normalizeProductMediaAssets(value: unknown): UploadedProductAsset[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return null;
-      }
-      const asset = item as Record<string, unknown>;
-      const url = typeof asset.url === "string" ? asset.url.trim() : "";
-      if (!url) return null;
-      return {
-        id: typeof asset.id === "string" ? asset.id.trim() : url,
-        url,
-        name: typeof asset.name === "string" ? asset.name.trim() : "Product Asset",
-        source_type: asset.source_type === "image" ? "image" : "video",
-        duration_seconds: Number(asset.duration_seconds || 0) || 0,
-        created_at: typeof asset.created_at === "string" ? asset.created_at : new Date().toISOString(),
-      };
-    })
-    .filter(Boolean) as UploadedProductAsset[];
-}
-
+// DDL в горячем пути брал ACCESS EXCLUSIVE на clients при КАЖДОЙ загрузке:
+// параллельные загрузки и любой тяжёлый запрос по clients валили аплоад по
+// statement_timeout (15s) — файл уже лежал на диске, ассет в базу не попадал.
+// Читаем каталог (без блокировки) и трогаем схему только если колонки реально нет.
+let productAssetColumnsReady: Promise<void> | null = null;
 async function ensureProductAssetColumns() {
-  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb");
-  await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_video_url TEXT");
-}
-
-function isS3Configured(config: S3Config) {
-  return Boolean(config.endpoint && config.bucket && config.accessKeyId && config.secretAccessKey);
-}
-
-function buildS3ObjectUrl(config: S3Config, key: string) {
-  if (config.publicBaseUrl) {
-    return `${config.publicBaseUrl.replace(/\/$/, "")}/${key}`;
-  }
-
-  const endpoint = new URL(config.endpoint);
-  const base = config.forcePathStyle
-    ? `${endpoint.origin}/${config.bucket}`
-    : `${endpoint.protocol}//${config.bucket}.${endpoint.host}`;
-  return `${base}/${key}`;
-}
-
-function sha256Hex(data: Buffer | string) {
-  return crypto.createHash("sha256").update(data).digest("hex");
-}
-
-function hmac(key: Buffer | string, data: string) {
-  return crypto.createHmac("sha256", key).update(data).digest();
-}
-
-function getAmzDates(now = new Date()) {
-  const iso = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-  return {
-    amzDate: iso,
-    dateStamp: iso.slice(0, 8),
-  };
-}
-
-async function putObjectToS3(config: S3Config, key: string, body: Buffer, contentType: string) {
-  if (!isS3Configured(config)) {
-    throw new Error("S3 is not configured.");
-  }
-  const endpoint = new URL(config.endpoint);
-  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
-  const host = config.forcePathStyle ? endpoint.host : `${config.bucket}.${endpoint.host}`;
-  const canonicalUri = config.forcePathStyle ? `/${config.bucket}/${encodedKey}` : `/${encodedKey}`;
-  const payloadHash = sha256Hex(body);
-  const requestBody = new Uint8Array(body);
-  const { amzDate, dateStamp } = getAmzDates();
-  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`;
-  const signedHeaders = "host;x-amz-content-sha256;x-amz-date";
-  const canonicalRequest = [
-    "PUT",
-    canonicalUri,
-    "",
-    canonicalHeaders,
-    signedHeaders,
-    payloadHash,
-  ].join("\n");
-  const credentialScope = `${dateStamp}/${config.region}/s3/aws4_request`;
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    amzDate,
-    credentialScope,
-    sha256Hex(canonicalRequest),
-  ].join("\n");
-  const kDate = hmac(`AWS4${config.secretAccessKey}`, dateStamp);
-  const kRegion = hmac(kDate, config.region);
-  const kService = hmac(kRegion, "s3");
-  const kSigning = hmac(kService, "aws4_request");
-  const signature = crypto.createHmac("sha256", kSigning).update(stringToSign).digest("hex");
-  const authorization = `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
-
-  const uploadUrl = config.forcePathStyle
-    ? `${endpoint.origin}${canonicalUri}`
-    : `${endpoint.protocol}//${host}${canonicalUri}`;
-  const response = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": contentType,
-      "x-amz-content-sha256": payloadHash,
-      "x-amz-date": amzDate,
-      Authorization: authorization,
-    },
-    body: requestBody,
-  });
-
-  if (!response.ok) {
-    const message = await response.text().catch(() => "");
-    throw new Error(`S3 upload failed: ${response.status} ${message}`);
-  }
-
-  return buildS3ObjectUrl(config, encodedKey);
-}
-
-function runCommand(command: string, args: string[]) {
-  return new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stderr = "";
-
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(stderr || `${command} failed with code ${code}`));
+  if (!productAssetColumnsReady) {
+    productAssetColumnsReady = (async () => {
+      const { rows } = await pool.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = current_schema() AND table_name = 'clients'
+           AND column_name IN ('product_media_assets', 'product_video_url')`
+      );
+      const present = new Set(rows.map((row) => String(row.column_name)));
+      if (!present.has("product_media_assets")) {
+        await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_media_assets JSONB DEFAULT '[]'::jsonb");
       }
+      if (!present.has("product_video_url")) {
+        await pool.query("ALTER TABLE clients ADD COLUMN IF NOT EXISTS product_video_url TEXT");
+      }
+    })().catch((error) => {
+      productAssetColumnsReady = null;
+      throw error;
     });
+  }
+  return productAssetColumnsReady;
+}
 
-    child.on("error", reject);
-  });
+// Конвертация фото в 4-секундный клип занимает <2с. Потолок 120с нужен только
+// чтобы битый файл не оставил вечный ffmpeg (проверено: висел 2м35с на 51% CPU).
+const FFMPEG_TIMEOUT_MS = 120_000;
+
+async function runCommand(command: string, args: string[]) {
+  const { stderr, code } = await spawnWithTimeout(command, args, FFMPEG_TIMEOUT_MS);
+  if (code !== 0) {
+    throw new Error(stderr || `${command} failed with code ${code}`);
+  }
 }
 
 function isImageFile(file: File) {
@@ -206,9 +84,12 @@ async function convertImageToVerticalVideo(imagePath: string, outputPath: string
 }
 
 export async function POST(request: Request) {
+  // Файлы, записанные до того как база подтвердила ассет, надо убрать: иначе на
+  // диске копятся «сироты» (проверено: 6 параллельных загрузок = 6 мусорных файлов).
+  const writtenPaths: string[] = [];
   try {
     const formData = await request.formData();
-    const clientId = formData.get("clientId");
+    const rawClientId = String(formData.get("clientId") ?? "").trim();
     const files = [
       ...formData.getAll("files").filter((item): item is File => item instanceof File),
       ...(!formData.getAll("files").length
@@ -216,22 +97,33 @@ export async function POST(request: Request) {
         : []),
     ];
 
-    if (!clientId) {
+    if (!rawClientId) {
       return NextResponse.json({ error: "clientId is required" }, { status: 400 });
+    }
+
+    // clientId уходил в path.join как есть: "../../../../tmp/x" писал файл ВНЕ
+    // /app/media (проверено). Числовой id — единственная форма, которую мы кладём в путь.
+    const clientId = Number(rawClientId);
+    if (!Number.isSafeInteger(clientId) || clientId <= 0) {
+      return NextResponse.json({ error: "clientId must be a positive integer" }, { status: 400 });
     }
 
     if (!files.length) {
       return NextResponse.json({ error: "At least one media file is required" }, { status: 400 });
     }
 
-    const s3Config = getS3Config();
-    const useS3 = isS3Configured(s3Config);
-    if (!useS3) {
-      console.warn("S3 is not configured. Falling back to local storage for product assets.");
+    await ensureProductAssetColumns();
+
+    // Раньше несуществующий клиент давал 200 OK: файл на диске, UPDATE 0 строк,
+    // ассет молча терялся — тот же класс «тихого успеха», что и мёртвый S3.
+    const { rows: clientRows } = await pool.query("SELECT id FROM clients WHERE id = $1", [clientId]);
+    if (!clientRows.length) {
+      return NextResponse.json({ error: `Клиент ${clientId} не найден` }, { status: 404 });
     }
-    const uploadDir = useS3
-      ? path.join("/tmp", "product-assets", `client-${clientId}`)
-      : path.join(process.cwd(), "public", "uploads", "product-assets", `client-${clientId}`);
+
+    const clientDir = `client-${clientId}`;
+    const uploadDir = path.join(MEDIA_ROOT, PRODUCT_ASSET_DIR, clientDir);
+    const assetUrlFor = (fileName: string) => `${MEDIA_URL_PREFIX}${PRODUCT_ASSET_DIR}/${clientDir}/${fileName}`;
     await mkdir(uploadDir, { recursive: true });
 
     const uploadedAssets: UploadedProductAsset[] = [];
@@ -242,21 +134,14 @@ export async function POST(request: Request) {
       const sourcePath = path.join(uploadDir, `${stamp}_${safeName}`);
       const fileBuffer = Buffer.from(await file.arrayBuffer());
       await writeFile(sourcePath, fileBuffer);
+      writtenPaths.push(sourcePath);
 
       if (isImageFile(file)) {
         const outputName = `${stamp}_${safeName.replace(/\.[^.]+$/, "")}.mp4`;
         const outputPath = path.join(uploadDir, outputName);
+        writtenPaths.push(outputPath);
         await convertImageToVerticalVideo(sourcePath, outputPath);
-        let assetUrl = `/uploads/product-assets/client-${clientId}/${outputName}`;
-        if (useS3) {
-          const outputBuffer = await readFile(outputPath);
-          assetUrl = await putObjectToS3(
-            s3Config,
-            `product-assets/client-${clientId}/${outputName}`,
-            outputBuffer,
-            "video/mp4"
-          );
-        }
+        const assetUrl = assetUrlFor(outputName);
         uploadedAssets.push({
           id: outputName,
           url: assetUrl,
@@ -265,20 +150,10 @@ export async function POST(request: Request) {
           duration_seconds: PRODUCT_ASSET_DURATION_SECONDS,
           created_at: new Date().toISOString(),
         });
-        if (useS3) {
-          await rm(sourcePath, { force: true });
-          await rm(outputPath, { force: true });
-        }
+        // Исходное фото больше не нужно: в пул идёт готовый вертикальный клип.
+        await rm(sourcePath, { force: true });
       } else {
-        let assetUrl = `/uploads/product-assets/client-${clientId}/${path.basename(sourcePath)}`;
-        if (useS3) {
-          assetUrl = await putObjectToS3(
-            s3Config,
-            `product-assets/client-${clientId}/${path.basename(sourcePath)}`,
-            fileBuffer,
-            file.type || "video/mp4"
-          );
-        }
+        const assetUrl = assetUrlFor(path.basename(sourcePath));
         uploadedAssets.push({
           id: path.basename(sourcePath),
           url: assetUrl,
@@ -287,35 +162,45 @@ export async function POST(request: Request) {
           duration_seconds: 0,
           created_at: new Date().toISOString(),
         });
-        if (useS3) {
-          await rm(sourcePath, { force: true });
-        }
       }
     }
 
-    await ensureProductAssetColumns();
-    const { rows } = await pool.query(
-      "SELECT product_media_assets, product_video_url FROM clients WHERE id = $1",
-      [Number(clientId)]
+    // Одним запросом: read-modify-write терял ассеты при параллельных загрузках
+    // (последний писавший затирал чужой список). Дублей по url быть не может —
+    // имя файла содержит уникальный штамп времени и случайный суффикс.
+    const { rows, rowCount } = await pool.query(
+      `UPDATE clients SET
+         product_media_assets = COALESCE(product_media_assets, '[]'::jsonb) || $1::jsonb,
+         product_video_url = COALESCE(
+           NULLIF(product_video_url, ''),
+           (COALESCE(product_media_assets, '[]'::jsonb) || $1::jsonb) -> 0 ->> 'url',
+           ''
+         )
+       WHERE id = $2
+       RETURNING product_media_assets, product_video_url`,
+      [JSON.stringify(uploadedAssets), clientId]
     );
-    const existingAssets = normalizeProductMediaAssets(rows[0]?.product_media_assets);
-    const mergedAssets = [
-      ...existingAssets,
-      ...uploadedAssets.filter((asset) => !existingAssets.some((existing) => existing.url === asset.url)),
-    ];
-    const nextPrimaryUrl = rows[0]?.product_video_url || mergedAssets[0]?.url || "";
-    await pool.query(
-      "UPDATE clients SET product_media_assets = $1::jsonb, product_video_url = $2 WHERE id = $3",
-      [JSON.stringify(mergedAssets), nextPrimaryUrl, Number(clientId)]
-    );
+    if (!rowCount) {
+      return NextResponse.json({ error: `Клиент ${clientId} не найден` }, { status: 404 });
+    }
 
+    writtenPaths.length = 0;
     return NextResponse.json({
       assets: uploadedAssets,
-      all_assets: mergedAssets,
+      all_assets: rows[0]?.product_media_assets ?? uploadedAssets,
       url: uploadedAssets[0]?.url || "",
     });
   } catch (error) {
+    // Раньше тут молчал generic 500 — из-за этого умерший S3 две недели выглядел
+    // как "ассет не грузится" без единой подсказки. Причину отдаём наверх.
     console.error("Product video upload error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    for (const orphan of writtenPaths) {
+      await rm(orphan, { force: true }).catch(() => {});
+    }
+    if (writtenPaths.length) {
+      console.warn(`Product video upload rollback: removed ${writtenPaths.length} unregistered file(s)`);
+    }
+    const details = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: `Не удалось сохранить ассет: ${details}` }, { status: 500 });
   }
 }

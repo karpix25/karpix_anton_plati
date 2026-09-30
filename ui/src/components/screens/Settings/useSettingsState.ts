@@ -213,7 +213,12 @@ export const useSettingsState = ({
     if (JSON.stringify(draftSettings) === JSON.stringify(lastSavedSettings)) return;
     
     const timer = setTimeout(() => {
-      onSaveRef.current(draftSettings);
+      // Базовый список = то, что форма реально видела с сервера. Без него
+      // автосохранение стирает ассет, загруженный после открытия формы.
+      onSaveRef.current({
+        ...draftSettings,
+        product_media_assets_baseline: normalizedSettingsRef.current.product_media_assets || [],
+      });
       setLastSavedSettings(draftSettings);
     }, 3000);
 
@@ -695,7 +700,10 @@ export const useSettingsState = ({
         body: formData,
       });
 
-      if (!response.ok) throw new Error("Failed to upload product video");
+      if (!response.ok) {
+        const details = await response.json().catch(() => null);
+        throw new Error(details?.error || `Не удалось загрузить product assets (HTTP ${response.status}).`);
+      }
 
       const data = await response.json();
       const mergedAssets = Array.isArray(data.all_assets) ? (data.all_assets as ProductMediaAsset[]) : null;
@@ -707,7 +715,7 @@ export const useSettingsState = ({
       }));
     } catch (error) {
       console.error("Product video upload error:", error);
-      alert("Не удалось загрузить product assets.");
+      alert(error instanceof Error ? error.message : "Не удалось загрузить product assets.");
     } finally {
       setIsUploadingProductVideo(false);
       event.target.value = "";
@@ -850,7 +858,10 @@ export const useSettingsState = ({
   };
 
   const handleSaveSettings = () => {
-    onSave(draftSettings);
+    onSave({
+      ...draftSettings,
+      product_media_assets_baseline: normalizedSettingsRef.current.product_media_assets || [],
+    });
   };
 
   return {

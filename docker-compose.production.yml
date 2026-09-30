@@ -53,7 +53,12 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-}
       S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      MEDIA_ROOT: ${MEDIA_ROOT:-/app/media}
       NEXT_TELEMETRY_DISABLED: 1
+    volumes:
+      # Продуктовые ассеты переживают пересборку образа. Внешний S3 (Beget) мёртв:
+      # бакет с ключом удалили на стороне вендора.
+      - media_data:/app/media
     dns:
       - 1.1.1.1
       - 8.8.8.8
@@ -195,3 +200,4 @@ services:
 
 volumes:
   postgres_data:
+  media_data:
