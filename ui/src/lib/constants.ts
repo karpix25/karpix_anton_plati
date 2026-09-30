@@ -23,6 +23,7 @@ export const defaultSettings: ClientSettings = {
   broll_semantic_relevance_priority: "balanced",
   broll_product_clip_policy: "contextual",
   broll_generator_model: "veo3_lite",
+  heygen_engine: "legacy",
   product_media_assets: [],
   product_keyword: "",
   product_video_url: "",

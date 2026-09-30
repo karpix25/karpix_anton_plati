@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, LoaderCircle, Plus, Shuffle } from "lucide-react";
 import { HeygenAvatarItem } from "./HeygenAvatarItem";
 import { getAvatarConfigKey } from "../SettingsUtils";
+import { HeygenEngineSelect } from "./HeygenEngineSelect";
 
 interface HeygenSettingsProps {
   avatarConfigs: HeygenAvatarConfig[];
@@ -18,6 +19,7 @@ interface HeygenSettingsProps {
   motionLookRequestKey: string | null;
   motionPromptRequestKey: string | null;
   draftSettings: Settings;
+  setDraftSettings: React.Dispatch<React.SetStateAction<Settings>>;
   onRefreshHeygenCatalog?: () => Promise<HeygenAvatarConfig[]>;
   updateAvatar: (avatarIndex: number, field: keyof HeygenAvatarConfig, value: string | number | boolean) => void;
   applyHeygenCatalogAvatar: (avatarIndex: number, catalogAvatar: HeygenAvatarConfig) => void;
@@ -48,6 +50,7 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
   motionLookRequestKey,
   motionPromptRequestKey,
   draftSettings,
+  setDraftSettings,
   onRefreshHeygenCatalog,
   updateAvatar,
   applyHeygenCatalogAvatar,
@@ -88,6 +91,8 @@ export const HeygenSettings: React.FC<HeygenSettingsProps> = ({
 
   return (
     <div className="space-y-6">
+      <HeygenEngineSelect draftSettings={draftSettings} setDraftSettings={setDraftSettings} />
+
       <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-6 shadow-sm">
         <div className="max-w-2xl space-y-2">
           <h3 className="text-xl font-bold tracking-tight text-foreground flex items-center gap-2">

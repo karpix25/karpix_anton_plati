@@ -228,6 +228,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = (props) => {
                     motionLookRequestKey={state.motionLookRequestKey}
                     motionPromptRequestKey={state.motionPromptRequestKey}
                     draftSettings={state.draftSettings}
+                    setDraftSettings={state.setDraftSettings}
                     onRefreshHeygenCatalog={props.onRefreshHeygenCatalog}
                     updateAvatar={state.updateAvatar}
                     applyHeygenCatalogAvatar={state.applyHeygenCatalogAvatar}

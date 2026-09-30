@@ -237,6 +237,7 @@ export default function CuratorDashboard() {
       broll_semantic_relevance_priority: selectedClient?.broll_semantic_relevance_priority || "balanced",
       broll_product_clip_policy: selectedClient?.broll_product_clip_policy || "contextual",
       broll_generator_model: selectedClient?.broll_generator_model || "veo3_lite",
+      heygen_engine: selectedClient?.heygen_engine || "legacy",
       product_media_assets: normalizeProductMediaAssets(selectedClient?.product_media_assets),
       product_keyword: selectedClient?.product_keyword || "",
       product_video_url: selectedClient?.product_video_url || "",

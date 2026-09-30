@@ -33,6 +33,7 @@ export interface Client {
   broll_semantic_relevance_priority?: "precision" | "balanced" | "dynamic";
   broll_product_clip_policy?: "contextual" | "required";
   broll_generator_model?: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
+  heygen_engine?: string;
   product_media_assets?: ProductMediaAsset[];
   product_keyword?: string;
   product_video_url?: string;
@@ -190,6 +191,7 @@ export interface Settings {
   broll_semantic_relevance_priority: "precision" | "balanced" | "dynamic";
   broll_product_clip_policy: "contextual" | "required";
   broll_generator_model: "bytedance/v1-pro-text-to-video" | "bytedance/seedance-1.5-pro" | "grok-imagine/text-to-video" | "veo3" | "veo3_fast" | "veo3_lite";
+  heygen_engine: string;
   product_media_assets: ProductMediaAsset[];
   /** Список ассетов, который форма получила с сервера. Нужен, чтобы
    *  сохранение настроек не стирало ассеты, загруженные уже ПОСЛЕ открытия формы. */
