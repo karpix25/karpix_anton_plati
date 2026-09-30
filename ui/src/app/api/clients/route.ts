@@ -539,6 +539,7 @@ export async function PUT(request: Request) {
 
     await ensureClientVoiceColumn();
     await ensureEngineTable();
+    const requestBody = await request.json();
     const {
       id,
       heygen_engine,
@@ -590,7 +591,7 @@ export async function PUT(request: Request) {
       yandex_disk_folder_path,
       typography_hook_enabled,
       deepgram_vocabulary_rules,
-    } = await request.json();
+    } = requestBody;
     const resolvedTargetDurationMinSeconds = Math.max(
       15,
       Number(target_duration_min_seconds || target_duration_seconds || 50)
@@ -730,20 +731,23 @@ export async function PUT(request: Request) {
       clientForResponse = stateUpdate.rows[0] || clientForResponse;
     }
 
-    // Код движка не берём из формы на веру: незнакомый или выключенный -> legacy.
-    const resolvedHeygenEngine = await resolveEngine(heygen_engine);
+    // Движок трогаем ТОЛЬКО если поле реально прислали. Пришло — не берём на веру:
+    // незнакомый или выключенный код приземляется в legacy.
+    const hasEngineField = Object.prototype.hasOwnProperty.call(requestBody || {}, "heygen_engine");
+    const resolvedHeygenEngine = hasEngineField ? await resolveEngine(heygen_engine) : null;
     const updatedPronunciationOverrides = await pool.query(
       `UPDATE clients
        SET tts_pronunciation_overrides = $1::jsonb,
            deepgram_keywords = $2,
            deepgram_vocabulary_rules = $3::jsonb,
-           heygen_engine = $4
-       WHERE id = $5
+           heygen_engine = CASE WHEN $4 THEN $5 ELSE heygen_engine END
+       WHERE id = $6
        RETURNING *`,
       [
         JSON.stringify(normalizedTtsPronunciationOverrides),
         normalizedDeepgramKeywords || null,
         JSON.stringify(normalizedDeepgramRules),
+        hasEngineField,
         resolvedHeygenEngine,
         clientForResponse.id,
       ]

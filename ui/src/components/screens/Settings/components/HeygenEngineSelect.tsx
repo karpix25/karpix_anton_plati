@@ -104,7 +104,9 @@ export const HeygenEngineSelect: React.FC<Props> = ({ draftSettings, setDraftSet
             {engines.map((engine) => (
               <SelectItem key={engine.code} value={engine.code}>
                 {engine.title}
-                {engine.credits_per_minute ? ` — ${engine.credits_per_minute} кр/мин` : ""}
+                {engine.credits_per_minute
+                  ? ` — ${engine.credits_per_minute} кр/мин${engine.price_is_measured ? "" : " (ориентир)"}`
+                  : ""}
               </SelectItem>
             ))}
           </SelectContent>
