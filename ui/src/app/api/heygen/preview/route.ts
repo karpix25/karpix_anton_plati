@@ -21,7 +21,7 @@ export async function GET(request: Request) {
       headers: {
         "Content-Type": cached.mimeType,
         "ETag": cached.contentHash || "",
-        "Cache-Control": hasVersion
+        "Cache-Control": searchParams.has("fm_asset") ? "private, no-store" : hasVersion
           ? "public, max-age=31536000, immutable"
           : "public, max-age=300",
       },

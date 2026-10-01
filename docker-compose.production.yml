@@ -25,6 +25,7 @@ services:
     depends_on:
       - postgres
     environment:
+      FM_AUTH_SECRET: ${FM_AUTH_SECRET:?FM_AUTH_SECRET required for web}
       NODE_ENV: production
       PORT: 3000
       DB_HOST: postgres

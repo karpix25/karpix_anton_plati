@@ -39,7 +39,7 @@ export async function GET(request: Request, context: { params: Promise<{ path: s
   const baseHeaders = {
     "Content-Type": contentType,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "public, max-age=31536000, immutable",
+    "Cache-Control": new URL(request.url).searchParams.has("fm_asset") ? "private, no-store" : "public, max-age=31536000, immutable",
   };
 
   // Range обязателен: без него Safari/iOS не проигрывает <video> и не даёт перемотку.

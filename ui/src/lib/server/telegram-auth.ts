@@ -39,6 +39,48 @@ export type TelegramSessionUser = {
   expiresAt: string;
 };
 
+const FM_PUBLIC_HOST = "n8n-ai-avatars.ap2dy7.easypanel.host";
+type FMIdentity = { host: string; method: string; uri: string; exp: number; roleId: string; telegramId: string; username: string };
+
+export function getFMIdentity(request: Request): FMIdentity | null {
+  if (!request.headers.has("x-fm-identity")) return null;
+  try {
+    // Fetch Headers combines duplicates with a comma; the strict alphabet rejects them.
+    const token = request.headers.get("x-fm-identity") || "";
+    const secret = process.env.FM_AUTH_SECRET || "";
+    if (Buffer.byteLength(secret) < 32 || token.length > 16384 || request.headers.get("host") !== FM_PUBLIC_HOST) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts[0] !== "v1" || !/^[A-Za-z0-9_-]+$/.test(parts[1]) || !/^[A-Za-z0-9_-]{43}$/.test(parts[2])) return null;
+    const expected = crypto.createHmac("sha256", secret).update(`v1.${parts[1]}`).digest();
+    const signature = Buffer.from(parts[2], "base64url");
+    if (signature.toString("base64url") !== parts[2] || signature.length !== expected.length || !crypto.timingSafeEqual(expected, signature)) return null;
+    const decoded = Buffer.from(parts[1], "base64url");
+    if (decoded.toString("base64url") !== parts[1]) return null;
+    const claim = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(decoded));
+    const now = Date.now() / 1000;
+    const rawURI = request.url.match(/^https?:\/\/[^/]+(\/[^#]*)$/)?.[1];
+    if (!claim || Array.isArray(claim) || !Number.isSafeInteger(claim.exp) || claim.exp - now < 0 || claim.exp - now > 35 ||
+        claim.host !== FM_PUBLIC_HOST || claim.method !== request.method || claim.uri !== rawURI) return null;
+    for (const field of ["roleId", "telegramId"]) {
+      if (typeof claim[field] !== "string" || !/^[1-9][0-9]{0,18}$/.test(claim[field]) || BigInt(claim[field]) > BigInt("9223372036854775807")) return null;
+    }
+    if (!Number.isSafeInteger(Number(claim.telegramId)) || typeof claim.username !== "string" || !/^[a-z0-9_]{5,32}$/.test(claim.username)) return null;
+    return claim;
+  } catch {
+    return null;
+  }
+}
+
+export function isAutomationRequest(request: Request) {
+  const token = request.headers.get("x-automation-token") || "";
+  const secret = (process.env.AUTOMATION_INTERNAL_TOKEN || "").trim();
+  const path = new URL(request.url).pathname;
+  const scope = `${request.method} ${path}`;
+  if (!["POST /api/tts", "POST /api/heygen/avatar-video", "GET /api/heygen/avatar-video", "POST /api/scenarios/assemble"].includes(scope) ||
+      !secret || !token || token.includes(",") || Buffer.byteLength(token) !== Buffer.byteLength(secret)) return false;
+  return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(secret));
+}
+
 function parseTelegramIds(rawValue: string) {
   return rawValue
     .split(",")
@@ -340,6 +382,20 @@ export async function getTelegramSessionUser(rawToken: string): Promise<Telegram
 }
 
 export async function getTelegramSessionUserFromRequest(request: Request) {
+  if (request.headers.has("x-fm-identity")) {
+    const ident = getFMIdentity(request);
+    if (!ident) return null; // A present assertion never falls back to a native cookie.
+    const { rows } = await pool.query<{ is_admin: boolean }>(
+      "SELECT is_admin FROM telegram_user_access WHERE telegram_user_id = $1 AND status = 'approved'",
+      [ident.telegramId]
+    );
+    return {
+      telegramUserId: Number(ident.telegramId), username: ident.username,
+      firstName: null, lastName: null, isAdmin: rows[0]?.is_admin === true,
+      isSuperAdmin: isTelegramSuperAdmin(Number(ident.telegramId)),
+      expiresAt: new Date(ident.exp * 1000).toISOString(),
+    } satisfies TelegramSessionUser;
+  }
   const sessionToken = extractTelegramSessionToken(request);
   if (!sessionToken) {
     return null;

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { providerAssetUrl } from "@/lib/server/provider-assets";
 
 const OPENROUTER_API_BASE = "https://openrouter.ai/api/v1";
 
@@ -16,7 +17,7 @@ function sanitizeUrl(value: unknown) {
   }
 
   try {
-    const parsed = new URL(value.trim());
+    const parsed = new URL(value.trim(), "https://n8n-ai-avatars.ap2dy7.easypanel.host");
     if (!["http:", "https:"].includes(parsed.protocol)) {
       return "";
     }
@@ -54,7 +55,8 @@ function normalizeMotionPrompt(value: string) {
 export async function POST(request: Request) {
   try {
     const { previewImageUrl, avatarName, lookName, sourceText } = await request.json();
-    const resolvedPreviewImageUrl = sanitizeUrl(previewImageUrl);
+    const sanitizedPreview = sanitizeUrl(previewImageUrl);
+    const resolvedPreviewImageUrl = sanitizedPreview ? providerAssetUrl(sanitizedPreview) : "";
     const resolvedSourceText = typeof sourceText === "string" ? sourceText.trim() : "";
 
     if (!resolvedSourceText) {
