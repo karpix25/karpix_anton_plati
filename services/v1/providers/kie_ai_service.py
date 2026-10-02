@@ -435,6 +435,8 @@ def submit_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: str | Non
     enriched_prompts: List[Dict[str, Any]] = []
 
     for item in prompts or []:
+        if item.get("asset_type") == "product_video":
+            item = {**item, "use_ready_asset": True, "prompt_json": None}
         if item.get("use_ready_asset") or not item.get("prompt_json"):
             enriched_prompts.append({
                 **item,
@@ -479,6 +481,8 @@ def submit_pending_kie_tasks_for_prompts(prompts: List[Dict[str, Any]], model: s
     max_resubmit_attempts = _get_max_resubmit_attempts()
 
     for item in prompts or []:
+        if item.get("asset_type") == "product_video":
+            item = {**item, "use_ready_asset": True, "prompt_json": None}
         resubmit_attempts = max(0, _to_int(item.get("resubmit_attempts")) or 0)
         if item.get("use_ready_asset") or not item.get("prompt_json"):
             enriched_prompts.append({
@@ -707,6 +711,8 @@ def _parse_market_task_state(data: Dict[str, Any]) -> tuple[str, List[str], str 
 
 
 def refresh_kie_prompt_status(item: Dict[str, Any]) -> Dict[str, Any]:
+    if item.get("asset_type") == "product_video":
+        return {**item, "use_ready_asset": True, "prompt_json": None}
     if item.get("use_ready_asset") or not item.get("task_id"):
         return item
 
