@@ -18,7 +18,7 @@ services:
       - "5432"
 
   web:
-    image: "sha256:1c044ef3732446e1dd6f1e57533a94fcb229b0ca91f332a01b95ff0e5ebfed15"
+    image: "n8n_ai_avatars:20261025"
     pull_policy: never
     restart: unless-stopped
     depends_on:
@@ -84,7 +84,7 @@ services:
           - n8n_ai_avatars_web
 
   final-video-worker:
-    image: "sha256:06049302e1f2be8dfce0928b6c9d470643d25e62c16417ac82a409af59a84508"
+    image: "n8n_ai_avatars:20261025"
     pull_policy: never
     restart: unless-stopped
     depends_on:
@@ -125,7 +125,7 @@ services:
       - 8.8.8.8
 
   final-video-poller:
-    image: "sha256:90805d8a66cdde88fd028959be055a44ccf0e4ceccad5797e7c37a1d961f941b"
+    image: "n8n_ai_avatars:20261025"
     pull_policy: never
     restart: unless-stopped
     depends_on:
@@ -158,7 +158,7 @@ services:
       - 8.8.8.8
 
   final-video-scheduler:
-    image: "sha256:9fd17842c0a184966d3d99d29295f27debafbcd4ba49b948cf3dedd9ce2f0755"
+    image: "n8n_ai_avatars:20261025"
     pull_policy: never
     restart: unless-stopped
     depends_on:
@@ -182,7 +182,7 @@ services:
       - 8.8.8.8
 
   telegram-bot:
-    image: "sha256:448b59ed82b7bc6ba12e6abc360731751be567149ca74107f8c39bc0f877e33b"
+    image: "n8n_ai_avatars:20261025"
     pull_policy: never
     restart: unless-stopped
     depends_on:
