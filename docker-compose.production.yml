@@ -4,6 +4,12 @@
 # 30.09 потеря этой строки подняла посторонний контейнер code-web-1 с пустым томом.
 name: n8n_ai_avatars
 
+# AVATARS_DB_TARGET (объединение баз): по умолчанию все AV_* пусты — сервисы ходят в свой контейнер postgres,
+# поведение не меняется. Для переноса в .env: AV_DB_HOST=tools_baza, AV_DB_USER=avatars_user,
+# AV_DB_PASS=<пароль роли>, AV_PGOPTIONS=-csearch_path=avatars (плюс у роли ALTER ROLE ... SET search_path=avatars
+# — для node-pg, который PGOPTIONS может не читать). Сеть easypanel (там tools_baza) — только через
+# доп. файл docker-compose.avatars-target.yml (-f ... -f docker-compose.avatars-target.yml), чтобы без
+# переключения алиас postgres не начал резолвиться в чужую сеть.
 services:
   postgres:
     image: postgres:16
@@ -27,11 +33,12 @@ services:
       FM_AUTH_SECRET: ${FM_AUTH_SECRET:?FM_AUTH_SECRET required for web}
       NODE_ENV: production
       PORT: 3000
-      DB_HOST: postgres
+      DB_HOST: ${AV_DB_HOST:-postgres}
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-postgres}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASS: ${DB_PASS:-postgres}
+      DB_USER: ${AV_DB_USER:-${DB_USER:-postgres}}
+      PGOPTIONS: ${AV_PGOPTIONS:-}
+      DB_PASS: ${AV_DB_PASS:-${DB_PASS:-postgres}}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
@@ -92,11 +99,12 @@ services:
       - web
     command: ["python3", "services/v1/automation/final_video_worker.py"]
     environment:
-      DB_HOST: postgres
+      DB_HOST: ${AV_DB_HOST:-postgres}
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-postgres}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASS: ${DB_PASS:-postgres}
+      DB_USER: ${AV_DB_USER:-${DB_USER:-postgres}}
+      PGOPTIONS: ${AV_PGOPTIONS:-}
+      DB_PASS: ${AV_DB_PASS:-${DB_PASS:-postgres}}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
@@ -133,11 +141,12 @@ services:
       - web
     command: ["python3", "services/v1/automation/final_video_poller.py"]
     environment:
-      DB_HOST: postgres
+      DB_HOST: ${AV_DB_HOST:-postgres}
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-postgres}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASS: ${DB_PASS:-postgres}
+      DB_USER: ${AV_DB_USER:-${DB_USER:-postgres}}
+      PGOPTIONS: ${AV_PGOPTIONS:-}
+      DB_PASS: ${AV_DB_PASS:-${DB_PASS:-postgres}}
       HEYGEN_API_KEY: ${HEYGEN_API_KEY:-}
       KIE_API_KEY: ${KIE_API_KEY:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -165,11 +174,12 @@ services:
       - postgres
     command: ["python3", "services/v1/automation/final_video_scheduler.py"]
     environment:
-      DB_HOST: postgres
+      DB_HOST: ${AV_DB_HOST:-postgres}
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-postgres}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASS: ${DB_PASS:-postgres}
+      DB_USER: ${AV_DB_USER:-${DB_USER:-postgres}}
+      PGOPTIONS: ${AV_PGOPTIONS:-}
+      DB_PASS: ${AV_DB_PASS:-${DB_PASS:-postgres}}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       TELEGRAM_SUPER_ADMIN_IDS: ${TELEGRAM_SUPER_ADMIN_IDS:-}
@@ -189,11 +199,12 @@ services:
       - postgres
     command: ["python3", "services/v1/ingestion/telegram_bot.py"]
     environment:
-      DB_HOST: postgres
+      DB_HOST: ${AV_DB_HOST:-postgres}
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-postgres}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASS: ${DB_PASS:-postgres}
+      DB_USER: ${AV_DB_USER:-${DB_USER:-postgres}}
+      PGOPTIONS: ${AV_PGOPTIONS:-}
+      DB_PASS: ${AV_DB_PASS:-${DB_PASS:-postgres}}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}

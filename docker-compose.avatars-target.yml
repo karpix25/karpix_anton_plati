@@ -1,0 +1,16 @@
+# Подключается ТОЛЬКО при переносе базы аватаров в схему avatars главной базы (AV_DB_HOST=tools_baza):
+#   docker compose -p n8n_ai_avatars -f docker-compose.production.yml -f docker-compose.override.yml \
+#     -f docker-compose.avatars-target.yml up -d
+# web уже в сети easypanel (override). Без этого файла сервисы в сети easypanel нет — поведение прежнее.
+services:
+  final-video-worker:
+    networks: [default, easypanel]
+  final-video-poller:
+    networks: [default, easypanel]
+  final-video-scheduler:
+    networks: [default, easypanel]
+  telegram-bot:
+    networks: [default, easypanel]
+networks:
+  easypanel:
+    external: true
