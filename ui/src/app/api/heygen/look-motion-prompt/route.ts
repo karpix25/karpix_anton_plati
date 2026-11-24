@@ -17,7 +17,7 @@ function sanitizeUrl(value: unknown) {
   }
 
   try {
-    const parsed = new URL(value.trim(), "https://n8n-ai-avatars.ap2dy7.easypanel.host");
+    const parsed = new URL(value.trim(), "https://n8n-ai-avatars.focusmarket.su");
     if (!["http:", "https:"].includes(parsed.protocol)) {
       return "";
     }

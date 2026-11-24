@@ -39,7 +39,7 @@ export type TelegramSessionUser = {
   expiresAt: string;
 };
 
-const FM_PUBLIC_HOST = "n8n-ai-avatars.ap2dy7.easypanel.host";
+const FM_PUBLIC_HOST = "n8n-ai-avatars.focusmarket.su";
 type FMIdentity = { host: string; method: string; uri: string; exp: number; roleId: string; telegramId: string; username: string };
 
 export function getFMIdentity(request: Request): FMIdentity | null {

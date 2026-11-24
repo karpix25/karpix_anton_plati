@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-export const ASSET_HOST = "n8n-ai-avatars.ap2dy7.easypanel.host";
+export const ASSET_HOST = "n8n-ai-avatars.focusmarket.su";
 const TTL = 600;
 
 function assetURI(uri: string) {
